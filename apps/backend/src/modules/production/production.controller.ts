@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import { CreateProductionJobDto, UpdateProductionJobDto } from './dto/production.dto';
 import { ProductionService } from './production.service';
 
@@ -11,8 +12,8 @@ export class ProductionController {
 
   @Get('jobs')
   @Roles('super_admin', 'owner', 'production', 'manager')
-  findAll() {
-    return this.productionService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.productionService.findAll(query);
   }
 
   @Get('jobs/:id')
@@ -37,5 +38,11 @@ export class ProductionController {
   @Roles('super_admin', 'owner')
   remove(@Param('id') id: string) {
     return this.productionService.remove(id);
+  }
+
+  @Get('board')
+  @Roles('super_admin', 'owner', 'production', 'manager')
+  board() {
+    return this.productionService.board();
   }
 }

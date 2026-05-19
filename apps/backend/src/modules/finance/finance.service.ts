@@ -9,6 +9,9 @@ import {
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PaginationQueryDto } from '../../common/query/pagination.dto';
+import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
+import { calculateFinanceSummary } from '../../common/business/finance-summary';
 import {
   CreateCashboxDto,
   CreateInvoiceDto,
@@ -16,42 +19,18 @@ import {
   UpdateCashboxDto,
   UpdateInvoiceDto
 } from './dto/finance.dto';
-import { InvoiceOverpaymentException, PaymentAlreadyReversedException } from '../../common/business/exceptions';
+import {
+  PaymentAlreadyReversedException
+} from '../../common/business/exceptions';
+import {
+  assertNoOverpayment,
+  resolveDebtStatus,
+  resolveInvoiceStatus
+} from '../../common/business/finance-rules';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
   return typeof value === 'number' ? value : Number(value.toString());
-}
-
-function resolveDebtStatus(paidAmount: number, totalAmount: number, dueAt?: Date | null) {
-  if (paidAmount <= 0) {
-    if (dueAt && dueAt.getTime() < Date.now()) {
-      return DebtStatus.overdue;
-    }
-    return DebtStatus.open;
-  }
-
-  if (paidAmount >= totalAmount) {
-    return DebtStatus.closed;
-  }
-
-  if (dueAt && dueAt.getTime() < Date.now()) {
-    return DebtStatus.overdue;
-  }
-
-  return DebtStatus.partial;
-}
-
-function resolveInvoiceStatus(paidAmount: number, totalAmount: number, dueAt?: Date | null) {
-  if (paidAmount <= 0) {
-    return dueAt && dueAt.getTime() < Date.now() ? InvoiceStatus.overdue : InvoiceStatus.issued;
-  }
-
-  if (paidAmount >= totalAmount) {
-    return InvoiceStatus.paid;
-  }
-
-  return dueAt && dueAt.getTime() < Date.now() ? InvoiceStatus.overdue : InvoiceStatus.partially_paid;
 }
 
 @Injectable()
@@ -105,16 +84,47 @@ export class FinanceService {
     });
   }
 
-  findAllInvoices() {
-    return this.prisma.invoice.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        order: { include: { customer: true } },
-        payments: true,
-        receivable: true
-      }
-    });
+  async findAllInvoices(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.InvoiceWhereInput = {
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { number: { contains: query.search, mode: 'insensitive' } },
+              { order: { number: { contains: query.search, mode: 'insensitive' } } },
+              { order: { customer: { name: { contains: query.search, mode: 'insensitive' } } } }
+            ]
+          }
+        : {}),
+      ...(query.dateFrom || query.dateTo
+        ? {
+            createdAt: {
+              gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+              lte: query.dateTo ? new Date(query.dateTo) : undefined
+            }
+          }
+        : {})
+    };
+
+    const orderBy = { [query.sortBy ?? 'createdAt']: query.sortOrder ?? 'desc' } as Prisma.InvoiceOrderByWithRelationInput;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          order: { include: { customer: true } },
+          payments: true,
+          receivable: true
+        }
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
   findInvoice(id: string) {
@@ -134,9 +144,7 @@ export class FinanceService {
         }
 
         const paidAmount = dto.paidAmount ?? 0;
-        if (paidAmount > dto.totalAmount) {
-          throw new InvoiceOverpaymentException();
-        }
+        assertNoOverpayment(dto.totalAmount, 0, paidAmount);
 
         const invoice = await tx.invoice.create({
           data: {
@@ -234,18 +242,51 @@ export class FinanceService {
     });
   }
 
-  findAllPayments() {
-    return this.prisma.payment.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        order: true,
-        invoice: true,
-        cashbox: true,
-        allocations: true,
-        createdBy: true,
-        reversedBy: true
-      }
-    });
+  async findAllPayments(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.PaymentWhereInput = {
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { reference: { contains: query.search, mode: 'insensitive' } },
+              { note: { contains: query.search, mode: 'insensitive' } },
+              { order: { number: { contains: query.search, mode: 'insensitive' } } },
+              { invoice: { number: { contains: query.search, mode: 'insensitive' } } }
+            ]
+          }
+        : {}),
+      ...(query.dateFrom || query.dateTo
+        ? {
+            createdAt: {
+              gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+              lte: query.dateTo ? new Date(query.dateTo) : undefined
+            }
+          }
+        : {})
+    };
+
+    const orderBy = { [query.sortBy ?? 'createdAt']: query.sortOrder ?? 'desc' } as Prisma.PaymentOrderByWithRelationInput;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.payment.count({ where }),
+      this.prisma.payment.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          order: true,
+          invoice: true,
+          cashbox: true,
+          allocations: true,
+          createdBy: true,
+          reversedBy: true
+        }
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
   findPayment(id: string) {
@@ -269,10 +310,7 @@ export class FinanceService {
         const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
 
         if (invoice) {
-          const nextPaid = toNumber(invoice.paidAmount) + dto.amount;
-          if (nextPaid > toNumber(invoice.totalAmount)) {
-            throw new InvoiceOverpaymentException();
-          }
+          assertNoOverpayment(toNumber(invoice.totalAmount), toNumber(invoice.paidAmount), dto.amount);
         }
 
         const payment = await tx.payment.create({
@@ -386,6 +424,112 @@ export class FinanceService {
     );
   }
 
+  async summary() {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      totalInvoices,
+      unpaidInvoices,
+      overdueInvoices,
+      receivables,
+      payables,
+      cashboxes,
+      todayIncomePayments,
+      todayExpenseTx,
+      monthIncomePayments,
+      monthExpenseTx
+    ] = await this.prisma.$transaction([
+      this.prisma.invoice.count({ where: { deletedAt: null } }),
+      this.prisma.invoice.count({
+        where: {
+          deletedAt: null,
+          status: { in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.partially_paid, InvoiceStatus.overdue] }
+        }
+      }),
+      this.prisma.invoice.count({
+        where: {
+          deletedAt: null,
+          status: InvoiceStatus.overdue
+        }
+      }),
+      this.prisma.receivable.aggregate({
+        where: { deletedAt: null },
+        _sum: {
+          amount: true,
+          paidAmount: true
+        }
+      }),
+      this.prisma.payable.aggregate({
+        where: { deletedAt: null },
+        _sum: {
+          amount: true,
+          paidAmount: true
+        }
+      }),
+      this.prisma.cashbox.aggregate({
+        where: { deletedAt: null },
+        _sum: {
+          currentBalance: true
+        }
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfDay },
+          status: PaymentStatus.completed
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      this.prisma.cashboxTransaction.aggregate({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfDay },
+          type: CashboxTransactionType.expense
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfMonth },
+          status: PaymentStatus.completed
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      this.prisma.cashboxTransaction.aggregate({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfMonth },
+          type: CashboxTransactionType.expense
+        },
+        _sum: {
+          amount: true
+        }
+      })
+    ]);
+
+    return calculateFinanceSummary({
+      totalInvoices,
+      unpaidInvoices,
+      overdueInvoices,
+      totalReceivables: Math.max(toNumber(receivables._sum.amount) - toNumber(receivables._sum.paidAmount), 0),
+      totalPayables: Math.max(toNumber(payables._sum.amount) - toNumber(payables._sum.paidAmount), 0),
+      totalCashboxBalance: toNumber(cashboxes._sum.currentBalance),
+      todayIncome: toNumber(todayIncomePayments._sum.amount),
+      todayExpense: toNumber(todayExpenseTx._sum.amount),
+      monthIncome: toNumber(monthIncomePayments._sum.amount),
+      monthExpense: toNumber(monthExpenseTx._sum.amount)
+    });
+  }
+
   async reversePayment(id: string, reversedById?: string) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -492,18 +636,62 @@ export class FinanceService {
     return this.reversePayment(id);
   }
 
-  findReceivables() {
-    return this.prisma.receivable.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { customer: true, invoice: true, order: true }
-    });
+  async findReceivables(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.ReceivableWhereInput = {
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { customer: { name: { contains: query.search, mode: 'insensitive' } } },
+              { invoice: { number: { contains: query.search, mode: 'insensitive' } } },
+              { order: { number: { contains: query.search, mode: 'insensitive' } } }
+            ]
+          }
+        : {})
+    };
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.receivable.count({ where }),
+      this.prisma.receivable.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: { customer: true, invoice: true, order: true }
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
-  findPayables() {
-    return this.prisma.payable.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { allocations: true }
-    });
+  async findPayables(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.PayableWhereInput = {
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { counterpartyName: { contains: query.search, mode: 'insensitive' } },
+              { purchaseReference: { contains: query.search, mode: 'insensitive' } },
+              { note: { contains: query.search, mode: 'insensitive' } }
+            ]
+          }
+        : {})
+    };
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.payable.count({ where }),
+      this.prisma.payable.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: { allocations: true }
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
   findCashboxes() {

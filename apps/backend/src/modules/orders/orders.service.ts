@@ -3,8 +3,12 @@ import { Prisma, OrderStatus, ProductionJobStatus, InvoiceStatus } from '@prisma
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/order.dto';
+import { OrderListQueryDto } from './dto/order-query.dto';
 import { PricingService } from '../pricing/pricing.service';
 import { assertOrderStatusTransition } from '../../common/business/order-status';
+import { buildOrderListWhere } from '../../common/business/order-filters';
+import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
+import { calculateOrderProfitability } from '../../common/business/profitability';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -52,7 +56,10 @@ export class OrdersService {
         priceVersions: true,
         productionRoutes: { include: { operations: true } },
         productionJobs: true,
+        stockReservations: true,
+        stockMovements: true,
         invoices: true,
+        paymentsIssued: true,
         receivable: true
       }
     });
@@ -64,24 +71,74 @@ export class OrdersService {
     return order;
   }
 
-  findAll() {
-    return this.prisma.order.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        customer: true,
-        manager: true,
-        items: true,
-        costCalculation: true,
-        priceVersions: true,
-        productionJobs: true,
-        invoices: true
-      }
-    });
+  async findAll(query: OrderListQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where = buildOrderListWhere(query);
+    const orderByField = query.sortBy ?? 'createdAt';
+    const orderBy = { [orderByField]: query.sortOrder ?? 'desc' } as Prisma.OrderOrderByWithRelationInput;
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          customer: true,
+          manager: true,
+          items: true,
+          costCalculation: true,
+          priceVersions: true,
+          productionJobs: true,
+          invoices: true,
+          receivable: true
+        }
+      })
+    ]);
+
+    return buildPaginatedResponse(rows, total, page, limit);
   }
 
   findOne(id: string) {
-    return this.getOrderOrThrow(id);
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          customer: true,
+          manager: true,
+          createdBy: true,
+          items: { include: { material: true } },
+          costCalculation: { include: { lines: true } },
+          priceVersions: true,
+          productionRoutes: { include: { operations: true } },
+          productionJobs: true,
+          stockReservations: true,
+          stockMovements: true,
+          invoices: true,
+          paymentsIssued: true,
+          receivable: true
+        }
+      });
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      const auditLogs = await this.auditService.findByEntity('order', id);
+      const profitability = calculateOrderProfitability({
+        totalAmount: Number(order.totalAmount),
+        costAmount: Number(order.costAmount),
+        paidAmount: Number(order.paidAmount)
+      });
+
+      return {
+        ...order,
+        payments: order.paymentsIssued,
+        auditLogs,
+        profitability
+      };
+    });
   }
 
   async create(dto: CreateOrderDto) {

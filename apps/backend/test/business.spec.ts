@@ -4,6 +4,11 @@ import { OrderStatus } from '@prisma/client';
 import { assertOrderStatusTransition } from '../src/common/business/order-status';
 import { applyConsume, applyRelease, applyReserve } from '../src/common/business/inventory-flow';
 import { calculateOrderProfitability } from '../src/common/business/profitability';
+import { buildPaginatedResponse, normalizePagination } from '../src/common/query/pagination';
+import { buildOrderListWhere } from '../src/common/business/order-filters';
+import { calculateDashboardSummary } from '../src/common/business/dashboard-summary';
+import { calculateInventorySummary } from '../src/common/business/inventory-summary';
+import { calculateFinanceSummary } from '../src/common/business/finance-summary';
 import {
   resolveDebtStatus,
   resolveInvoiceStatus,
@@ -51,4 +56,93 @@ test('order profitability is computed from totals', () => {
     customerDebtAmount: 80,
     isProfitable: true
   });
+});
+
+test('pagination helper normalizes query and creates meta', () => {
+  const pagination = normalizePagination({ page: 2, limit: 15 });
+  assert.deepEqual(pagination, { page: 2, limit: 15, skip: 15, take: 15 });
+
+  const response = buildPaginatedResponse(['a', 'b'], 40, 2, 15);
+  assert.deepEqual(response.meta, {
+    page: 2,
+    limit: 15,
+    total: 40,
+    totalPages: 3
+  });
+});
+
+test('order filters build expected where clauses', () => {
+  const where = buildOrderListWhere({
+    page: 1,
+    limit: 20,
+    search: 'alpha',
+    status: 'approved',
+    customerId: 'customer-1',
+    managerId: 'manager-1',
+    deadlineFrom: '2026-01-01T00:00:00.000Z',
+    deadlineTo: '2026-01-31T23:59:59.999Z',
+    hasDebt: true,
+    inProduction: false,
+    overdue: false
+  } as any, new Date('2026-01-15T00:00:00.000Z'));
+
+  assert.ok(where.AND);
+  assert.equal(where.deletedAt, null);
+});
+
+test('dashboard summary calculation keeps totals intact', () => {
+  const summary = calculateDashboardSummary({
+    totalOrders: 10,
+    ordersInProduction: 2,
+    readyOrders: 3,
+    overdueOrders: 1,
+    totalRevenue: 1000,
+    totalPaid: 700,
+    totalDebt: 300,
+    cashboxBalance: 500,
+    lowStockMaterials: 4,
+    todayPayments: 120,
+    monthRevenue: 800,
+    monthProfit: 240,
+    topCustomers: [{ id: 'c1', name: 'Client', totalAmount: 500 }],
+    recentOrders: [],
+    recentPayments: []
+  });
+
+  assert.equal(summary.totalOrders, 10);
+  assert.equal(summary.totalDebt, 300);
+  assert.equal(summary.monthProfit, 240);
+});
+
+test('inventory summary returns structured payload', () => {
+  const summary = calculateInventorySummary({
+    totalMaterials: 3,
+    lowStockCount: 1,
+    totalStockValue: 100,
+    reservedValue: 25,
+    materialsBelowMinimum: [{ id: 'm1' }],
+    recentMovements: [{ id: 'mv1' }]
+  });
+
+  assert.equal(summary.lowStockCount, 1);
+  assert.equal(summary.totalStockValue, 100);
+});
+
+test('finance summary returns structured payload', () => {
+  const summary = calculateFinanceSummary({
+    totalInvoices: 10,
+    unpaidInvoices: 3,
+    overdueInvoices: 1,
+    totalReceivables: 250,
+    totalPayables: 120,
+    totalCashboxBalance: 600,
+    todayIncome: 80,
+    todayExpense: 15,
+    monthIncome: 900,
+    monthExpense: 140
+  });
+
+  assert.equal(summary.totalInvoices, 10);
+  assert.equal(summary.totalCashboxBalance, 600);
+  assert.equal(summary.monthExpense, 140);
 });

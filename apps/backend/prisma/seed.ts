@@ -188,6 +188,7 @@ async function main() {
         name: 'Coated Paper A2 150gsm',
         unit: 'sheet',
         costPrice: 0.35,
+        minStockLevel: 1000,
         stockQuantity: 10000,
         categoryId: paperCategory?.id
       },
@@ -196,6 +197,7 @@ async function main() {
         name: 'CMYK Ink Set',
         unit: 'set',
         costPrice: 85,
+        minStockLevel: 20,
         stockQuantity: 120,
         categoryId: inkCategory?.id
       },
@@ -204,6 +206,7 @@ async function main() {
         name: 'Lamination Film',
         unit: 'roll',
         costPrice: 12.5,
+        minStockLevel: 30,
         stockQuantity: 200,
         categoryId: consumablesCategory?.id
       }
@@ -214,6 +217,7 @@ async function main() {
           name: material.name,
           unit: material.unit,
           costPrice: material.costPrice,
+          minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,
           categoryId: material.categoryId
         },
@@ -222,6 +226,7 @@ async function main() {
           name: material.name,
           unit: material.unit,
           costPrice: material.costPrice,
+          minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,
           reservedQuantity: 0,
           categoryId: material.categoryId

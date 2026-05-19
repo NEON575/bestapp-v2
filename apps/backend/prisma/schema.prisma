@@ -297,6 +297,7 @@ model Material {
   name            String
   sku             String?         @unique
   unit            String
+  minStockLevel   Decimal         @default(0) @db.Decimal(18, 4)
   stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
   reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
   costPrice       Decimal         @default(0) @db.Decimal(18, 4)

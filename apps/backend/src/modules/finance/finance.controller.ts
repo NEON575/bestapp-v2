@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequestUser } from '../../common/types/request-user.interface';
+import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import {
   CreateCashboxDto,
   CreateInvoiceDto,
@@ -19,8 +20,8 @@ export class FinanceController {
 
   @Get('invoices')
   @Roles('super_admin', 'owner', 'accountant')
-  findAllInvoices() {
-    return this.financeService.findAllInvoices();
+  findAllInvoices(@Query() query: PaginationQueryDto) {
+    return this.financeService.findAllInvoices(query);
   }
 
   @Get('invoices/:id')
@@ -49,8 +50,8 @@ export class FinanceController {
 
   @Get('payments')
   @Roles('super_admin', 'owner', 'accountant')
-  findAllPayments() {
-    return this.financeService.findAllPayments();
+  findAllPayments(@Query() query: PaginationQueryDto) {
+    return this.financeService.findAllPayments(query);
   }
 
   @Get('payments/:id')
@@ -79,14 +80,14 @@ export class FinanceController {
 
   @Get('receivables')
   @Roles('super_admin', 'owner', 'accountant')
-  findReceivables() {
-    return this.financeService.findReceivables();
+  findReceivables(@Query() query: PaginationQueryDto) {
+    return this.financeService.findReceivables(query);
   }
 
   @Get('payables')
   @Roles('super_admin', 'owner', 'accountant')
-  findPayables() {
-    return this.financeService.findPayables();
+  findPayables(@Query() query: PaginationQueryDto) {
+    return this.financeService.findPayables(query);
   }
 
   @Get('cashboxes')
@@ -105,5 +106,11 @@ export class FinanceController {
   @Roles('super_admin', 'owner', 'accountant')
   updateCashbox(@Param('id') id: string, @Body() dto: UpdateCashboxDto) {
     return this.financeService.updateCashbox(id, dto);
+  }
+
+  @Get('summary')
+  @Roles('super_admin', 'owner', 'accountant')
+  summary() {
+    return this.financeService.summary();
   }
 }

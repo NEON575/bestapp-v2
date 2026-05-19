@@ -180,3 +180,76 @@ The backend now enforces transaction-safe and accounting-safe workflows for the 
 - allowed status transitions are enforced in the backend
 - invalid direct jumps are rejected
 - profitability is stored on the order and exposed by the API
+
+## Phase 2.3 scope
+
+The backend now exposes a frontend-friendly API usability layer.
+
+### List endpoints with pagination
+
+- `GET /api/v1/orders`
+- `GET /api/v1/customers`
+- `GET /api/v1/inventory/materials`
+- `GET /api/v1/inventory/movements`
+- `GET /api/v1/production/jobs`
+- `GET /api/v1/finance/invoices`
+- `GET /api/v1/finance/payments`
+- `GET /api/v1/debts/receivables`
+- `GET /api/v1/debts/payables`
+
+All list endpoints use the same pagination response format:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 0,
+    "totalPages": 1
+  }
+}
+```
+
+### Dashboard and board endpoints
+
+- `GET /api/v1/analytics/dashboard`
+- `GET /api/v1/production/board`
+- `GET /api/v1/inventory/summary`
+- `GET /api/v1/finance/summary`
+
+### Order detail
+
+`GET /api/v1/orders/:id` now returns the full order card with:
+
+- customer and manager
+- items
+- cost calculation
+- price versions
+- production routes and jobs
+- stock reservations and movements
+- invoices and payments
+- receivable
+- profitability
+- audit history
+
+### Common query fields
+
+- `page`
+- `limit`
+- `search`
+- `sortBy`
+- `sortOrder`
+- `dateFrom`
+- `dateTo`
+
+### Order filters
+
+- `status`
+- `customerId`
+- `managerId`
+- `deadlineFrom`
+- `deadlineTo`
+- `hasDebt`
+- `inProduction`
+- `overdue`

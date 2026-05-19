@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StockMovementType, StockReservationStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PaginationQueryDto } from '../../common/query/pagination.dto';
+import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
+import { calculateInventorySummary } from '../../common/business/inventory-summary';
 import {
   CreateMaterialDto,
   CreateStockMovementDto,
@@ -218,18 +221,47 @@ export class InventoryService {
   }
 
   findAllMaterials() {
-    return this.prisma.material.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        category: true,
-        stockLevels: {
-          include: {
-            warehouse: true
+    return this.findMaterials({ page: 1, limit: 20 });
+  }
+
+  async findMaterials(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.MaterialWhereInput = {
+      deletedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { sku: { contains: query.search, mode: 'insensitive' } },
+              { unit: { contains: query.search, mode: 'insensitive' } },
+              { category: { name: { contains: query.search, mode: 'insensitive' } } }
+            ]
+          }
+        : {})
+    };
+
+    const orderByField = query.sortBy ?? 'createdAt';
+    const orderBy = { [orderByField]: query.sortOrder ?? 'desc' } as Prisma.MaterialOrderByWithRelationInput;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.material.count({ where }),
+      this.prisma.material.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          category: true,
+          stockLevels: {
+            include: {
+              warehouse: true
+            }
           }
         }
-      }
-    });
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
   findOneMaterial(id: string) {
@@ -253,6 +285,7 @@ export class InventoryService {
         name: dto.name,
         sku: dto.sku,
         unit: dto.unit,
+        minStockLevel: dto.minStockLevel ?? 0,
         stockQuantity: dto.stockQuantity ?? 0,
         reservedQuantity: dto.reservedQuantity ?? 0,
         costPrice: dto.costPrice ?? 0
@@ -268,6 +301,7 @@ export class InventoryService {
         name: dto.name,
         sku: dto.sku,
         unit: dto.unit,
+        minStockLevel: dto.minStockLevel,
         stockQuantity: dto.stockQuantity,
         reservedQuantity: dto.reservedQuantity,
         costPrice: dto.costPrice
@@ -282,17 +316,50 @@ export class InventoryService {
     });
   }
 
-  listMovements() {
-    return this.prisma.stockMovement.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        material: true,
-        warehouse: true,
-        order: true,
-        orderItem: true,
-        productionJob: true
-      }
-    });
+  async findMovements(query: PaginationQueryDto) {
+    const { page, limit, skip, take } = normalizePagination(query);
+    const where: Prisma.StockMovementWhereInput = {
+      ...(query.search
+        ? {
+            OR: [
+              { reference: { contains: query.search, mode: 'insensitive' } },
+              { note: { contains: query.search, mode: 'insensitive' } },
+              { material: { name: { contains: query.search, mode: 'insensitive' } } },
+              { material: { sku: { contains: query.search, mode: 'insensitive' } } }
+            ]
+          }
+        : {}),
+      ...(query.dateFrom || query.dateTo
+        ? {
+            createdAt: {
+              gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+              lte: query.dateTo ? new Date(query.dateTo) : undefined
+            }
+          }
+        : {})
+    };
+
+    const orderByField = query.sortBy ?? 'createdAt';
+    const orderBy = { [orderByField]: query.sortOrder ?? 'desc' } as Prisma.StockMovementOrderByWithRelationInput;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.stockMovement.count({ where }),
+      this.prisma.stockMovement.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          material: true,
+          warehouse: true,
+          order: true,
+          orderItem: true,
+          productionJob: true
+        }
+      })
+    ]);
+
+    return buildPaginatedResponse(data, total, page, limit);
   }
 
   async createMovement(dto: CreateStockMovementDto) {
@@ -489,6 +556,60 @@ export class InventoryService {
     return this.prisma.materialCategory.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async summary() {
+    const materials = await this.prisma.material.findMany({
+      where: { deletedAt: null },
+      include: {
+        stockLevels: true
+      }
+    });
+
+    const recentMovements = await this.prisma.stockMovement.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: {
+        material: true,
+        warehouse: true
+      }
+    });
+
+    const normalizedMaterials = materials.map((material) => {
+      const stockLevels = material.stockLevels ?? [];
+      const onHand = stockLevels.reduce((sum, level) => sum + toNumber(level.onHand), 0);
+      const reserved = stockLevels.reduce((sum, level) => sum + toNumber(level.reserved), 0);
+      const available = stockLevels.reduce((sum, level) => sum + toNumber(level.available), 0);
+
+      return {
+        id: material.id,
+        name: material.name,
+        sku: material.sku,
+        unit: material.unit,
+        minStockLevel: toNumber(material.minStockLevel),
+        onHand,
+        reserved,
+        available,
+        costPrice: toNumber(material.costPrice)
+      };
+    });
+
+    const materialsBelowMinimum = normalizedMaterials.filter((material) => material.available <= material.minStockLevel);
+    const totalStockValue = roundQty(
+      normalizedMaterials.reduce((sum, material) => sum + material.onHand * material.costPrice, 0)
+    );
+    const reservedValue = roundQty(
+      normalizedMaterials.reduce((sum, material) => sum + material.reserved * material.costPrice, 0)
+    );
+
+    return calculateInventorySummary({
+      totalMaterials: normalizedMaterials.length,
+      lowStockCount: materialsBelowMinimum.length,
+      totalStockValue,
+      reservedValue,
+      materialsBelowMinimum,
+      recentMovements
     });
   }
 }

@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { DebtsModule } from './modules/debts/debts.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -30,7 +32,9 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     PricingModule,
     InventoryModule,
     FinanceModule,
+    DebtsModule,
     ProductionModule,
+    AnalyticsModule,
     AuditModule
   ],
   providers: [

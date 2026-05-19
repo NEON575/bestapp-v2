@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import {
   CreateMaterialDto,
   CreateStockMovementDto,
@@ -17,8 +18,8 @@ export class InventoryController {
 
   @Get('materials')
   @Roles('super_admin', 'owner', 'warehouse', 'manager')
-  findMaterials() {
-    return this.inventoryService.findAllMaterials();
+  findMaterials(@Query() query: PaginationQueryDto) {
+    return this.inventoryService.findMaterials(query);
   }
 
   @Get('materials/:id')
@@ -71,8 +72,8 @@ export class InventoryController {
 
   @Get('movements')
   @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
-  listMovements() {
-    return this.inventoryService.listMovements();
+  listMovements(@Query() query: PaginationQueryDto) {
+    return this.inventoryService.findMovements(query);
   }
 
   @Post('movements')
@@ -103,5 +104,11 @@ export class InventoryController {
   @Roles('super_admin', 'owner', 'warehouse', 'production')
   writeOff(@Body() dto: WriteOffStockDto) {
     return this.inventoryService.writeOff(dto);
+  }
+
+  @Get('summary')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'accountant')
+  summary() {
+    return this.inventoryService.summary();
   }
 }

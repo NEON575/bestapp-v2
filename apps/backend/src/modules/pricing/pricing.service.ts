@@ -41,7 +41,7 @@ export class PricingService {
 
   async calculateOrderPrice(orderId: string, tx?: Prisma.TransactionClient) {
     const db = this.db(tx);
-    const order = await db.order.findFirst({
+    let order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         items: { include: { material: true } },
@@ -236,7 +236,7 @@ export class PricingService {
 
   async approvePrice(orderId: string, approvedById?: string, tx?: Prisma.TransactionClient) {
     const db = this.db(tx);
-    const order = await db.order.findFirst({
+    let order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null }
     });
 
@@ -253,6 +253,9 @@ export class PricingService {
 
     if (order.status === OrderStatus.draft) {
       await this.calculateOrderPrice(orderId, tx);
+      order = (await db.order.findFirst({
+        where: { id: orderId, deletedAt: null }
+      })) ?? order;
     }
 
     const calculation = await db.costCalculation.findUnique({

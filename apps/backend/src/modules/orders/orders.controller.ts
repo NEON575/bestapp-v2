@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequestUser } from '../../common/types/request-user.interface';
 import { CreateOrderDto, UpdateOrderDto } from './dto/order.dto';
+import { OrderListQueryDto } from './dto/order-query.dto';
 import { OrdersService } from './orders.service';
 
 @ApiTags('orders')
@@ -13,8 +14,8 @@ export class OrdersController {
 
   @Get()
   @Roles('super_admin', 'owner', 'manager', 'accountant')
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Query() query: OrderListQueryDto) {
+    return this.ordersService.findAll(query);
   }
 
   @Get(':id')

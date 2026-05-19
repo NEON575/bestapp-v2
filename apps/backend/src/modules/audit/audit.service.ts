@@ -67,4 +67,18 @@ export class AuditService {
       take: 100
     });
   }
+
+  findByEntity(entityType: string, entityId: string) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        entityType,
+        entityId
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        user: true
+      }
+    });
+  }
 }

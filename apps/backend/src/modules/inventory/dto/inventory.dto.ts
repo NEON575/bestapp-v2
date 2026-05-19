@@ -37,6 +37,11 @@ export class CreateMaterialDto {
   @IsString()
   unit!: string;
 
+  @ApiProperty({ example: 10 })
+  @IsOptional()
+  @IsNumber()
+  minStockLevel?: number;
+
   @ApiProperty()
   @IsOptional()
   @IsNumber()
