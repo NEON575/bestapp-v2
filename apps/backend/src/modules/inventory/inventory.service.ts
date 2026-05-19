@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, StockMovementType } from '@prisma/client';
+import { Prisma, StockMovementType, StockReservationStatus } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CreateMaterialDto,
@@ -8,6 +9,11 @@ import {
   UpdateMaterialDto,
   WriteOffStockDto
 } from './dto/inventory.dto';
+import {
+  NotEnoughStockException,
+  ReservationAlreadyConsumedException
+} from '../../common/business/exceptions';
+import { getMovementBalanceDelta } from '../../common/business/inventory-balance';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -20,10 +26,17 @@ function roundQty(value: number) {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService
+  ) {}
 
-  private async ensureMaterial(id: string) {
-    const material = await this.prisma.material.findFirst({
+  private db(tx?: Prisma.TransactionClient) {
+    return tx ?? this.prisma;
+  }
+
+  private async ensureMaterial(id: string, tx?: Prisma.TransactionClient) {
+    const material = await this.db(tx).material.findFirst({
       where: { id, deletedAt: null }
     });
 
@@ -34,8 +47,8 @@ export class InventoryService {
     return material;
   }
 
-  private async ensureWarehouse(id: string) {
-    const warehouse = await this.prisma.warehouse.findFirst({
+  private async ensureWarehouse(id: string, tx?: Prisma.TransactionClient) {
+    const warehouse = await this.db(tx).warehouse.findFirst({
       where: { id, deletedAt: null }
     });
 
@@ -46,26 +59,31 @@ export class InventoryService {
     return warehouse;
   }
 
-  private async syncStockLevel(materialId: string, warehouseId: string) {
-    const movementTotals = await this.prisma.stockMovement.aggregate({
+  private async syncStockLevel(materialId: string, warehouseId: string, tx?: Prisma.TransactionClient) {
+    const db = this.db(tx);
+    const movementTotals = await db.stockMovement.aggregate({
       where: { materialId, warehouseId },
       _sum: {
-        quantity: true
+        balanceDelta: true
       }
     });
 
-    const reservationTotals = await this.prisma.stockReservation.aggregate({
-      where: { materialId, warehouseId, status: { in: ['open', 'reserved'] } },
+    const reservationTotals = await db.stockReservation.aggregate({
+      where: {
+        materialId,
+        warehouseId,
+        status: { in: [StockReservationStatus.open, StockReservationStatus.reserved] }
+      },
       _sum: {
         quantity: true
       }
     });
 
-    const onHand = roundQty(toNumber(movementTotals._sum.quantity));
+    const onHand = roundQty(toNumber(movementTotals._sum.balanceDelta));
     const reserved = roundQty(toNumber(reservationTotals._sum.quantity));
     const available = roundQty(onHand - reserved);
 
-    await this.prisma.stockLevel.upsert({
+    await db.stockLevel.upsert({
       where: {
         materialId_warehouseId: {
           materialId,
@@ -85,6 +103,118 @@ export class InventoryService {
         available
       }
     });
+  }
+
+  private async getStockLevel(materialId: string, warehouseId: string, tx?: Prisma.TransactionClient) {
+    const level = await this.db(tx).stockLevel.findUnique({
+      where: {
+        materialId_warehouseId: {
+          materialId,
+          warehouseId
+        }
+      }
+    });
+
+    return {
+      onHand: roundQty(toNumber(level?.onHand)),
+      reserved: roundQty(toNumber(level?.reserved)),
+      available: roundQty(toNumber(level?.available))
+    };
+  }
+
+  private async releaseReservationInTx(tx: Prisma.TransactionClient, reservationId: string) {
+    const reservation = await tx.stockReservation.findFirst({
+      where: { id: reservationId, deletedAt: null }
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    if (reservation.status === StockReservationStatus.consumed) {
+      throw new ReservationAlreadyConsumedException();
+    }
+
+    if (reservation.status === StockReservationStatus.released) {
+      return reservation;
+    }
+
+    const updated = await tx.stockReservation.update({
+      where: { id: reservationId },
+      data: {
+        status: StockReservationStatus.released,
+        releasedAt: new Date()
+      }
+    });
+
+    await this.syncStockLevel(reservation.materialId, reservation.warehouseId, tx);
+
+    await this.auditService.logTx(tx, {
+      action: 'stock.reservation_released',
+      entityType: 'stockReservation',
+      entityId: reservation.id,
+      beforeData: reservation,
+      afterData: updated
+    });
+
+    return updated;
+  }
+
+  private async consumeReservationInTx(tx: Prisma.TransactionClient, reservationId: string) {
+    const reservation = await tx.stockReservation.findFirst({
+      where: { id: reservationId, deletedAt: null }
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    if (reservation.status === StockReservationStatus.consumed) {
+      throw new ReservationAlreadyConsumedException();
+    }
+
+    if (reservation.status === StockReservationStatus.released || reservation.status === StockReservationStatus.cancelled) {
+      throw new NotEnoughStockException('Reservation is not active');
+    }
+
+    const material = await this.ensureMaterial(reservation.materialId, tx);
+    const warehouse = await this.ensureWarehouse(reservation.warehouseId, tx);
+
+    await tx.stockMovement.create({
+      data: {
+        materialId: reservation.materialId,
+        warehouseId: reservation.warehouseId,
+        orderId: reservation.orderId,
+        orderItemId: reservation.orderItemId,
+        type: StockMovementType.write_off,
+        quantity: reservation.quantity,
+        balanceDelta: -Math.abs(toNumber(reservation.quantity)),
+        unitCost: toNumber(material.costPrice),
+        totalCost: roundQty(toNumber(material.costPrice) * toNumber(reservation.quantity)),
+        reference: `reservation:${reservation.id}`,
+        note: reservation.note ?? 'Reservation consumed'
+      }
+    });
+
+    const updated = await tx.stockReservation.update({
+      where: { id: reservationId },
+      data: {
+        status: StockReservationStatus.consumed,
+        consumedAt: new Date()
+      }
+    });
+
+    await this.syncStockLevel(material.id, warehouse.id, tx);
+
+    await this.auditService.logTx(tx, {
+      action: 'stock.reservation_consumed',
+      entityType: 'stockReservation',
+      entityId: reservation.id,
+      beforeData: reservation,
+      afterData: updated
+    });
+
+    return updated;
   }
 
   findAllMaterials() {
@@ -166,97 +296,174 @@ export class InventoryService {
   }
 
   async createMovement(dto: CreateStockMovementDto) {
-    await this.ensureMaterial(dto.materialId);
-    if (dto.warehouseId) {
-      await this.ensureWarehouse(dto.warehouseId);
-    }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const material = await this.ensureMaterial(dto.materialId, tx);
+        if (dto.warehouseId) {
+          await this.ensureWarehouse(dto.warehouseId, tx);
+        }
 
-    const totalCost = dto.totalCost ?? roundQty((dto.unitCost ?? 0) * dto.quantity);
-    const movement = await this.prisma.stockMovement.create({
-      data: {
-        materialId: dto.materialId,
-        warehouseId: dto.warehouseId,
-        orderId: dto.orderId,
-        orderItemId: dto.orderItemId,
-        productionJobId: dto.productionJobId,
-        type: dto.type as StockMovementType,
-        quantity: dto.quantity,
-        unitCost: dto.unitCost ?? 0,
-        totalCost,
-        reference: dto.reference,
-        note: dto.note
-      }
-    });
+        const totalCost = dto.totalCost ?? roundQty((dto.unitCost ?? 0) * dto.quantity);
+        const balanceDelta = getMovementBalanceDelta(dto.type as StockMovementType, dto.quantity);
 
-    if (dto.warehouseId) {
-      await this.syncStockLevel(dto.materialId, dto.warehouseId);
-    }
+        const movement = await tx.stockMovement.create({
+          data: {
+            materialId: dto.materialId,
+            warehouseId: dto.warehouseId,
+            orderId: dto.orderId,
+            orderItemId: dto.orderItemId,
+            productionJobId: dto.productionJobId,
+            type: dto.type as StockMovementType,
+            quantity: dto.quantity,
+            balanceDelta,
+            unitCost: dto.unitCost ?? 0,
+            totalCost,
+            reference: dto.reference,
+            note: dto.note
+          }
+        });
 
-    return movement;
+        if (dto.warehouseId) {
+          await this.syncStockLevel(dto.materialId, dto.warehouseId, tx);
+        }
+
+        await this.auditService.logTx(tx, {
+          action: 'stock.movement_created',
+          entityType: 'stockMovement',
+          entityId: movement.id,
+          afterData: movement,
+          metadata: {
+            materialId: material.id,
+            warehouseId: dto.warehouseId ?? null
+          }
+        });
+
+        return movement;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async reserve(dto: ReserveStockDto) {
-    const material = await this.ensureMaterial(dto.materialId);
-    const warehouse = await this.ensureWarehouse(dto.warehouseId);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const material = await this.ensureMaterial(dto.materialId, tx);
+        const warehouse = await this.ensureWarehouse(dto.warehouseId, tx);
+        const stock = await this.getStockLevel(material.id, warehouse.id, tx);
 
-    const reservation = await this.prisma.stockReservation.create({
-      data: {
-        orderId: dto.orderId,
-        orderItemId: dto.orderItemId,
-        materialId: dto.materialId,
-        warehouseId: dto.warehouseId,
-        quantity: dto.quantity,
-        status: 'open',
-        note: dto.note
-      }
-    });
+        if (stock.available < dto.quantity) {
+          throw new NotEnoughStockException();
+        }
 
-    await this.prisma.stockMovement.create({
-      data: {
-        materialId: dto.materialId,
-        warehouseId: dto.warehouseId,
-        orderId: dto.orderId,
-        orderItemId: dto.orderItemId,
-        type: StockMovementType.reserve,
-        quantity: dto.quantity,
-        unitCost: toNumber(material.costPrice),
-        totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
-        reference: `reserve:${reservation.id}`,
-        note: dto.note
-      }
-    });
+        const reservation = await tx.stockReservation.create({
+          data: {
+            orderId: dto.orderId,
+            orderItemId: dto.orderItemId,
+            materialId: dto.materialId,
+            warehouseId: dto.warehouseId,
+            quantity: dto.quantity,
+            status: StockReservationStatus.reserved,
+            reservedAt: new Date(),
+            note: dto.note
+          }
+        });
 
-    await this.syncStockLevel(material.id, warehouse.id);
+        await tx.stockMovement.create({
+          data: {
+            materialId: dto.materialId,
+            warehouseId: dto.warehouseId,
+            orderId: dto.orderId,
+            orderItemId: dto.orderItemId,
+            type: StockMovementType.reserve,
+            quantity: dto.quantity,
+            balanceDelta: 0,
+            unitCost: toNumber(material.costPrice),
+            totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
+            reference: `reserve:${reservation.id}`,
+            note: dto.note
+          }
+        });
 
-    return reservation;
+        await this.syncStockLevel(material.id, warehouse.id, tx);
+
+        await this.auditService.logTx(tx, {
+          action: 'stock.reserved',
+          entityType: 'stockReservation',
+          entityId: reservation.id,
+          afterData: reservation,
+          metadata: {
+            availableBefore: stock.available,
+            reservedQty: dto.quantity
+          }
+        });
+
+        return reservation;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  async releaseReservation(reservationId: string) {
+    return this.prisma.$transaction(
+      (tx) => this.releaseReservationInTx(tx, reservationId),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  async consumeReservation(reservationId: string) {
+    return this.prisma.$transaction(
+      (tx) => this.consumeReservationInTx(tx, reservationId),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async writeOff(dto: WriteOffStockDto) {
-    const material = await this.ensureMaterial(dto.materialId);
-    const warehouseId = dto.warehouseId;
-    if (warehouseId) {
-      await this.ensureWarehouse(warehouseId);
-    }
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (dto.reservationId) {
+          return this.consumeReservationInTx(tx, dto.reservationId);
+        }
 
-    const movement = await this.prisma.stockMovement.create({
-      data: {
-        materialId: dto.materialId,
-        warehouseId,
-        orderId: dto.orderId,
-        productionJobId: dto.productionJobId,
-        type: StockMovementType.write_off,
-        quantity: dto.quantity,
-        unitCost: toNumber(material.costPrice),
-        totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
-        note: dto.note
-      }
-    });
+        const material = await this.ensureMaterial(dto.materialId, tx);
+        const warehouseId = dto.warehouseId;
+        if (warehouseId) {
+          await this.ensureWarehouse(warehouseId, tx);
+          const stock = await this.getStockLevel(material.id, warehouseId, tx);
+          if (stock.onHand < dto.quantity) {
+            throw new NotEnoughStockException();
+          }
+        }
 
-    if (warehouseId) {
-      await this.syncStockLevel(material.id, warehouseId);
-    }
+        const movement = await tx.stockMovement.create({
+          data: {
+            materialId: dto.materialId,
+            warehouseId,
+            orderId: dto.orderId,
+            productionJobId: dto.productionJobId,
+            type: StockMovementType.write_off,
+            quantity: dto.quantity,
+            balanceDelta: -Math.abs(dto.quantity),
+            unitCost: toNumber(material.costPrice),
+            totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
+            note: dto.note
+          }
+        });
 
-    return movement;
+        if (warehouseId) {
+          await this.syncStockLevel(material.id, warehouseId, tx);
+        }
+
+        await this.auditService.logTx(tx, {
+          action: 'stock.written_off',
+          entityType: 'stockMovement',
+          entityId: movement.id,
+          afterData: movement
+        });
+
+        return movement;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   findWarehouses() {

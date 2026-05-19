@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma, StockReservationStatus } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
+import { assertOrderStatusTransition } from '../../common/business/order-status';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
@@ -13,7 +15,14 @@ function roundMoney(value: number) {
 
 @Injectable()
 export class PricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService
+  ) {}
+
+  private db(tx?: Prisma.TransactionClient) {
+    return tx ?? this.prisma;
+  }
 
   private parseFinishingOptions(value: Prisma.JsonValue | null | undefined) {
     if (!value) return 0;
@@ -30,8 +39,9 @@ export class PricingService {
     return 1;
   }
 
-  async calculateOrderPrice(orderId: string) {
-    const order = await this.prisma.order.findFirst({
+  async calculateOrderPrice(orderId: string, tx?: Prisma.TransactionClient) {
+    const db = this.db(tx);
+    const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         items: { include: { material: true } },
@@ -70,7 +80,7 @@ export class PricingService {
     const overheadCost = roundMoney(baseCost * 0.1);
     const costWithWaste = roundMoney(baseCost * (1 + wastePercent / 100));
 
-    const markupRule = await this.prisma.markupRule.findFirst({
+    const markupRule = await db.markupRule.findFirst({
       where: { isActive: true, deletedAt: null },
       orderBy: { priority: 'asc' }
     });
@@ -81,7 +91,7 @@ export class PricingService {
     const recommendedPrice = roundMoney(costWithWaste + overheadCost + profitAmount);
     const marginPercent = recommendedPrice > 0 ? roundMoney((profitAmount / recommendedPrice) * 100) : 0;
 
-    const calculation = await this.prisma.costCalculation.upsert({
+    const calculation = await db.costCalculation.upsert({
       where: { orderId },
       update: {
         versionNo: { increment: 1 },
@@ -111,7 +121,7 @@ export class PricingService {
     });
 
     const versionNo = (order.priceVersions?.length ?? 0) + 1;
-    const priceVersion = await this.prisma.priceVersion.create({
+    const priceVersion = await db.priceVersion.create({
       data: {
         orderId,
         costCalculationId: calculation.id,
@@ -122,8 +132,8 @@ export class PricingService {
       }
     });
 
-    await this.prisma.costCalculationLine.deleteMany({ where: { costCalculationId: calculation.id } });
-    await this.prisma.costCalculationLine.createMany({
+    await db.costCalculationLine.deleteMany({ where: { costCalculationId: calculation.id } });
+    await db.costCalculationLine.createMany({
       data: [
         {
           costCalculationId: calculation.id,
@@ -171,11 +181,13 @@ export class PricingService {
     });
 
     const totalAmount = items.reduce((sum, item) => sum + toNumber(item.totalPrice), 0) || recommendedPrice;
+    const nextStatus = OrderStatus.calculated;
+    assertOrderStatusTransition(order.status, nextStatus);
 
-    const updatedOrder = await this.prisma.order.update({
+    const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        status: OrderStatus.calculated,
+        status: nextStatus,
         totalAmount,
         costAmount: costWithWaste + overheadCost,
         profitAmount,
@@ -187,6 +199,18 @@ export class PricingService {
         items: true,
         costCalculation: { include: { lines: true } },
         priceVersions: true
+      }
+    });
+
+    await this.auditService.logTx(db as Prisma.TransactionClient, {
+      action: 'order.price_calculated',
+      entityType: 'order',
+      entityId: orderId,
+      beforeData: { status: order.status, totalAmount: toNumber(order.totalAmount) },
+      afterData: updatedOrder,
+      metadata: {
+        calculationId: calculation.id,
+        versionNo: priceVersion.versionNo
       }
     });
 
@@ -210,17 +234,42 @@ export class PricingService {
     };
   }
 
-  async approvePrice(orderId: string, approvedById?: string) {
-    const calculation = await this.prisma.costCalculation.findUnique({
+  async approvePrice(orderId: string, approvedById?: string, tx?: Prisma.TransactionClient) {
+    const db = this.db(tx);
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null }
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status === OrderStatus.approved) {
+      return {
+        order,
+        approvedAt: order.approvedAt ?? new Date()
+      };
+    }
+
+    if (order.status === OrderStatus.draft) {
+      await this.calculateOrderPrice(orderId, tx);
+    }
+
+    const calculation = await db.costCalculation.findUnique({
       where: { orderId }
     });
 
     if (!calculation) {
-      return this.calculateOrderPrice(orderId);
+      throw new NotFoundException('Cost calculation not found');
     }
 
     const approvedAt = new Date();
-    await this.prisma.costCalculation.update({
+    const nextStatus = OrderStatus.approved;
+    assertOrderStatusTransition(order.status, nextStatus);
+
+    const beforeOrder = order;
+
+    await db.costCalculation.update({
       where: { orderId },
       data: {
         approvedAt,
@@ -228,7 +277,7 @@ export class PricingService {
       }
     });
 
-    await this.prisma.priceVersion.updateMany({
+    await db.priceVersion.updateMany({
       where: { orderId, approvedAt: null },
       data: {
         approvedAt,
@@ -236,15 +285,25 @@ export class PricingService {
       }
     });
 
-    const order = await this.prisma.order.update({
+    const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        status: OrderStatus.approved,
+        status: nextStatus,
         approvedAt
       }
     });
 
-    return { order, approvedAt };
+    await this.auditService.logTx(db as Prisma.TransactionClient, {
+      action: 'order.price_approved',
+      entityType: 'order',
+      entityId: orderId,
+      beforeData: beforeOrder,
+      afterData: updatedOrder,
+      metadata: {
+        approvedById
+      }
+    });
+
+    return { order: updatedOrder, approvedAt };
   }
 }
-

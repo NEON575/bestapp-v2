@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequestUser } from '../../common/types/request-user.interface';
 import {
   CreateCashboxDto,
   CreateInvoiceDto,
@@ -71,8 +73,8 @@ export class FinanceController {
 
   @Delete('payments/:id')
   @Roles('super_admin', 'owner')
-  removePayment(@Param('id') id: string) {
-    return this.financeService.removePayment(id);
+  removePayment(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.financeService.reversePayment(id, user?.sub);
   }
 
   @Get('receivables')

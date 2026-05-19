@@ -1,5 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InvoiceStatus, PaymentMethod, PaymentStatus, DebtStatus } from '@prisma/client';
+import {
+  DebtStatus,
+  InvoiceStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  CashboxTransactionType
+} from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CreateCashboxDto,
@@ -8,13 +16,57 @@ import {
   UpdateCashboxDto,
   UpdateInvoiceDto
 } from './dto/finance.dto';
+import { InvoiceOverpaymentException, PaymentAlreadyReversedException } from '../../common/business/exceptions';
+
+function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
+  if (value == null) return 0;
+  return typeof value === 'number' ? value : Number(value.toString());
+}
+
+function resolveDebtStatus(paidAmount: number, totalAmount: number, dueAt?: Date | null) {
+  if (paidAmount <= 0) {
+    if (dueAt && dueAt.getTime() < Date.now()) {
+      return DebtStatus.overdue;
+    }
+    return DebtStatus.open;
+  }
+
+  if (paidAmount >= totalAmount) {
+    return DebtStatus.closed;
+  }
+
+  if (dueAt && dueAt.getTime() < Date.now()) {
+    return DebtStatus.overdue;
+  }
+
+  return DebtStatus.partial;
+}
+
+function resolveInvoiceStatus(paidAmount: number, totalAmount: number, dueAt?: Date | null) {
+  if (paidAmount <= 0) {
+    return dueAt && dueAt.getTime() < Date.now() ? InvoiceStatus.overdue : InvoiceStatus.issued;
+  }
+
+  if (paidAmount >= totalAmount) {
+    return InvoiceStatus.paid;
+  }
+
+  return dueAt && dueAt.getTime() < Date.now() ? InvoiceStatus.overdue : InvoiceStatus.partially_paid;
+}
 
 @Injectable()
 export class FinanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService
+  ) {}
 
-  private async ensureInvoice(id: string) {
-    const invoice = await this.prisma.invoice.findFirst({
+  private db(tx?: Prisma.TransactionClient) {
+    return tx ?? this.prisma;
+  }
+
+  private async ensureInvoice(id: string, tx?: Prisma.TransactionClient) {
+    const invoice = await this.db(tx).invoice.findFirst({
       where: { id, deletedAt: null },
       include: { order: true, payments: true, receivable: true }
     });
@@ -24,6 +76,33 @@ export class FinanceService {
     }
 
     return invoice;
+  }
+
+  private async syncOrderAndDebt(
+    tx: Prisma.TransactionClient,
+    invoice: { id: string; orderId: string; totalAmount: number; paidAmount: number; dueAt?: Date | null }
+  ) {
+    const paidAmount = invoice.paidAmount;
+    const totalAmount = invoice.totalAmount;
+    const order = await tx.order.findUnique({ where: { id: invoice.orderId } });
+
+    if (order) {
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          paidAmount,
+          customerDebtAmount: Math.max(totalAmount - paidAmount, 0)
+        }
+      });
+    }
+
+    await tx.receivable.updateMany({
+      where: { invoiceId: invoice.id },
+      data: {
+        paidAmount,
+        status: resolveDebtStatus(paidAmount, totalAmount, invoice.dueAt)
+      }
+    });
   }
 
   findAllInvoices() {
@@ -43,53 +122,76 @@ export class FinanceService {
   }
 
   async createInvoice(dto: CreateInvoiceDto) {
-    const invoice = await this.prisma.invoice.create({
-      data: {
-        orderId: dto.orderId,
-        number: dto.number,
-        status: (dto.status as InvoiceStatus) ?? InvoiceStatus.draft,
-        totalAmount: dto.totalAmount,
-        paidAmount: dto.paidAmount ?? 0,
-        dueAt: dto.dueAt ? new Date(dto.dueAt) : null
-      }
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existingOrder = await tx.order.findUnique({
+          where: { id: dto.orderId },
+          include: { customer: true }
+        });
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: dto.orderId },
-      include: { customer: true }
-    });
-
-    if (order) {
-      await this.prisma.receivable.upsert({
-        where: { orderId: dto.orderId },
-        update: {
-          invoiceId: invoice.id,
-          amount: dto.totalAmount,
-          paidAmount: dto.paidAmount ?? 0,
-          dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
-          status: (dto.paidAmount ?? 0) >= dto.totalAmount ? DebtStatus.closed : DebtStatus.open
-        },
-        create: {
-          customerId: order.customerId,
-          orderId: dto.orderId,
-          invoiceId: invoice.id,
-          amount: dto.totalAmount,
-          paidAmount: dto.paidAmount ?? 0,
-          dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
-          status: (dto.paidAmount ?? 0) >= dto.totalAmount ? DebtStatus.closed : DebtStatus.open
+        if (!existingOrder) {
+          throw new NotFoundException('Order not found');
         }
-      });
 
-      await this.prisma.order.update({
-        where: { id: dto.orderId },
-        data: {
-          customerDebtAmount: Math.max(dto.totalAmount - (dto.paidAmount ?? 0), 0),
-          paidAmount: dto.paidAmount ?? 0
+        const paidAmount = dto.paidAmount ?? 0;
+        if (paidAmount > dto.totalAmount) {
+          throw new InvoiceOverpaymentException();
         }
-      });
-    }
 
-    return invoice;
+        const invoice = await tx.invoice.create({
+          data: {
+            orderId: dto.orderId,
+            number: dto.number,
+            status: (dto.status as InvoiceStatus) ?? resolveInvoiceStatus(paidAmount, dto.totalAmount, dto.dueAt ? new Date(dto.dueAt) : null),
+            totalAmount: dto.totalAmount,
+            paidAmount,
+            dueAt: dto.dueAt ? new Date(dto.dueAt) : null
+          }
+        });
+
+        const receivable = await tx.receivable.upsert({
+          where: { orderId: dto.orderId },
+          update: {
+            invoiceId: invoice.id,
+            amount: dto.totalAmount,
+            paidAmount,
+            dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
+            status: resolveDebtStatus(paidAmount, dto.totalAmount, dto.dueAt ? new Date(dto.dueAt) : null)
+          },
+          create: {
+            customerId: existingOrder.customerId,
+            orderId: dto.orderId,
+            invoiceId: invoice.id,
+            amount: dto.totalAmount,
+            paidAmount,
+            dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
+            status: resolveDebtStatus(paidAmount, dto.totalAmount, dto.dueAt ? new Date(dto.dueAt) : null)
+          }
+        });
+
+        await tx.order.update({
+          where: { id: dto.orderId },
+          data: {
+            customerDebtAmount: Math.max(dto.totalAmount - paidAmount, 0),
+            paidAmount
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'invoice.created',
+          entityType: 'invoice',
+          entityId: invoice.id,
+          afterData: invoice,
+          metadata: {
+            orderId: dto.orderId,
+            receivableId: receivable.id
+          }
+        });
+
+        return invoice;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   updateInvoice(id: string, dto: UpdateInvoiceDto) {
@@ -100,6 +202,24 @@ export class FinanceService {
         totalAmount: dto.totalAmount,
         paidAmount: dto.paidAmount,
         dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined
+      }
+    });
+  }
+
+  updatePayment(id: string, dto: CreatePaymentDto) {
+    return this.prisma.payment.update({
+      where: { id },
+      data: {
+        orderId: dto.orderId,
+        invoiceId: dto.invoiceId,
+        cashboxId: dto.cashboxId,
+        amount: dto.amount,
+        method: dto.method as PaymentMethod,
+        status: dto.status as PaymentStatus | undefined,
+        paidAt: dto.paidAt ? new Date(dto.paidAt) : undefined,
+        reference: dto.reference,
+        note: dto.note,
+        createdById: dto.createdById
       }
     });
   }
@@ -122,7 +242,8 @@ export class FinanceService {
         invoice: true,
         cashbox: true,
         allocations: true,
-        createdBy: true
+        createdBy: true,
+        reversedBy: true
       }
     });
   }
@@ -135,114 +256,240 @@ export class FinanceService {
         invoice: true,
         cashbox: true,
         allocations: true,
-        createdBy: true
+        createdBy: true,
+        reversedBy: true
       }
     });
   }
 
   async createPayment(dto: CreatePaymentDto) {
-    const payment = await this.prisma.payment.create({
-      data: {
-        orderId: dto.orderId,
-        invoiceId: dto.invoiceId,
-        cashboxId: dto.cashboxId,
-        amount: dto.amount,
-        method: (dto.method as PaymentMethod) ?? PaymentMethod.other,
-        status: (dto.status as PaymentStatus) ?? PaymentStatus.completed,
-        paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
-        reference: dto.reference,
-        note: dto.note,
-        createdById: dto.createdById
-      }
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const invoice = dto.invoiceId ? await this.ensureInvoice(dto.invoiceId, tx) : null;
+        const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
 
-    if (dto.invoiceId) {
-      const invoice = await this.ensureInvoice(dto.invoiceId);
-      const nextPaid = Number(invoice.paidAmount) + Number(dto.amount);
-      const status = nextPaid >= Number(invoice.totalAmount)
-        ? InvoiceStatus.paid
-        : nextPaid > 0
-          ? InvoiceStatus.partially_paid
-          : InvoiceStatus.issued;
-
-      await this.prisma.invoice.update({
-        where: { id: dto.invoiceId },
-        data: {
-          paidAmount: nextPaid,
-          status,
-          paidAt: status === InvoiceStatus.paid ? payment.paidAt : undefined,
-          closedAt: status === InvoiceStatus.paid ? new Date() : undefined
+        if (invoice) {
+          const nextPaid = toNumber(invoice.paidAmount) + dto.amount;
+          if (nextPaid > toNumber(invoice.totalAmount)) {
+            throw new InvoiceOverpaymentException();
+          }
         }
-      });
 
-      await this.prisma.paymentAllocation.create({
-        data: {
-          paymentId: payment.id,
-          invoiceId: dto.invoiceId,
-          amount: dto.amount,
-          note: dto.reference
-        }
-      });
-
-      await this.prisma.receivable.updateMany({
-        where: { invoiceId: dto.invoiceId },
-        data: {
-          paidAmount: nextPaid,
-          status: status === InvoiceStatus.paid ? DebtStatus.closed : DebtStatus.partial
-        }
-      });
-
-      const order = await this.prisma.order.findUnique({ where: { id: invoice.orderId } });
-      if (order) {
-        await this.prisma.order.update({
-          where: { id: order.id },
+        const payment = await tx.payment.create({
           data: {
-            paidAmount: nextPaid,
-            customerDebtAmount: Math.max(Number(invoice.totalAmount) - nextPaid, 0)
+            orderId: dto.orderId,
+            invoiceId: dto.invoiceId,
+            cashboxId: dto.cashboxId,
+            amount: dto.amount,
+            method: (dto.method as PaymentMethod) ?? PaymentMethod.other,
+            status: (dto.status as PaymentStatus) ?? PaymentStatus.completed,
+            paidAt,
+            reference: dto.reference,
+            note: dto.note,
+            createdById: dto.createdById
           }
         });
-      }
-    }
 
-    if (dto.orderId && !dto.invoiceId) {
-      await this.prisma.paymentAllocation.create({
-        data: {
-          paymentId: payment.id,
-          amount: dto.amount,
-          note: dto.reference
+        if (dto.invoiceId) {
+          const nextPaid = toNumber(invoice!.paidAmount) + dto.amount;
+          const invoiceStatus = resolveInvoiceStatus(nextPaid, toNumber(invoice!.totalAmount), invoice!.dueAt);
+
+          await tx.invoice.update({
+            where: { id: dto.invoiceId },
+            data: {
+              paidAmount: nextPaid,
+              status: invoiceStatus,
+              paidAt: invoiceStatus === InvoiceStatus.paid ? paidAt : invoice!.paidAt,
+              closedAt: invoiceStatus === InvoiceStatus.paid ? new Date() : null
+            }
+          });
+
+          await tx.paymentAllocation.create({
+            data: {
+              paymentId: payment.id,
+              invoiceId: dto.invoiceId,
+              amount: dto.amount,
+              note: dto.reference
+            }
+          });
+
+          await this.syncOrderAndDebt(tx, {
+            id: invoice!.id,
+            orderId: invoice!.orderId,
+            totalAmount: toNumber(invoice!.totalAmount),
+            paidAmount: nextPaid,
+            dueAt: invoice!.dueAt
+          });
+        } else if (dto.orderId) {
+          await tx.paymentAllocation.create({
+            data: {
+              paymentId: payment.id,
+              amount: dto.amount,
+              note: dto.reference
+            }
+          });
+
+          const order = await tx.order.findUnique({ where: { id: dto.orderId } });
+          if (order) {
+            await tx.order.update({
+              where: { id: order.id },
+              data: {
+                paidAmount: toNumber(order.paidAmount) + dto.amount,
+                customerDebtAmount: Math.max(toNumber(order.totalAmount) - (toNumber(order.paidAmount) + dto.amount), 0)
+              }
+            });
+          }
         }
-      });
-    }
 
-    return payment;
+        if (dto.method === PaymentMethod.cash && dto.cashboxId) {
+          const cashbox = await tx.cashbox.findUnique({
+            where: { id: dto.cashboxId }
+          });
+
+          if (cashbox) {
+            await tx.cashbox.update({
+              where: { id: cashbox.id },
+              data: {
+                currentBalance: toNumber(cashbox.currentBalance) + dto.amount
+              }
+            });
+
+            await tx.cashboxTransaction.create({
+              data: {
+                cashboxId: cashbox.id,
+                paymentId: payment.id,
+                createdById: dto.createdById,
+                type: CashboxTransactionType.income,
+                method: PaymentMethod.cash,
+                amount: dto.amount,
+                reference: dto.reference,
+                note: dto.note
+              }
+            });
+          }
+        }
+
+        await this.auditService.logTx(tx, {
+          action: 'payment.created',
+          entityType: 'payment',
+          entityId: payment.id,
+          afterData: payment,
+          metadata: {
+            invoiceId: dto.invoiceId ?? null,
+            orderId: dto.orderId ?? null
+          }
+        });
+
+        return payment;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
-  updatePayment(id: string, dto: CreatePaymentDto) {
-    return this.prisma.payment.update({
-      where: { id },
-      data: {
-        orderId: dto.orderId,
-        invoiceId: dto.invoiceId,
-        cashboxId: dto.cashboxId,
-        amount: dto.amount,
-        method: dto.method as PaymentMethod | undefined,
-        status: dto.status as PaymentStatus | undefined,
-        paidAt: dto.paidAt ? new Date(dto.paidAt) : undefined,
-        reference: dto.reference,
-        note: dto.note,
-        createdById: dto.createdById
-      }
-    });
+  async reversePayment(id: string, reversedById?: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const payment = await tx.payment.findFirst({
+          where: { id, deletedAt: null },
+          include: { invoice: true, order: true, cashbox: true, allocations: true }
+        });
+
+        if (!payment) {
+          throw new NotFoundException('Payment not found');
+        }
+
+        if (payment.status === PaymentStatus.reversed) {
+          throw new PaymentAlreadyReversedException();
+        }
+
+        const beforePayment = payment;
+        const paidAmount = toNumber(payment.amount);
+
+        if (payment.invoiceId && payment.invoice) {
+          const nextPaid = Math.max(toNumber(payment.invoice.paidAmount) - paidAmount, 0);
+          const invoiceStatus = resolveInvoiceStatus(nextPaid, toNumber(payment.invoice.totalAmount), payment.invoice.dueAt);
+
+          await tx.invoice.update({
+            where: { id: payment.invoiceId },
+            data: {
+              paidAmount: nextPaid,
+              status: invoiceStatus,
+              closedAt: invoiceStatus === InvoiceStatus.paid ? new Date() : null
+            }
+          });
+
+          await this.syncOrderAndDebt(tx, {
+            id: payment.invoice.id,
+            orderId: payment.invoice.orderId,
+            totalAmount: toNumber(payment.invoice.totalAmount),
+            paidAmount: nextPaid,
+            dueAt: payment.invoice.dueAt
+          });
+        }
+
+        if (payment.orderId && !payment.invoiceId && payment.order) {
+          await tx.order.update({
+            where: { id: payment.orderId },
+            data: {
+              paidAmount: Math.max(toNumber(payment.order.paidAmount) - paidAmount, 0),
+              customerDebtAmount: Math.max(
+                toNumber(payment.order.totalAmount) - Math.max(toNumber(payment.order.paidAmount) - paidAmount, 0),
+                0
+              )
+            }
+          });
+        }
+
+        if (payment.method === PaymentMethod.cash && payment.cashboxId && payment.cashbox) {
+          await tx.cashbox.update({
+            where: { id: payment.cashboxId },
+            data: {
+              currentBalance: toNumber(payment.cashbox.currentBalance) - paidAmount
+            }
+          });
+
+          await tx.cashboxTransaction.create({
+            data: {
+              cashboxId: payment.cashboxId,
+              paymentId: payment.id,
+              createdById: reversedById,
+              type: CashboxTransactionType.expense,
+              method: PaymentMethod.cash,
+              amount: paidAmount,
+              reference: `reverse:${payment.id}`,
+              note: payment.note
+            }
+          });
+        }
+
+        const updated = await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.reversed,
+            reversedAt: new Date(),
+            reversedById
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'payment.reversed',
+          entityType: 'payment',
+          entityId: payment.id,
+          beforeData: beforePayment,
+          afterData: updated,
+          metadata: {
+            reversedById: reversedById ?? null
+          }
+        });
+
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   removePayment(id: string) {
-    return this.prisma.payment.update({
-      where: { id },
-      data: {
-        status: PaymentStatus.reversed,
-        deletedAt: new Date()
-      }
-    });
+    return this.reversePayment(id);
   }
 
   findReceivables() {

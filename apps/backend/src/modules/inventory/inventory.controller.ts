@@ -87,6 +87,18 @@ export class InventoryController {
     return this.inventoryService.reserve(dto);
   }
 
+  @Post('reservations/:id/release')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
+  releaseReservation(@Param('id') id: string) {
+    return this.inventoryService.releaseReservation(id);
+  }
+
+  @Post('reservations/:id/consume')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
+  consumeReservation(@Param('id') id: string) {
+    return this.inventoryService.consumeReservation(id);
+  }
+
   @Post('write-off')
   @Roles('super_admin', 'owner', 'warehouse', 'production')
   writeOff(@Body() dto: WriteOffStockDto) {

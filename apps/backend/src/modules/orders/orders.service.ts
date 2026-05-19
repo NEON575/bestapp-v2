@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, OrderStatus, ProductionJobStatus, InvoiceStatus } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/order.dto';
 import { PricingService } from '../pricing/pricing.service';
+import { assertOrderStatusTransition } from '../../common/business/order-status';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -17,7 +19,8 @@ function roundMoney(value: number) {
 export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pricingService: PricingService
+    private readonly pricingService: PricingService,
+    private readonly auditService: AuditService
   ) {}
 
   private async nextOrderNumber() {
@@ -82,148 +85,327 @@ export class OrdersService {
   }
 
   async create(dto: CreateOrderDto) {
-    const number = dto.number ?? (await this.nextOrderNumber());
-    const items = dto.items ?? [];
-    const totalAmount = roundMoney(
-      items.reduce((sum, item) => sum + toNumber(item.totalPrice || item.unitPrice * item.quantity), 0)
-    );
-
-    return this.prisma.order.create({
-      data: {
-        number,
-        customerId: dto.customerId,
-        managerId: dto.managerId,
-        status: (dto.status as OrderStatus) ?? OrderStatus.draft,
-        deadlineAt: dto.deadlineAt ? new Date(dto.deadlineAt) : null,
-        comment: dto.comment,
-        totalAmount,
-        items: items.length
-          ? {
-              create: items.map((item) => ({
-                name: item.name,
-                productType: item.productType,
-                width: item.width,
-                height: item.height,
-                quantity: item.quantity,
-                colorMode: item.colorMode as any,
-                materialId: item.materialId,
-                finishingOptions: item.finishingOptions as any,
-                unitCost: item.unitCost ?? 0,
-                totalCost: item.totalCost ?? 0,
-                unitPrice: item.unitPrice,
-                totalPrice: item.totalPrice,
-                comment: item.comment
-              }))
+    return this.prisma.$transaction(
+      async (tx) => {
+        let number = dto.number;
+        if (!number) {
+          const sequence = await tx.numberSequence.upsert({
+            where: { key: 'order' },
+            update: { currentValue: { increment: 1 } },
+            create: {
+              key: 'order',
+              prefix: 'ORD-',
+              currentValue: 1,
+              step: 1,
+              padding: 6
             }
-          : undefined
+          });
+
+          number = `${sequence.prefix}${sequence.currentValue.toString().padStart(sequence.padding, '0')}`;
+        }
+
+        const items = dto.items ?? [];
+        const totalAmount = roundMoney(
+          items.reduce((sum, item) => sum + toNumber(item.totalPrice || item.unitPrice * item.quantity), 0)
+        );
+
+        const order = await tx.order.create({
+          data: {
+            number,
+            customerId: dto.customerId,
+            managerId: dto.managerId,
+            status: (dto.status as OrderStatus) ?? OrderStatus.draft,
+            deadlineAt: dto.deadlineAt ? new Date(dto.deadlineAt) : null,
+            comment: dto.comment,
+            totalAmount,
+            items: items.length
+              ? {
+                  create: items.map((item) => ({
+                    name: item.name,
+                    productType: item.productType,
+                    width: item.width,
+                    height: item.height,
+                    quantity: item.quantity,
+                    colorMode: item.colorMode as any,
+                    materialId: item.materialId,
+                    finishingOptions: item.finishingOptions as any,
+                    unitCost: item.unitCost ?? 0,
+                    totalCost: item.totalCost ?? 0,
+                    unitPrice: item.unitPrice,
+                    totalPrice: item.totalPrice,
+                    comment: item.comment
+                  }))
+                }
+              : undefined
+          },
+          include: {
+            items: true,
+            customer: true
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'order.created',
+          entityType: 'order',
+          entityId: order.id,
+          afterData: order,
+          metadata: {
+            number: order.number
+          }
+        });
+
+        return order;
       },
-      include: {
-        items: true,
-        customer: true
-      }
-    });
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async update(id: string, dto: UpdateOrderDto) {
-    await this.getOrderOrThrow(id);
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        number: dto.number,
-        customerId: dto.customerId,
-        managerId: dto.managerId,
-        status: dto.status as OrderStatus | undefined,
-        deadlineAt: dto.deadlineAt ? new Date(dto.deadlineAt) : undefined,
-        comment: dto.comment
-      }
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.order.findFirst({ where: { id, deletedAt: null } });
+
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
+
+        if (dto.status) {
+          assertOrderStatusTransition(order.status, dto.status as OrderStatus);
+        }
+
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            number: dto.number,
+            customerId: dto.customerId,
+            managerId: dto.managerId,
+            status: dto.status as OrderStatus | undefined,
+            deadlineAt: dto.deadlineAt ? new Date(dto.deadlineAt) : undefined,
+            comment: dto.comment
+          }
+        });
+
+        if (dto.status) {
+          await this.auditService.logTx(tx, {
+            action: 'order.status_changed',
+            entityType: 'order',
+            entityId: id,
+            beforeData: order,
+            afterData: updated,
+            metadata: {
+              nextStatus: dto.status
+            }
+          });
+        }
+
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   remove(id: string) {
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.cancelled,
-        cancelledAt: new Date(),
-        deletedAt: new Date()
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({ where: { id, deletedAt: null } });
+      if (!order) {
+        throw new NotFoundException('Order not found');
       }
-    });
+
+      assertOrderStatusTransition(order.status, OrderStatus.cancelled);
+
+      const updated = await tx.order.update({
+        where: { id },
+        data: {
+          status: OrderStatus.cancelled,
+          cancelledAt: new Date(),
+          deletedAt: new Date()
+        }
+      });
+
+      await this.auditService.logTx(tx, {
+        action: 'order.cancelled',
+        entityType: 'order',
+        entityId: id,
+        beforeData: order,
+        afterData: updated
+      });
+
+      return updated;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   calculatePrice(id: string) {
-    return this.pricingService.calculateOrderPrice(id);
+    return this.prisma.$transaction(
+      (tx) => this.pricingService.calculateOrderPrice(id, tx),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   approve(id: string, approvedById?: string) {
-    return this.pricingService.approvePrice(id, approvedById);
+    return this.prisma.$transaction(
+      (tx) => this.pricingService.approvePrice(id, approvedById, tx),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async startProduction(id: string) {
-    const order = await this.getOrderOrThrow(id);
-    const route = order.productionRoutes[0];
-    const jobNumber = `JOB-${order.sequenceNo.toString().padStart(6, '0')}`;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.order.findFirst({
+          where: { id, deletedAt: null },
+          include: { productionJobs: true, productionRoutes: true }
+        });
 
-    const job = await this.prisma.productionJob.create({
-      data: {
-        orderId: id,
-        routeId: route?.id,
-        number: jobNumber,
-        status: ProductionJobStatus.in_progress,
-        startedAt: new Date()
-      }
-    });
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
 
-    await this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.in_production,
-        startedProductionAt: new Date()
-      }
-    });
+        if (order.status === OrderStatus.in_production) {
+          return order.productionJobs[0] ?? null;
+        }
 
-    return job;
+        assertOrderStatusTransition(order.status, OrderStatus.in_production);
+
+        const route = order.productionRoutes[0];
+        const jobNumber = `JOB-${order.sequenceNo.toString().padStart(6, '0')}`;
+
+        const job = await tx.productionJob.create({
+          data: {
+            orderId: id,
+            routeId: route?.id,
+            number: jobNumber,
+            status: ProductionJobStatus.in_progress,
+            startedAt: new Date()
+          }
+        });
+
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.in_production,
+            startedProductionAt: new Date()
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'order.status_changed',
+          entityType: 'order',
+          entityId: id,
+          beforeData: { status: order.status },
+          afterData: updated,
+          metadata: {
+            nextStatus: OrderStatus.in_production,
+            productionJobId: job.id
+          }
+        });
+
+        return job;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async markReady(id: string) {
-    await this.getOrderOrThrow(id);
-    await this.prisma.productionJob.updateMany({
-      where: { orderId: id, deletedAt: null },
-      data: {
-        status: ProductionJobStatus.completed,
-        finishedAt: new Date()
-      }
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.order.findFirst({
+          where: { id, deletedAt: null },
+          include: { productionJobs: true }
+        });
 
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.ready,
-        readyAt: new Date()
-      }
-    });
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
+
+        if (order.status === OrderStatus.ready) {
+          return order;
+        }
+
+        assertOrderStatusTransition(order.status, OrderStatus.ready);
+
+        await tx.productionJob.updateMany({
+          where: { orderId: id, deletedAt: null },
+          data: {
+            status: ProductionJobStatus.completed,
+            finishedAt: new Date()
+          }
+        });
+
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.ready,
+            readyAt: new Date()
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'order.status_changed',
+          entityType: 'order',
+          entityId: id,
+          beforeData: { status: order.status },
+          afterData: updated,
+          metadata: {
+            nextStatus: OrderStatus.ready
+          }
+        });
+
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async deliver(id: string) {
-    const order = await this.getOrderOrThrow(id);
-    const paidAmount = toNumber(order.paidAmount);
-    const totalAmount = toNumber(order.totalAmount);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.order.findFirst({
+          where: { id, deletedAt: null },
+          include: { invoices: true, receivable: true }
+        });
 
-    await this.prisma.invoice.updateMany({
-      where: { orderId: id, deletedAt: null },
-      data: {
-        status: totalAmount <= paidAmount ? InvoiceStatus.paid : InvoiceStatus.partially_paid,
-        closedAt: totalAmount <= paidAmount ? new Date() : null
-      }
-    });
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.delivered,
-        deliveredAt: new Date(),
-        customerDebtAmount: Math.max(totalAmount - paidAmount, 0)
-      }
-    });
+        if (order.status === OrderStatus.delivered) {
+          return order;
+        }
+
+        assertOrderStatusTransition(order.status, OrderStatus.delivered);
+
+        const paidAmount = toNumber(order.paidAmount);
+        const totalAmount = toNumber(order.totalAmount);
+
+        await tx.invoice.updateMany({
+          where: { orderId: id, deletedAt: null },
+          data: {
+            status: totalAmount <= paidAmount ? InvoiceStatus.paid : InvoiceStatus.partially_paid,
+            closedAt: totalAmount <= paidAmount ? new Date() : null
+          }
+        });
+
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.delivered,
+            deliveredAt: new Date(),
+            customerDebtAmount: Math.max(totalAmount - paidAmount, 0)
+          }
+        });
+
+        await this.auditService.logTx(tx, {
+          action: 'order.delivered',
+          entityType: 'order',
+          entityId: id,
+          beforeData: { status: order.status, paidAmount },
+          afterData: updated
+        });
+
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async profitability(id: string) {

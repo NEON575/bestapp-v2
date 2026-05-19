@@ -123,6 +123,60 @@ Prisma is used instead of TypeORM because:
 - `POST /api/v1/orders/:id/mark-ready`
 - `POST /api/v1/orders/:id/deliver`
 - `POST /api/v1/inventory/reserve`
+- `POST /api/v1/inventory/reservations/:id/release`
+- `POST /api/v1/inventory/reservations/:id/consume`
 - `POST /api/v1/inventory/write-off`
 - `POST /api/v1/finance/payments`
 - `GET /api/v1/orders/:id/profitability`
+
+## Phase 2.2 scope
+
+The backend now enforces transaction-safe and accounting-safe workflows for the printing house.
+
+### Transaction-safe flows
+
+- order creation
+- price calculation
+- price approval
+- start production
+- stock reservation
+- stock release
+- stock consumption / write-off
+- invoice creation
+- payment creation
+- payment reversal
+- order delivery
+
+### Inventory rules
+
+- `purchase_in` increases `onHand`
+- `write_off` decreases `onHand`
+- `waste` decreases `onHand`
+- `return` increases `onHand`
+- `adjustment` can increase or decrease `onHand`
+- `reserve` does not change `onHand`
+- `reserve` increases `reserved`
+- `available = onHand - reserved`
+
+### Reservation lifecycle
+
+- `open`
+- `reserved`
+- `released`
+- `consumed`
+- `cancelled`
+
+### Finance rules
+
+- payments are processed in a single transaction
+- partial and full payments update invoice, receivable and order balances
+- cash payments create cashbox transactions
+- payment reversal performs a reverse flow, not a soft delete
+- overpayment is rejected
+- debt state is synchronized after each payment event
+
+### Order workflow rules
+
+- allowed status transitions are enforced in the backend
+- invalid direct jumps are rejected
+- profitability is stored on the order and exposed by the API

@@ -5,6 +5,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "nest build && tsc-alias -p tsconfig.build.json",
     "start:prod": "node dist/main.js",
+    "test:unit": "node --test --import tsx test/business.spec.ts",
     "lint": "echo \"Lint is not configured yet\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

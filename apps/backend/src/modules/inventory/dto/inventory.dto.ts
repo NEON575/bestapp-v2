@@ -150,6 +150,11 @@ export class WriteOffStockDto {
   @ApiProperty()
   @IsOptional()
   @IsString()
+  reservationId?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
   orderId?: string;
 
   @ApiProperty()
