@@ -1,0 +1,22 @@
+{
+  "name": "bestapp-erp",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c green,blue \"npm run dev -w @bestapp/backend\" \"npm run dev -w @bestapp/frontend\"",
+    "build": "npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend && npm run build -w @bestapp/frontend",
+    "lint": "npm run lint -w @bestapp/backend && npm run lint -w @bestapp/frontend",
+    "db:migrate": "npm run prisma:migrate -w @bestapp/backend",
+    "db:seed": "npm run prisma:seed -w @bestapp/backend",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
+  }
+}
+

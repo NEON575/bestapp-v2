@@ -1,0 +1,12 @@
+{
+  "name": "@bestapp/ui",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "scripts": {
+    "build": "echo \"UI package is source-only for now\"",
+    "lint": "echo \"Lint is not configured yet\""
+  }
+}
+

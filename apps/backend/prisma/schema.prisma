@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash  String
+  fullName      String
+  phone        String?
+  isActive      Boolean    @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+  roles        UserRole[]
+  orders       Order[]    @relation("OrderCreatedBy")
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String         @id @default(uuid())
+  key         String         @unique
+  name        String
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique
+  name        String
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  name        String
+  companyName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  orders      Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  number         String      @unique
+  customerId     String
+  status         String      @default("draft")
+  totalAmount    Decimal     @default(0) @db.Decimal(18, 2)
+  paidAmount     Decimal     @default(0) @db.Decimal(18, 2)
+  productionStatus String    @default("pending")
+  dueDate        DateTime?
+  comment        String?
+  createdById    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  customer       Customer    @relation(fields: [customerId], references: [id])
+  createdBy      User?       @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items          OrderItem[]
+  invoices       Invoice[]
+  payments       Payment[]
+  productionJobs ProductionJob[]
+  stockMovements StockMovement[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  name       String
+  quantity   Decimal  @db.Decimal(18, 4)
+  unitPrice  Decimal  @default(0) @db.Decimal(18, 2)
+  totalPrice Decimal  @default(0) @db.Decimal(18, 2)
+  comment    String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Material {
+  id              String   @id @default(uuid())
+  name            String
+  sku             String?  @unique
+  unit            String
+  stockQuantity   Decimal  @default(0) @db.Decimal(18, 4)
+  reservedQuantity Decimal @default(0) @db.Decimal(18, 4)
+  costPrice       Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  stockMovements  StockMovement[]
+
+  @@map("materials")
+}
+
+model StockMovement {
+  id              String   @id @default(uuid())
+  materialId      String
+  orderId         String?
+  productionJobId String?
+  type            String
+  quantity        Decimal  @db.Decimal(18, 4)
+  unitCost        Decimal  @default(0) @db.Decimal(18, 4)
+  totalCost       Decimal  @default(0) @db.Decimal(18, 2)
+  note            String?
+  createdAt       DateTime @default(now())
+
+  material       Material      @relation(fields: [materialId], references: [id])
+  order          Order?        @relation(fields: [orderId], references: [id])
+  productionJob  ProductionJob? @relation(fields: [productionJobId], references: [id])
+
+  @@map("stock_movements")
+}
+
+model Invoice {
+  id           String   @id @default(uuid())
+  orderId      String
+  number       String   @unique
+  status       String   @default("draft")
+  totalAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  paidAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  issuedAt     DateTime @default(now())
+  dueAt        DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  @@map("invoices")
+}
+
+model Payment {
+  id          String   @id @default(uuid())
+  orderId     String?
+  invoiceId   String?
+  amount      Decimal  @db.Decimal(18, 2)
+  method      String
+  status      String   @default("pending")
+  paidAt      DateTime?
+  reference   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  order   Order?   @relation(fields: [orderId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@map("payments")
+}
+
+model ProductionJob {
+  id           String   @id @default(uuid())
+  orderId      String
+  number       String   @unique
+  status       String   @default("queued")
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stockMovements StockMovement[]
+
+  @@map("production_jobs")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  beforeData Json?
+  afterData  Json?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}

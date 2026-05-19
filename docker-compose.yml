@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bestapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bestapp
+      POSTGRES_USER: bestapp
+      POSTGRES_PASSWORD: bestapp123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: bestapp-backend
+    restart: unless-stopped
+    env_file:
+      - apps/backend/.env.example
+    environment:
+      DATABASE_URL: postgresql://bestapp:bestapp123@postgres:5432/bestapp?schema=public
+      PORT: 3000
+      JWT_SECRET: super-secret-dev-key-change-me
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: bestapp-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:3000/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
+

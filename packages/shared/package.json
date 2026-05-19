@@ -1,0 +1,12 @@
+{
+  "name": "@bestapp/shared",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "echo \"Shared package is source-only for now\"",
+    "lint": "echo \"Lint is not configured yet\""
+  }
+}
+
