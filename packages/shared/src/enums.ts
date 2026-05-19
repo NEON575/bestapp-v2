@@ -4,29 +4,98 @@ export enum UserRoleKey {
   MANAGER = 'manager',
   ACCOUNTANT = 'accountant',
   WAREHOUSE = 'warehouse',
-  PRODUCTION = 'production'
+  PRODUCTION = 'production',
+  CASHIER = 'cashier'
 }
 
 export enum OrderStatus {
   DRAFT = 'draft',
-  CONFIRMED = 'confirmed',
+  CALCULATED = 'calculated',
+  APPROVED = 'approved',
   IN_PRODUCTION = 'in_production',
   READY = 'ready',
-  COMPLETED = 'completed',
+  DELIVERED = 'delivered',
   CANCELLED = 'cancelled'
 }
 
+export enum OrderItemColorMode {
+  CMYK = 'cmyk',
+  RGB = 'rgb',
+  SPOT = 'spot',
+  GRAYSCALE = 'grayscale'
+}
+
 export enum StockMovementType {
+  PURCHASE_IN = 'purchase_in',
   RESERVE = 'reserve',
-  ISSUE = 'issue',
+  WRITE_OFF = 'write_off',
   RETURN = 'return',
-  ADJUSTMENT = 'adjustment'
+  ADJUSTMENT = 'adjustment',
+  WASTE = 'waste'
+}
+
+export enum ProductionOperationStatus {
+  PENDING = 'pending',
+  READY = 'ready',
+  IN_PROGRESS = 'in_progress',
+  PAUSED = 'paused',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled'
+}
+
+export enum ProductionJobStatus {
+  QUEUED = 'queued',
+  IN_PROGRESS = 'in_progress',
+  PAUSED = 'paused',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled'
 }
 
 export enum PaymentMethod {
   CASH = 'cash',
   CARD = 'card',
-  TRANSFER = 'transfer',
-  MIXED = 'mixed'
+  BANK_TRANSFER = 'bank_transfer',
+  OTHER = 'other'
+}
+
+export enum PaymentStatus {
+  PENDING = 'pending',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  REVERSED = 'reversed'
+}
+
+export enum InvoiceStatus {
+  DRAFT = 'draft',
+  ISSUED = 'issued',
+  PARTIALLY_PAID = 'partially_paid',
+  PAID = 'paid',
+  OVERDUE = 'overdue',
+  CANCELLED = 'cancelled'
+}
+
+export enum CashboxTransactionType {
+  INCOME = 'income',
+  EXPENSE = 'expense',
+  TRANSFER = 'transfer'
+}
+
+export enum DebtStatus {
+  OPEN = 'open',
+  PARTIAL = 'partial',
+  OVERDUE = 'overdue',
+  CLOSED = 'closed'
+}
+
+export enum CostLineType {
+  MATERIAL = 'material',
+  PRINTING = 'printing',
+  PREPRESS = 'prepress',
+  POSTPRESS = 'postpress',
+  LABOR = 'labor',
+  OVERHEAD = 'overhead',
+  WASTE = 'waste'
 }
 

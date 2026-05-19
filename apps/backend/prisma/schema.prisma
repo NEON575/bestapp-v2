@@ -7,31 +7,127 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum OrderStatus {
+  draft
+  calculated
+  approved
+  in_production
+  ready
+  delivered
+  cancelled
+}
+
+enum OrderItemColorMode {
+  cmyk
+  rgb
+  spot
+  grayscale
+}
+
+enum CostLineType {
+  material
+  printing
+  prepress
+  postpress
+  labor
+  overhead
+  waste
+}
+
+enum StockMovementType {
+  purchase_in
+  reserve
+  write_off
+  return
+  adjustment
+  waste
+}
+
+enum ProductionOperationStatus {
+  pending
+  ready
+  in_progress
+  paused
+  completed
+  failed
+  cancelled
+}
+
+enum ProductionJobStatus {
+  queued
+  in_progress
+  paused
+  completed
+  failed
+  cancelled
+}
+
+enum PaymentMethod {
+  cash
+  card
+  bank_transfer
+  other
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  reversed
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  overdue
+  cancelled
+}
+
+enum CashboxTransactionType {
+  income
+  expense
+  transfer
+}
+
+enum DebtStatus {
+  open
+  partial
+  overdue
+  closed
+}
+
 model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
-  passwordHash  String
-  fullName      String
-  phone        String?
-  isActive      Boolean    @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  deletedAt     DateTime?
-  roles        UserRole[]
-  orders       Order[]    @relation("OrderCreatedBy")
-  auditLogs    AuditLog[]
+  id                String              @id @default(uuid())
+  email             String              @unique
+  passwordHash      String
+  fullName          String
+  phone             String?
+  isActive          Boolean             @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
+  roles             UserRole[]
+  createdOrders     Order[]             @relation("OrderCreatedBy")
+  managedOrders     Order[]             @relation("OrderManager")
+  approvedCalculations CostCalculation[] @relation("CalculationApprovedBy")
+  approvedPriceVersions PriceVersion[]   @relation("PriceVersionApprovedBy")
+  paymentsCreated   Payment[]           @relation("PaymentCreatedBy")
+  cashboxTransactions CashboxTransaction[] @relation("CashboxTransactionCreatedBy")
+  auditLogs         AuditLog[]
 
   @@map("users")
 }
 
 model Role {
-  id          String         @id @default(uuid())
-  key         String         @unique
+  id          String            @id @default(uuid())
+  key         String            @unique
   name        String
   description String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
   deletedAt   DateTime?
   users       UserRole[]
   permissions RolePermission[]
@@ -77,149 +173,565 @@ model RolePermission {
 }
 
 model Customer {
-  id          String   @id @default(uuid())
+  id          String       @id @default(uuid())
   name        String
   companyName String?
   phone       String?
   email       String?
   address     String?
   notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
   orders      Order[]
+  receivables Receivable[]
 
   @@map("customers")
 }
 
-model Order {
-  id             String      @id @default(uuid())
-  number         String      @unique
-  customerId     String
-  status         String      @default("draft")
-  totalAmount    Decimal     @default(0) @db.Decimal(18, 2)
-  paidAmount     Decimal     @default(0) @db.Decimal(18, 2)
-  productionStatus String    @default("pending")
-  dueDate        DateTime?
-  comment        String?
-  createdById    String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  deletedAt      DateTime?
+model NumberSequence {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  prefix        String   @default("")
+  currentValue  Int      @default(0)
+  step          Int      @default(1)
+  padding       Int      @default(6)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  customer       Customer    @relation(fields: [customerId], references: [id])
-  createdBy      User?       @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  items          OrderItem[]
-  invoices       Invoice[]
-  payments       Payment[]
-  productionJobs ProductionJob[]
-  stockMovements StockMovement[]
+  @@map("number_sequences")
+}
+
+model Order {
+  id                  String              @id @default(uuid())
+  sequenceNo          Int                 @unique @default(autoincrement())
+  number              String              @unique
+  customerId          String
+  managerId           String?
+  createdById         String?
+  status              OrderStatus         @default(draft)
+  deadlineAt          DateTime?
+  approvedAt          DateTime?
+  startedProductionAt DateTime?
+  readyAt             DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  paidAmount          Decimal             @default(0) @db.Decimal(18, 2)
+  totalAmount         Decimal             @default(0) @db.Decimal(18, 2)
+  costAmount          Decimal             @default(0) @db.Decimal(18, 2)
+  profitAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  marginPercent       Decimal             @default(0) @db.Decimal(8, 2)
+  customerDebtAmount  Decimal             @default(0) @db.Decimal(18, 2)
+  comment             String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  deletedAt           DateTime?
+
+  customer            Customer            @relation(fields: [customerId], references: [id])
+  manager             User?               @relation("OrderManager", fields: [managerId], references: [id], onDelete: SetNull)
+  createdBy           User?               @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items               OrderItem[]
+  costCalculation     CostCalculation?
+  priceVersions       PriceVersion[]
+  productionRoutes    ProductionRoute[]
+  productionJobs      ProductionJob[]
+  invoices            Invoice[]
+  receivable          Receivable?
+  stockReservations   StockReservation[]
+  stockMovements      StockMovement[]
+  paymentsIssued      Payment[]
 
   @@map("orders")
 }
 
 model OrderItem {
-  id         String   @id @default(uuid())
-  orderId    String
-  name       String
-  quantity   Decimal  @db.Decimal(18, 4)
-  unitPrice  Decimal  @default(0) @db.Decimal(18, 2)
-  totalPrice Decimal  @default(0) @db.Decimal(18, 2)
-  comment    String?
+  id               String               @id @default(uuid())
+  orderId          String
+  materialId       String?
+  name             String
+  productType      String
+  width            Decimal              @db.Decimal(18, 2)
+  height           Decimal              @db.Decimal(18, 2)
+  quantity         Decimal              @db.Decimal(18, 4)
+  colorMode        OrderItemColorMode    @default(cmyk)
+  finishingOptions Json?
+  unitCost         Decimal              @default(0) @db.Decimal(18, 2)
+  totalCost        Decimal              @default(0) @db.Decimal(18, 2)
+  unitPrice        Decimal              @default(0) @db.Decimal(18, 2)
+  totalPrice       Decimal              @default(0) @db.Decimal(18, 2)
+  comment          String?
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order            Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  material         Material?            @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  stockReservations StockReservation[]
+  stockMovements   StockMovement[]
 
   @@map("order_items")
 }
 
+model MaterialCategory {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  materials   Material[]
+
+  @@map("material_categories")
+}
+
 model Material {
-  id              String   @id @default(uuid())
+  id              String          @id @default(uuid())
+  categoryId      String?
   name            String
-  sku             String?  @unique
+  sku             String?         @unique
   unit            String
-  stockQuantity   Decimal  @default(0) @db.Decimal(18, 4)
-  reservedQuantity Decimal @default(0) @db.Decimal(18, 4)
-  costPrice       Decimal  @default(0) @db.Decimal(18, 4)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
+  reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
+  costPrice       Decimal         @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
+  category        MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  stockLevels     StockLevel[]
+  stockReservations StockReservation[]
   stockMovements  StockMovement[]
+  orderItems      OrderItem[]
 
   @@map("materials")
 }
 
-model StockMovement {
-  id              String   @id @default(uuid())
-  materialId      String
-  orderId         String?
-  productionJobId String?
-  type            String
-  quantity        Decimal  @db.Decimal(18, 4)
-  unitCost        Decimal  @default(0) @db.Decimal(18, 4)
-  totalCost       Decimal  @default(0) @db.Decimal(18, 2)
-  note            String?
-  createdAt       DateTime @default(now())
+model Warehouse {
+  id          String           @id @default(uuid())
+  code        String           @unique
+  name        String
+  description String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+  stockLevels StockLevel[]
+  reservations StockReservation[]
+  movements   StockMovement[]
 
-  material       Material      @relation(fields: [materialId], references: [id])
-  order          Order?        @relation(fields: [orderId], references: [id])
-  productionJob  ProductionJob? @relation(fields: [productionJobId], references: [id])
+  @@map("warehouses")
+}
+
+model StockLevel {
+  id            String   @id @default(uuid())
+  materialId    String
+  warehouseId   String
+  onHand        Decimal  @default(0) @db.Decimal(18, 4)
+  reserved      Decimal  @default(0) @db.Decimal(18, 4)
+  available     Decimal  @default(0) @db.Decimal(18, 4)
+  updatedAt     DateTime @updatedAt
+
+  material      Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, warehouseId])
+  @@map("stock_levels")
+}
+
+model StockReservation {
+  id            String        @id @default(uuid())
+  orderId       String
+  orderItemId   String?
+  materialId    String
+  warehouseId   String
+  quantity      Decimal       @db.Decimal(18, 4)
+  status        String        @default("open")
+  reservedAt    DateTime      @default(now())
+  releasedAt    DateTime?
+  note          String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem     OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  material      Material       @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@map("stock_reservations")
+}
+
+model StockMovement {
+  id              String            @id @default(uuid())
+  materialId      String
+  warehouseId     String?
+  orderId         String?
+  orderItemId     String?
+  productionJobId String?
+  type            StockMovementType
+  quantity        Decimal           @db.Decimal(18, 4)
+  unitCost        Decimal           @default(0) @db.Decimal(18, 4)
+  totalCost       Decimal           @default(0) @db.Decimal(18, 2)
+  reference       String?
+  note            String?
+  createdAt       DateTime          @default(now())
+
+  material        Material          @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  warehouse       Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  order           Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderItem       OrderItem?        @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  productionJob   ProductionJob?    @relation(fields: [productionJobId], references: [id], onDelete: SetNull)
 
   @@map("stock_movements")
 }
 
+model CostCalculation {
+  id                  String           @id @default(uuid())
+  orderId             String           @unique
+  versionNo           Int              @default(1)
+  materialCost        Decimal          @default(0) @db.Decimal(18, 2)
+  printingCost        Decimal          @default(0) @db.Decimal(18, 2)
+  prepressCost        Decimal          @default(0) @db.Decimal(18, 2)
+  postpressCost       Decimal          @default(0) @db.Decimal(18, 2)
+  laborCost           Decimal          @default(0) @db.Decimal(18, 2)
+  overheadCost        Decimal          @default(0) @db.Decimal(18, 2)
+  wastePercent        Decimal          @default(0) @db.Decimal(8, 2)
+  profitPercent       Decimal          @default(0) @db.Decimal(8, 2)
+  finalRecommendedPrice Decimal        @default(0) @db.Decimal(18, 2)
+  approvedAt          DateTime?
+  approvedById        String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
+
+  order               Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  approvedBy          User?            @relation("CalculationApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  lines               CostCalculationLine[]
+  priceVersions       PriceVersion[]
+
+  @@map("cost_calculations")
+}
+
+model CostCalculationLine {
+  id                 String      @id @default(uuid())
+  costCalculationId  String
+  lineType           CostLineType
+  label              String
+  quantity           Decimal?    @db.Decimal(18, 4)
+  unitCost           Decimal     @default(0) @db.Decimal(18, 4)
+  totalCost          Decimal     @default(0) @db.Decimal(18, 2)
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime    @default(now())
+
+  costCalculation    CostCalculation @relation(fields: [costCalculationId], references: [id], onDelete: Cascade)
+
+  @@map("cost_calculation_lines")
+}
+
+model PriceVersion {
+  id                String      @id @default(uuid())
+  orderId           String
+  costCalculationId String?
+  versionNo         Int
+  recommendedPrice  Decimal     @default(0) @db.Decimal(18, 2)
+  finalPrice        Decimal     @default(0) @db.Decimal(18, 2)
+  marginPercent     Decimal     @default(0) @db.Decimal(8, 2)
+  approvedById      String?
+  approvedAt        DateTime?
+  note              String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  costCalculation   CostCalculation? @relation(fields: [costCalculationId], references: [id], onDelete: SetNull)
+  approvedBy        User?       @relation("PriceVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, versionNo])
+  @@map("price_versions")
+}
+
+model MarkupRule {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  appliesTo       String?
+  minCost         Decimal? @db.Decimal(18, 2)
+  maxCost         Decimal? @db.Decimal(18, 2)
+  markupPercent   Decimal  @default(0) @db.Decimal(8, 2)
+  fixedAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  priority        Int      @default(100)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  @@map("markup_rules")
+}
+
+model WorkCenter {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  name        String
+  description String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+  machines    Machine[]
+  routes      ProductionRoute[]
+  operations  ProductionOperation[]
+
+  @@map("work_centers")
+}
+
+model Machine {
+  id            String      @id @default(uuid())
+  workCenterId  String?
+  code          String      @unique
+  name          String
+  model         String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  workCenter    WorkCenter? @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  operations    ProductionOperation[]
+
+  @@map("machines")
+}
+
+model OperationTemplate {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  name              String
+  operationType     String
+  defaultDurationMin Int      @default(0)
+  defaultCost       Decimal   @default(0) @db.Decimal(18, 2)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+  operations        ProductionOperation[]
+
+  @@map("operation_templates")
+}
+
+model ProductionRoute {
+  id          String               @id @default(uuid())
+  orderId     String
+  workCenterId String?
+  name        String
+  versionNo   Int                  @default(1)
+  status      String               @default("planned")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deletedAt   DateTime?
+
+  order       Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  workCenter  WorkCenter?          @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  jobs        ProductionJob[]
+  operations  ProductionOperation[]
+
+  @@map("production_routes")
+}
+
+model ProductionJob {
+  id              String              @id @default(uuid())
+  orderId         String
+  routeId         String?
+  number          String              @unique
+  status          ProductionJobStatus  @default(queued)
+  plannedStartAt   DateTime?
+  startedAt       DateTime?
+  pausedAt        DateTime?
+  finishedAt      DateTime?
+  deadlineAt      DateTime?
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?
+
+  order           Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  route           ProductionRoute?    @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  operations      ProductionOperation[]
+  stockMovements  StockMovement[]
+
+  @@map("production_jobs")
+}
+
+model ProductionOperation {
+  id                 String                   @id @default(uuid())
+  routeId            String?
+  productionJobId    String?
+  templateId         String?
+  workCenterId       String?
+  machineId          String?
+  sequenceNo         Int
+  name               String
+  status             ProductionOperationStatus @default(pending)
+  plannedDurationMin Int                      @default(0)
+  startedAt          DateTime?
+  pausedAt           DateTime?
+  completedAt        DateTime?
+  notes              String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  deletedAt          DateTime?
+
+  route              ProductionRoute?        @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  productionJob      ProductionJob?          @relation(fields: [productionJobId], references: [id], onDelete: SetNull)
+  template           OperationTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  workCenter         WorkCenter?             @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  machine            Machine?                @relation(fields: [machineId], references: [id], onDelete: SetNull)
+
+  @@unique([routeId, sequenceNo])
+  @@map("production_operations")
+}
+
 model Invoice {
-  id           String   @id @default(uuid())
+  id           String         @id @default(uuid())
   orderId      String
-  number       String   @unique
-  status       String   @default("draft")
-  totalAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  paidAmount   Decimal  @default(0) @db.Decimal(18, 2)
-  issuedAt     DateTime @default(now())
+  number       String         @unique
+  status       InvoiceStatus  @default(draft)
+  totalAmount  Decimal        @default(0) @db.Decimal(18, 2)
+  paidAmount   Decimal        @default(0) @db.Decimal(18, 2)
   dueAt        DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  issuedAt     DateTime       @default(now())
+  paidAt       DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   deletedAt    DateTime?
-  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   payments     Payment[]
+  receivable   Receivable?
+  allocations  PaymentAllocation[]
 
   @@map("invoices")
 }
 
 model Payment {
-  id          String   @id @default(uuid())
+  id          String         @id @default(uuid())
   orderId     String?
   invoiceId   String?
-  amount      Decimal  @db.Decimal(18, 2)
-  method      String
-  status      String   @default("pending")
+  cashboxId   String?
+  createdById String?
+  amount      Decimal        @db.Decimal(18, 2)
+  method      PaymentMethod
+  status      PaymentStatus  @default(pending)
   paidAt      DateTime?
   reference   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  note        String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
 
-  order   Order?   @relation(fields: [orderId], references: [id])
-  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  order       Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  invoice     Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  cashbox     Cashbox?       @relation(fields: [cashboxId], references: [id], onDelete: SetNull)
+  createdBy   User?          @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  allocations PaymentAllocation[]
+  cashboxTransactions CashboxTransaction[]
 
   @@map("payments")
 }
 
-model ProductionJob {
-  id           String   @id @default(uuid())
-  orderId      String
-  number       String   @unique
-  status       String   @default("queued")
-  startedAt    DateTime?
-  finishedAt   DateTime?
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model PaymentAllocation {
+  id          String   @id @default(uuid())
+  paymentId   String
+  invoiceId   String?
+  receivableId String?
+  payableId   String?
+  amount      Decimal  @db.Decimal(18, 2)
+  allocatedAt DateTime @default(now())
+  note        String?
+
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice     Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  receivable  Receivable? @relation(fields: [receivableId], references: [id], onDelete: SetNull)
+  payable     Payable?  @relation(fields: [payableId], references: [id], onDelete: SetNull)
+
+  @@map("payment_allocations")
+}
+
+model Receivable {
+  id           String     @id @default(uuid())
+  customerId   String
+  orderId      String?    @unique
+  invoiceId    String?    @unique
+  amount       Decimal    @db.Decimal(18, 2)
+  paidAmount   Decimal    @default(0) @db.Decimal(18, 2)
+  dueAt        DateTime?
+  status       DebtStatus @default(open)
+  overdueAt    DateTime?
+  note         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
-  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  stockMovements StockMovement[]
+  customer     Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order        Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  invoice      Invoice?   @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  allocations  PaymentAllocation[]
 
-  @@map("production_jobs")
+  @@map("receivables")
+}
+
+model Payable {
+  id                 String     @id @default(uuid())
+  counterpartyName   String
+  purchaseReference  String?
+  amount             Decimal    @db.Decimal(18, 2)
+  paidAmount         Decimal    @default(0) @db.Decimal(18, 2)
+  dueAt              DateTime?
+  status             DebtStatus @default(open)
+  overdueAt          DateTime?
+  note               String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  deletedAt          DateTime?
+  allocations        PaymentAllocation[]
+
+  @@map("payables")
+}
+
+model Cashbox {
+  id             String               @id @default(uuid())
+  code           String               @unique
+  name           String
+  currencyCode   String               @default("USD")
+  openingBalance  Decimal              @default(0) @db.Decimal(18, 2)
+  currentBalance  Decimal              @default(0) @db.Decimal(18, 2)
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  payments       Payment[]
+  transactions   CashboxTransaction[]
+
+  @@map("cashboxes")
+}
+
+model CashboxTransaction {
+  id          String                @id @default(uuid())
+  cashboxId   String
+  paymentId   String?
+  createdById String?
+  type        CashboxTransactionType
+  method      PaymentMethod
+  amount      Decimal               @db.Decimal(18, 2)
+  reference   String?
+  note        String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  deletedAt   DateTime?
+
+  cashbox     Cashbox               @relation(fields: [cashboxId], references: [id], onDelete: Cascade)
+  payment     Payment?              @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  createdBy   User?                 @relation("CashboxTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("cashbox_transactions")
 }
 
 model AuditLog {
@@ -235,7 +747,7 @@ model AuditLog {
   userAgent  String?
   createdAt  DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("audit_logs")
 }

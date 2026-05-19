@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequestUser } from '../../common/types/request-user.interface';
 import { CreateOrderDto, UpdateOrderDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
@@ -37,5 +39,41 @@ export class OrdersController {
   @Roles('super_admin', 'owner')
   remove(@Param('id') id: string) {
     return this.ordersService.remove(id);
+  }
+
+  @Post(':id/calculate-price')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  calculatePrice(@Param('id') id: string) {
+    return this.ordersService.calculatePrice(id);
+  }
+
+  @Post(':id/approve')
+  @Roles('super_admin', 'owner', 'manager')
+  approve(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.ordersService.approve(id, user?.sub);
+  }
+
+  @Post(':id/start-production')
+  @Roles('super_admin', 'owner', 'manager', 'production')
+  startProduction(@Param('id') id: string) {
+    return this.ordersService.startProduction(id);
+  }
+
+  @Post(':id/mark-ready')
+  @Roles('super_admin', 'owner', 'manager', 'production')
+  markReady(@Param('id') id: string) {
+    return this.ordersService.markReady(id);
+  }
+
+  @Post(':id/deliver')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  deliver(@Param('id') id: string) {
+    return this.ordersService.deliver(id);
+  }
+
+  @Get(':id/profitability')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  profitability(@Param('id') id: string) {
+    return this.ordersService.profitability(id);
   }
 }

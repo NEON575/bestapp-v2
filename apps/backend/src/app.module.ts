@@ -8,6 +8,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { PricingModule } from './modules/pricing/pricing.module';
 import { ProductionModule } from './modules/production/production.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
@@ -26,6 +27,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     RolesModule,
     CustomersModule,
     OrdersModule,
+    PricingModule,
     InventoryModule,
     FinanceModule,
     ProductionModule,

@@ -15,6 +15,12 @@ export class ProductionController {
     return this.productionService.findAll();
   }
 
+  @Get('jobs/:id')
+  @Roles('super_admin', 'owner', 'production', 'manager')
+  findOne(@Param('id') id: string) {
+    return this.productionService.findOne(id);
+  }
+
   @Post('jobs')
   @Roles('super_admin', 'owner', 'production', 'manager')
   create(@Body() dto: CreateProductionJobDto) {
@@ -33,4 +39,3 @@ export class ProductionController {
     return this.productionService.remove(id);
   }
 }
-

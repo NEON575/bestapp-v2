@@ -1,13 +1,31 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
   ValidateNested
 } from 'class-validator';
-import { Type } from 'class-transformer';
+
+export enum OrderStatusDto {
+  draft = 'draft',
+  calculated = 'calculated',
+  approved = 'approved',
+  in_production = 'in_production',
+  ready = 'ready',
+  delivered = 'delivered',
+  cancelled = 'cancelled'
+}
+
+export enum OrderItemColorModeDto {
+  cmyk = 'cmyk',
+  rgb = 'rgb',
+  spot = 'spot',
+  grayscale = 'grayscale'
+}
 
 export class CreateOrderItemDto {
   @ApiProperty()
@@ -15,12 +33,52 @@ export class CreateOrderItemDto {
   name!: string;
 
   @ApiProperty()
+  @IsString()
+  productType!: string;
+
+  @ApiProperty()
+  @IsNumber()
+  width!: number;
+
+  @ApiProperty()
+  @IsNumber()
+  height!: number;
+
+  @ApiProperty()
   @IsNumber()
   quantity!: number;
+
+  @ApiProperty({ enum: OrderItemColorModeDto })
+  @IsEnum(OrderItemColorModeDto)
+  colorMode!: OrderItemColorModeDto;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  materialId?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  finishingOptions?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsNumber()
+  unitCost?: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsNumber()
+  totalCost?: number;
 
   @ApiProperty()
   @IsNumber()
   unitPrice!: number;
+
+  @ApiProperty()
+  @IsNumber()
+  totalPrice!: number;
 
   @ApiProperty()
   @IsOptional()
@@ -30,8 +88,9 @@ export class CreateOrderItemDto {
 
 export class CreateOrderDto {
   @ApiProperty()
+  @IsOptional()
   @IsString()
-  number!: string;
+  number?: string;
 
   @ApiProperty()
   @IsString()
@@ -40,17 +99,17 @@ export class CreateOrderDto {
   @ApiProperty()
   @IsOptional()
   @IsString()
-  status?: string;
+  managerId?: string;
 
-  @ApiProperty()
+  @ApiProperty({ enum: OrderStatusDto })
   @IsOptional()
-  @IsString()
-  productionStatus?: string;
+  @IsEnum(OrderStatusDto)
+  status?: OrderStatusDto;
 
   @ApiProperty()
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  deadlineAt?: string;
 
   @ApiProperty()
   @IsOptional()
@@ -66,4 +125,3 @@ export class CreateOrderDto {
 }
 
 export class UpdateOrderDto extends PartialType(CreateOrderDto) {}
-

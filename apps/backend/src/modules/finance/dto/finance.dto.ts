@@ -1,5 +1,28 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+
+export enum InvoiceStatusDto {
+  draft = 'draft',
+  issued = 'issued',
+  partially_paid = 'partially_paid',
+  paid = 'paid',
+  overdue = 'overdue',
+  cancelled = 'cancelled'
+}
+
+export enum PaymentMethodDto {
+  cash = 'cash',
+  card = 'card',
+  bank_transfer = 'bank_transfer',
+  other = 'other'
+}
+
+export enum PaymentStatusDto {
+  pending = 'pending',
+  completed = 'completed',
+  failed = 'failed',
+  reversed = 'reversed'
+}
 
 export class CreateInvoiceDto {
   @ApiProperty()
@@ -10,18 +33,19 @@ export class CreateInvoiceDto {
   @IsString()
   number!: string;
 
-  @ApiProperty()
+  @ApiProperty({ enum: InvoiceStatusDto })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(InvoiceStatusDto)
+  status?: InvoiceStatusDto;
 
   @ApiProperty()
   @IsNumber()
   totalAmount!: number;
 
   @ApiProperty()
+  @IsOptional()
   @IsNumber()
-  paidAmount!: number;
+  paidAmount?: number;
 
   @ApiProperty()
   @IsOptional()
@@ -43,17 +67,22 @@ export class CreatePaymentDto {
   invoiceId?: string;
 
   @ApiProperty()
+  @IsOptional()
+  @IsString()
+  cashboxId?: string;
+
+  @ApiProperty()
   @IsNumber()
   amount!: number;
 
-  @ApiProperty()
-  @IsString()
-  method!: string;
+  @ApiProperty({ enum: PaymentMethodDto })
+  @IsEnum(PaymentMethodDto)
+  method!: PaymentMethodDto;
 
-  @ApiProperty()
+  @ApiProperty({ enum: PaymentStatusDto })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(PaymentStatusDto)
+  status?: PaymentStatusDto;
 
   @ApiProperty()
   @IsOptional()
@@ -64,5 +93,36 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   reference?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  createdById?: string;
 }
 
+export class CreateCashboxDto {
+  @ApiProperty()
+  @IsString()
+  code!: string;
+
+  @ApiProperty()
+  @IsString()
+  name!: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsNumber()
+  openingBalance?: number;
+}
+
+export class UpdateCashboxDto extends PartialType(CreateCashboxDto) {}

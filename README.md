@@ -15,6 +15,17 @@ Enterprise ERP/MIS skeleton for a full-cycle printing house.
 - Soft delete foundation
 - Docker Compose for local development
 
+## Phase 2.1 scope
+
+The backend and database now include a printing-house foundation for:
+
+- order lifecycle and profitability tracking
+- pricing and cost calculation versions
+- inventory reservations, write-off, and stock movements
+- production routes, operations, machines, and work centers
+- invoices, payments, receivables, payables, and cashboxes
+- audit logs for critical business actions
+
 ## Default stack
 
 - Backend: NestJS, TypeScript, Prisma
@@ -52,11 +63,19 @@ docker compose up --build
 npm run db:migrate
 ```
 
+This applies the current Prisma schema, including the printing-house workflow upgrade.
+
 ## How to seed database
 
 ```bash
 npm run db:seed
 ```
+
+Seed data includes:
+
+- Super Admin, Owner, Manager, Accountant, Warehouse, Production, and Cashier roles
+- a test admin user
+- default material categories, warehouses, work centers, operation templates, machines, and markup rules
 
 ## Default login/password
 
@@ -86,3 +105,24 @@ Prisma is used instead of TypeORM because:
 - cleaner data access for a modular monolith
 - less boilerplate for domain CRUD foundation
 
+## Core API areas
+
+- `orders`
+- `customers`
+- `materials`
+- `inventory`
+- `production`
+- `finance`
+- `audit`
+
+## Default workflow endpoints
+
+- `POST /api/v1/orders/:id/calculate-price`
+- `POST /api/v1/orders/:id/approve`
+- `POST /api/v1/orders/:id/start-production`
+- `POST /api/v1/orders/:id/mark-ready`
+- `POST /api/v1/orders/:id/deliver`
+- `POST /api/v1/inventory/reserve`
+- `POST /api/v1/inventory/write-off`
+- `POST /api/v1/finance/payments`
+- `GET /api/v1/orders/:id/profitability`

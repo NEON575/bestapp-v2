@@ -1,7 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CreateMaterialDto, CreateStockMovementDto, UpdateMaterialDto } from './dto/inventory.dto';
+import {
+  CreateMaterialDto,
+  CreateStockMovementDto,
+  ReserveStockDto,
+  UpdateMaterialDto,
+  WriteOffStockDto
+} from './dto/inventory.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('inventory')
@@ -11,26 +17,62 @@ export class InventoryController {
 
   @Get('materials')
   @Roles('super_admin', 'owner', 'warehouse', 'manager')
-  findAll() {
-    return this.inventoryService.findAll();
+  findMaterials() {
+    return this.inventoryService.findAllMaterials();
+  }
+
+  @Get('materials/:id')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager')
+  findMaterial(@Param('id') id: string) {
+    return this.inventoryService.findOneMaterial(id);
   }
 
   @Post('materials')
   @Roles('super_admin', 'owner', 'warehouse')
-  create(@Body() dto: CreateMaterialDto) {
-    return this.inventoryService.create(dto);
+  createMaterial(@Body() dto: CreateMaterialDto) {
+    return this.inventoryService.createMaterial(dto);
   }
 
   @Patch('materials/:id')
   @Roles('super_admin', 'owner', 'warehouse')
-  update(@Param('id') id: string, @Body() dto: UpdateMaterialDto) {
-    return this.inventoryService.update(id, dto);
+  updateMaterial(@Param('id') id: string, @Body() dto: UpdateMaterialDto) {
+    return this.inventoryService.updateMaterial(id, dto);
   }
 
   @Delete('materials/:id')
   @Roles('super_admin', 'owner')
-  remove(@Param('id') id: string) {
-    return this.inventoryService.remove(id);
+  removeMaterial(@Param('id') id: string) {
+    return this.inventoryService.removeMaterial(id);
+  }
+
+  @Get('categories')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager')
+  listCategories() {
+    return this.inventoryService.listCategories();
+  }
+
+  @Post('categories')
+  @Roles('super_admin', 'owner', 'warehouse')
+  createCategory(@Body() dto: { code: string; name: string; description?: string }) {
+    return this.inventoryService.createCategory(dto);
+  }
+
+  @Get('warehouses')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager')
+  listWarehouses() {
+    return this.inventoryService.findWarehouses();
+  }
+
+  @Post('warehouses')
+  @Roles('super_admin', 'owner', 'warehouse')
+  createWarehouse(@Body() dto: { code: string; name: string; description?: string }) {
+    return this.inventoryService.createWarehouse(dto);
+  }
+
+  @Get('movements')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
+  listMovements() {
+    return this.inventoryService.listMovements();
   }
 
   @Post('movements')
@@ -38,5 +80,16 @@ export class InventoryController {
   createMovement(@Body() dto: CreateStockMovementDto) {
     return this.inventoryService.createMovement(dto);
   }
-}
 
+  @Post('reserve')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
+  reserve(@Body() dto: ReserveStockDto) {
+    return this.inventoryService.reserve(dto);
+  }
+
+  @Post('write-off')
+  @Roles('super_admin', 'owner', 'warehouse', 'production')
+  writeOff(@Body() dto: WriteOffStockDto) {
+    return this.inventoryService.writeOff(dto);
+  }
+}

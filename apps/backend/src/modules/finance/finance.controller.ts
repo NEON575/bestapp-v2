@@ -1,7 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CreateInvoiceDto, CreatePaymentDto, UpdateInvoiceDto } from './dto/finance.dto';
+import {
+  CreateCashboxDto,
+  CreateInvoiceDto,
+  CreatePaymentDto,
+  UpdateCashboxDto,
+  UpdateInvoiceDto
+} from './dto/finance.dto';
 import { FinanceService } from './finance.service';
 
 @ApiTags('finance')
@@ -13,6 +19,12 @@ export class FinanceController {
   @Roles('super_admin', 'owner', 'accountant')
   findAllInvoices() {
     return this.financeService.findAllInvoices();
+  }
+
+  @Get('invoices/:id')
+  @Roles('super_admin', 'owner', 'accountant')
+  findInvoice(@Param('id') id: string) {
+    return this.financeService.findInvoice(id);
   }
 
   @Post('invoices')
@@ -30,12 +42,66 @@ export class FinanceController {
   @Delete('invoices/:id')
   @Roles('super_admin', 'owner')
   removeInvoice(@Param('id') id: string) {
-    return this.financeService.remove(id);
+    return this.financeService.removeInvoice(id);
+  }
+
+  @Get('payments')
+  @Roles('super_admin', 'owner', 'accountant')
+  findAllPayments() {
+    return this.financeService.findAllPayments();
+  }
+
+  @Get('payments/:id')
+  @Roles('super_admin', 'owner', 'accountant')
+  findPayment(@Param('id') id: string) {
+    return this.financeService.findPayment(id);
   }
 
   @Post('payments')
-  @Roles('super_admin', 'owner', 'accountant')
+  @Roles('super_admin', 'owner', 'accountant', 'cashier')
   createPayment(@Body() dto: CreatePaymentDto) {
     return this.financeService.createPayment(dto);
+  }
+
+  @Patch('payments/:id')
+  @Roles('super_admin', 'owner', 'accountant')
+  updatePayment(@Param('id') id: string, @Body() dto: CreatePaymentDto) {
+    return this.financeService.updatePayment(id, dto);
+  }
+
+  @Delete('payments/:id')
+  @Roles('super_admin', 'owner')
+  removePayment(@Param('id') id: string) {
+    return this.financeService.removePayment(id);
+  }
+
+  @Get('receivables')
+  @Roles('super_admin', 'owner', 'accountant')
+  findReceivables() {
+    return this.financeService.findReceivables();
+  }
+
+  @Get('payables')
+  @Roles('super_admin', 'owner', 'accountant')
+  findPayables() {
+    return this.financeService.findPayables();
+  }
+
+  @Get('cashboxes')
+  @Roles('super_admin', 'owner', 'accountant', 'cashier')
+  findCashboxes() {
+    return this.financeService.findCashboxes();
+  }
+
+  @Post('cashboxes')
+  @Roles('super_admin', 'owner', 'accountant')
+  createCashbox(@Body() dto: CreateCashboxDto) {
+    return this.financeService.createCashbox(dto);
+  }
+
+  @Patch('cashboxes/:id')
+  @Roles('super_admin', 'owner', 'accountant')
+  updateCashbox(@Param('id') id: string, @Body() dto: UpdateCashboxDto) {
+    return this.financeService.updateCashbox(id, dto);
   }
 }
