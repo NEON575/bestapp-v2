@@ -1,7 +1,7 @@
-import { FormEvent, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { useAuth } from '../shared/auth/auth-context';
 import { Button, Card, Input } from '@bestapp/ui';
+import { useAuth } from '../shared/auth/auth-context';
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
@@ -15,7 +15,7 @@ export function LoginPage() {
     return <Navigate to="/" replace />;
   }
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
@@ -24,45 +24,51 @@ export function LoginPage() {
       await login({ email, password });
       navigate('/');
     } catch (err) {
-      setError('Login failed. Check credentials and backend availability.');
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить вход');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Card className="border-slate-200/80 bg-white/95 p-8 shadow-soft">
-      <div className="mb-8">
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Sign in</p>
-        <h2 className="mt-2 text-3xl font-semibold">Access ERP dashboard</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Enter your credentials to continue into the production workspace.
+    <Card className="border-slate-200 bg-white/95 p-8 shadow-xl">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Вход в систему</p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Панель типографии</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          Используйте рабочий аккаунт, чтобы открыть dashboard, заказы, склад и финансы.
         </p>
       </div>
 
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <label className="text-sm font-medium">Email</label>
-          <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+          <label className="text-sm font-medium text-slate-700">Email</label>
+          <Input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@bestapp.local" />
         </div>
+
         <div className="space-y-2">
-          <label className="text-sm font-medium">Password</label>
+          <label className="text-sm font-medium text-slate-700">Пароль</label>
           <Input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            placeholder="••••••••"
           />
         </div>
 
         {error ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
           </div>
         ) : null}
 
         <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Signing in...' : 'Sign in'}
+          {loading ? 'Входим...' : 'Войти'}
         </Button>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+          Дефолтный доступ: <span className="font-semibold text-slate-700">admin@bestapp.local / Admin123!</span>
+        </div>
       </form>
     </Card>
   );

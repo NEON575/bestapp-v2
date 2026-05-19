@@ -9,6 +9,11 @@
   background:
     radial-gradient(circle at top left, rgba(15, 23, 42, 0.06), transparent 28%),
     linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 
 html,
@@ -28,5 +33,32 @@ body {
 
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(15, 23, 42, 0.15);
+  color: #0f172a;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 3px solid rgba(226, 232, 240, 0.7);
+  background: rgba(148, 163, 184, 0.8);
 }
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { AuthSession, LoginDto } from '@bestapp/shared';
-import { apiClient } from '../api/client';
+import { authClient } from '../api/auth';
+import { setAuthToken } from '../api/http';
 
 type AuthContextValue = {
   session: AuthSession | null;
@@ -19,7 +20,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const raw = localStorage.getItem('bestapp.session');
     if (raw) {
-      setSession(JSON.parse(raw) as AuthSession);
+      try {
+        setSession(JSON.parse(raw) as AuthSession);
+      } catch {
+        localStorage.removeItem('bestapp.session');
+      }
     }
     setIsHydrated(true);
   }, []);
@@ -31,16 +36,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (session) {
       localStorage.setItem('bestapp.session', JSON.stringify(session));
-      localStorage.setItem('bestapp.token', session.accessToken);
+      setAuthToken(session.accessToken);
     } else {
       localStorage.removeItem('bestapp.session');
-      localStorage.removeItem('bestapp.token');
+      setAuthToken(null);
     }
   }, [session, isHydrated]);
 
   const login = async (input: LoginDto) => {
-    const response = await apiClient.post<AuthSession>('/auth/login', input);
-    setSession(response.data);
+    const response = await authClient.login(input);
+    setSession(response);
   };
 
   const logout = () => setSession(null);

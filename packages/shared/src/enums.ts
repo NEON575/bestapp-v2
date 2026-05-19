@@ -34,6 +34,14 @@ export enum StockMovementType {
   WASTE = 'waste'
 }
 
+export enum StockReservationStatus {
+  OPEN = 'open',
+  RESERVED = 'reserved',
+  RELEASED = 'released',
+  CONSUMED = 'consumed',
+  CANCELLED = 'cancelled'
+}
+
 export enum ProductionOperationStatus {
   PENDING = 'pending',
   READY = 'ready',
@@ -98,4 +106,3 @@ export enum CostLineType {
   OVERHEAD = 'overhead',
   WASTE = 'waste'
 }
-
