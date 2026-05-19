@@ -1,2 +1,1 @@
--- AlterTable
-ALTER TABLE "materials" ADD COLUMN     "minStockLevel" DECIMAL(18,4) NOT NULL DEFAULT 0;
+-- minStockLevel is already added in 0002_typography_workflows

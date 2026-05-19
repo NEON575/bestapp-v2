@@ -309,6 +309,7 @@ CREATE TABLE IF NOT EXISTS "cashbox_transactions" (
 
 ALTER TABLE "orders"
   ADD COLUMN IF NOT EXISTS "sequenceNo" INTEGER;
+ALTER TABLE "orders" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "orders" ALTER COLUMN "status" TYPE "OrderStatus" USING ("status"::text::"OrderStatus");
 ALTER TABLE "orders" ALTER COLUMN "status" SET DEFAULT 'draft';
 ALTER TABLE "orders" ALTER COLUMN "sequenceNo" SET DEFAULT nextval('"orders_sequenceNo_seq"'::regclass);
@@ -335,11 +336,13 @@ ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "unitCost" DECIMAL(18,2) NOT 
 ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "totalCost" DECIMAL(18,2) NOT NULL DEFAULT 0;
 
 ALTER TABLE "materials" ADD COLUMN IF NOT EXISTS "categoryId" UUID;
+ALTER TABLE "materials" ADD COLUMN IF NOT EXISTS "minStockLevel" DECIMAL(18,4) NOT NULL DEFAULT 0;
 
 ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "warehouseId" UUID;
 ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "orderItemId" UUID;
 ALTER TABLE "stock_movements" ALTER COLUMN "type" TYPE "StockMovementType" USING ("type"::text::"StockMovementType");
 
+ALTER TABLE "invoices" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "invoices" ALTER COLUMN "status" TYPE "InvoiceStatus" USING ("status"::text::"InvoiceStatus");
 ALTER TABLE "invoices" ALTER COLUMN "status" SET DEFAULT 'draft';
 ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP(3);
@@ -347,10 +350,13 @@ ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3);
 
 ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "cashboxId" UUID;
 ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "createdById" UUID;
+ALTER TABLE "payments" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "payments" ALTER COLUMN "method" TYPE "PaymentMethod" USING ("method"::text::"PaymentMethod");
 ALTER TABLE "payments" ALTER COLUMN "status" TYPE "PaymentStatus" USING ("status"::text::"PaymentStatus");
+ALTER TABLE "payments" ALTER COLUMN "status" SET DEFAULT 'pending';
 
 ALTER TABLE "production_jobs" ADD COLUMN IF NOT EXISTS "routeId" UUID;
+ALTER TABLE "production_jobs" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "production_jobs" ALTER COLUMN "status" TYPE "ProductionJobStatus" USING ("status"::text::"ProductionJobStatus");
 ALTER TABLE "production_jobs" ALTER COLUMN "status" SET DEFAULT 'queued';
 ALTER TABLE "production_jobs" ADD COLUMN IF NOT EXISTS "plannedStartAt" TIMESTAMP(3);
@@ -364,18 +370,35 @@ ALTER TABLE "production_operations" ADD COLUMN IF NOT EXISTS "productionJobId" U
 ALTER TABLE "production_operations" ADD COLUMN IF NOT EXISTS "templateId" UUID;
 ALTER TABLE "production_operations" ADD COLUMN IF NOT EXISTS "workCenterId" UUID;
 ALTER TABLE "production_operations" ADD COLUMN IF NOT EXISTS "machineId" UUID;
+ALTER TABLE "production_operations" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "production_operations" ALTER COLUMN "status" TYPE "ProductionOperationStatus" USING ("status"::text::"ProductionOperationStatus");
+ALTER TABLE "production_operations" ALTER COLUMN "status" SET DEFAULT 'pending';
 
 ALTER TABLE "cost_calculations" ADD COLUMN IF NOT EXISTS "approvedById" UUID;
 ALTER TABLE "price_versions" ADD COLUMN IF NOT EXISTS "approvedById" UUID;
+ALTER TABLE "receivables" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "receivables" ALTER COLUMN "status" TYPE "DebtStatus" USING ("status"::text::"DebtStatus");
 ALTER TABLE "receivables" ALTER COLUMN "status" SET DEFAULT 'open';
+ALTER TABLE "payables" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "payables" ALTER COLUMN "status" TYPE "DebtStatus" USING ("status"::text::"DebtStatus");
 ALTER TABLE "payables" ALTER COLUMN "status" SET DEFAULT 'open';
 ALTER TABLE "cashbox_transactions" ALTER COLUMN "type" TYPE "CashboxTransactionType" USING ("type"::text::"CashboxTransactionType");
 ALTER TABLE "cashbox_transactions" ALTER COLUMN "method" TYPE "PaymentMethod" USING ("method"::text::"PaymentMethod");
 
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lastLoginAt" TIMESTAMP(3);
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "reversedById" UUID;
+
+CREATE TABLE IF NOT EXISTS "payment_allocations" (
+  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+  "paymentId" UUID NOT NULL,
+  "invoiceId" UUID,
+  "receivableId" UUID,
+  "payableId" UUID,
+  "amount" DECIMAL(18,2) NOT NULL,
+  "allocatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "note" TEXT,
+  CONSTRAINT "payment_allocations_pkey" PRIMARY KEY ("id")
+);
 
 ALTER TABLE "order_items"
   ADD CONSTRAINT "order_items_materialId_fkey" FOREIGN KEY ("materialId") REFERENCES "materials"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -420,17 +443,14 @@ ALTER TABLE "production_operations"
   ADD CONSTRAINT "production_operations_machineId_fkey" FOREIGN KEY ("machineId") REFERENCES "machines"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "production_jobs"
-  ADD CONSTRAINT "production_jobs_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT "production_jobs_routeId_fkey" FOREIGN KEY ("routeId") REFERENCES "production_routes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
-ALTER TABLE "invoices"
-  ADD CONSTRAINT "invoices_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- invoices.orderId foreign key already exists from 0001_initial
 
 ALTER TABLE "payments"
-  ADD CONSTRAINT "payments_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  ADD CONSTRAINT "payments_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT "payments_cashboxId_fkey" FOREIGN KEY ("cashboxId") REFERENCES "cashboxes"("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  ADD CONSTRAINT "payments_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  ADD CONSTRAINT "payments_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT "payments_reversedById_fkey" FOREIGN KEY ("reversedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "payment_allocations"
   ADD CONSTRAINT "payment_allocations_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "payments"("id") ON DELETE CASCADE ON UPDATE CASCADE,
@@ -448,5 +468,4 @@ ALTER TABLE "cashbox_transactions"
   ADD CONSTRAINT "cashbox_transactions_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "payments"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT "cashbox_transactions_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
-ALTER TABLE "audit_logs"
-  ADD CONSTRAINT "audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- audit_logs.userId foreign key already exists from 0001_initial

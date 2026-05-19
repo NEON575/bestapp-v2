@@ -34,6 +34,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else {
         message = exception.message;
       }
+    } else if (exception instanceof Error) {
+      console.error('Unhandled exception in request', {
+        path: request.url,
+        method: request.method,
+        error: exception.message,
+        stack: exception.stack
+      });
+      message = exception.message;
+    } else {
+      console.error('Unhandled exception in request', {
+        path: request.url,
+        method: request.method,
+        exception
+      });
     }
 
     response.status(status).json({
@@ -44,4 +58,3 @@ export class AllExceptionsFilter implements ExceptionFilter {
     });
   }
 }
-

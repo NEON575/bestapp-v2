@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
@@ -14,7 +14,7 @@ import { InventoryService } from './inventory.service';
 @ApiTags('inventory')
 @Controller('inventory')
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(@Inject(InventoryService) private readonly inventoryService: InventoryService) {}
 
   @Get('materials')
   @Roles('super_admin', 'owner', 'warehouse', 'manager')

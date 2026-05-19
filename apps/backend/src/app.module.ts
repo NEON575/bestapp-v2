@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { resolve } from 'path';
 import { AppController } from './app.controller';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -22,7 +23,15 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 @Module({
   controllers: [AppController],
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        resolve(process.cwd(), '.env'),
+        resolve(process.cwd(), '.env.example'),
+        resolve(process.cwd(), 'apps/backend/.env'),
+        resolve(process.cwd(), 'apps/backend/.env.example')
+      ]
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,

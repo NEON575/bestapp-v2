@@ -6,11 +6,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c green,blue \"npm run dev -w @bestapp/backend\" \"npm run dev -w @bestapp/frontend\"",
+    "dev": "npm run dev:all",
+    "dev:backend": "node scripts/run-workspace-command.mjs apps/backend dev",
+    "dev:frontend": "node scripts/run-workspace-command.mjs apps/frontend dev",
+    "dev:all": "concurrently -n backend,frontend -c green,blue \"node scripts/run-workspace-command.mjs apps/backend dev\" \"node scripts/run-workspace-command.mjs apps/frontend dev\"",
     "build": "npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend && npm run build -w @bestapp/frontend",
     "lint": "npm run lint -w @bestapp/backend && npm run lint -w @bestapp/frontend",
-    "db:migrate": "npm run prisma:migrate -w @bestapp/backend",
-    "db:seed": "npm run prisma:seed -w @bestapp/backend",
+    "db:migrate": "node scripts/run-workspace-command.mjs apps/backend prisma:migrate",
+    "db:seed": "node scripts/run-workspace-command.mjs apps/backend prisma:seed",
+    "prisma:generate": "node scripts/run-workspace-command.mjs apps/backend prisma:generate",
+    "setup:local": "node scripts/setup-local.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
@@ -19,4 +24,3 @@
     "typescript": "^5.8.3"
   }
 }
-

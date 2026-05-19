@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
@@ -7,7 +7,7 @@ import { RolesService } from './roles.service';
 @ApiTags('roles')
 @Controller('roles')
 export class RolesController {
-  constructor(private readonly rolesService: RolesService) {}
+  constructor(@Inject(RolesService) private readonly rolesService: RolesService) {}
 
   @Get()
   @Roles('super_admin', 'owner')
@@ -39,4 +39,3 @@ export class RolesController {
     return this.rolesService.remove(id);
   }
 }
-

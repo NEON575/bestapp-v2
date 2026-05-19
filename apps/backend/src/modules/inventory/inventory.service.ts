@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StockMovementType, StockReservationStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -30,8 +30,8 @@ function roundQty(value: number) {
 @Injectable()
 export class InventoryService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditService: AuditService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService
   ) {}
 
   private db(tx?: Prisma.TransactionClient) {

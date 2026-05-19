@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InvoiceStatus, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { calculateDashboardSummary } from '../../common/business/dashboard-summary';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -18,7 +18,7 @@ function startOfMonth(date = new Date()) {
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async dashboard() {
     const now = new Date();

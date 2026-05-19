@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Inject, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
@@ -7,7 +7,7 @@ import { FinanceService } from '../finance/finance.service';
 @ApiTags('debts')
 @Controller('debts')
 export class DebtsController {
-  constructor(private readonly financeService: FinanceService) {}
+  constructor(@Inject(FinanceService) private readonly financeService: FinanceService) {}
 
   @Get('receivables')
   @Roles('super_admin', 'owner', 'accountant')

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
@@ -7,8 +7,7 @@ import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {
-  }
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   create(dto: CreateCustomerDto) {
     return this.prisma.customer.create({ data: dto as any });

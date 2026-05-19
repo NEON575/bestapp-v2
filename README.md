@@ -57,6 +57,22 @@ This starts:
 docker compose up --build
 ```
 
+## How to run on Windows without Docker
+
+If Docker Desktop or WSL is unstable on your machine, use the local Windows flow:
+
+1. Install Node.js LTS.
+2. Install PostgreSQL locally.
+3. Create the `bestapp` database.
+4. Run `npm run setup:local` to create local `.env` files from examples.
+5. Run `npm run prisma:generate -w @bestapp/backend`.
+6. Run `npm run db:migrate`.
+7. Run `npm run db:seed`.
+8. Start the backend with `npm run dev:backend`.
+9. Start the frontend with `npm run dev:frontend`.
+
+See [`WINDOWS_LOCAL_RUN.md`](./WINDOWS_LOCAL_RUN.md) for the full Russian step-by-step guide.
+
 ## How to migrate database
 
 ```bash

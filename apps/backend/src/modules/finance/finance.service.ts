@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   DebtStatus,
   InvoiceStatus,
@@ -36,8 +36,8 @@ function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
 @Injectable()
 export class FinanceService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditService: AuditService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService
   ) {}
 
   private db(tx?: Prisma.TransactionClient) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
@@ -8,7 +8,7 @@ import { ProductionService } from './production.service';
 @ApiTags('production')
 @Controller('production')
 export class ProductionController {
-  constructor(private readonly productionService: ProductionService) {}
+  constructor(@Inject(ProductionService) private readonly productionService: ProductionService) {}
 
   @Get('jobs')
   @Roles('super_admin', 'owner', 'production', 'manager')

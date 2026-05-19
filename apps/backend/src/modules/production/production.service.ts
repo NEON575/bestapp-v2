@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma, ProductionOperationStatus, ProductionJobStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
@@ -7,7 +7,7 @@ import { CreateProductionJobDto, UpdateProductionJobDto } from './dto/production
 
 @Injectable()
 export class ProductionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async findAll(query: PaginationQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
