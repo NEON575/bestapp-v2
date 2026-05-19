@@ -15,20 +15,40 @@ import {
   Users2,
   X
 } from 'lucide-react';
-import { useAuth } from '../auth/auth-context';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@bestapp/ui';
+import { useAuth } from '../auth/auth-context';
+import { canAccess } from '../lib/access';
 import { initials } from '../lib/format';
 
-const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/orders', label: 'Orders', icon: ScrollText },
-  { to: '/customers', label: 'Customers', icon: Users2 },
-  { to: '/production', label: 'Production', icon: Factory },
-  { to: '/inventory', label: 'Inventory', icon: Boxes },
-  { to: '/finance', label: 'Finance', icon: ReceiptText },
-  { to: '/debts', label: 'Debts', icon: BadgeDollarSign },
-  { to: '/settings', label: 'Settings', icon: Settings2 }
+type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+  roles?: string[];
+};
+
+const navItems: NavItem[] = [
+  { to: '/', label: 'Панель', icon: LayoutDashboard, end: true },
+  { to: '/orders', label: 'Заказы', icon: ScrollText },
+  { to: '/customers', label: 'Клиенты', icon: Users2 },
+  { to: '/production', label: 'Производство', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
+  { to: '/inventory', label: 'Склад', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/finance', label: 'Финансы', icon: ReceiptText, roles: ['super_admin', 'owner', 'accountant'] },
+  { to: '/debts', label: 'Долги', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/settings', label: 'Настройки', icon: Settings2, roles: ['super_admin', 'owner'] }
 ];
+
+const roleLabels: Record<string, string> = {
+  super_admin: 'Суперадмин',
+  owner: 'Владелец',
+  manager: 'Менеджер',
+  accountant: 'Бухгалтер',
+  warehouse: 'Склад',
+  production: 'Производство',
+  cashier: 'Касса'
+};
 
 export function DashboardLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -44,6 +64,11 @@ export function DashboardLayout() {
     return session.user.fullName || session.user.email;
   }, [session]);
 
+  const visibleNavItems = useMemo(() => {
+    const roles = session?.user.roles ?? [];
+    return navItems.filter((item) => !item.roles || canAccess(roles, item.roles));
+  }, [session]);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -54,10 +79,11 @@ export function DashboardLayout() {
       <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">BestApp</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">Printing ERP</h2>
-          <p className="mt-1 text-xs text-slate-500">Enterprise control center</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">Панель типографии</h2>
+          <p className="mt-1 text-xs text-slate-500">Управление заказами, производством, складом и финансами</p>
         </div>
         <button
+          type="button"
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
           aria-label="Закрыть меню"
@@ -67,7 +93,7 @@ export function DashboardLayout() {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
@@ -78,9 +104,7 @@ export function DashboardLayout() {
               className={({ isActive }) =>
                 [
                   'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition',
-                  isActive
-                    ? 'bg-slate-950 text-white shadow-lg shadow-slate-950/10'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                  isActive ? 'bg-slate-950 text-white shadow-lg shadow-slate-950/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
                 ].join(' ')
               }
             >
@@ -98,7 +122,7 @@ export function DashboardLayout() {
               {initials(session?.user.fullName ?? session?.user.email ?? 'BA')}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-950">{session?.user.fullName ?? 'User'}</p>
+              <p className="truncate text-sm font-semibold text-slate-950">{session?.user.fullName ?? 'Пользователь'}</p>
               <p className="truncate text-xs text-slate-500">{session?.user.email ?? '—'}</p>
             </div>
           </div>
@@ -108,7 +132,7 @@ export function DashboardLayout() {
                 key={role}
                 className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
               >
-                {role}
+                {roleLabels[role] ?? role}
               </span>
             ))}
           </div>
@@ -127,6 +151,7 @@ export function DashboardLayout() {
         {mobileMenuOpen ? (
           <div className="fixed inset-0 z-40 lg:hidden">
             <button
+              type="button"
               className="absolute inset-0 bg-slate-950/35"
               onClick={() => setMobileMenuOpen(false)}
               aria-label="Закрыть оверлей"
@@ -142,6 +167,7 @@ export function DashboardLayout() {
             <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
               <div className="flex min-w-0 items-center gap-3">
                 <button
+                  type="button"
                   className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 lg:hidden"
                   onClick={() => setMobileMenuOpen(true)}
                   aria-label="Открыть меню"
@@ -149,7 +175,7 @@ export function DashboardLayout() {
                   <Menu className="h-5 w-5" />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Printing house ERP / MIS</p>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">ERP / MIS типографии</p>
                   <h1 className="truncate text-lg font-semibold text-slate-950">Управление производством и заказами</h1>
                 </div>
               </div>
@@ -161,6 +187,7 @@ export function DashboardLayout() {
 
                 <div className="relative">
                   <button
+                    type="button"
                     onClick={() => setUserMenuOpen((value) => !value)}
                     className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:bg-slate-50"
                   >
@@ -169,9 +196,7 @@ export function DashboardLayout() {
                     </div>
                     <div className="hidden min-w-0 sm:block">
                       <div className="truncate text-sm font-semibold text-slate-950">{userLabel}</div>
-                      <div className="truncate text-xs text-slate-500">
-                        {session?.user.roles.slice(0, 2).join(' • ') ?? 'роль не определена'}
-                      </div>
+                      <div className="truncate text-xs text-slate-500">{session?.user.roles.slice(0, 2).map((role) => roleLabels[role] ?? role).join(' • ') ?? 'Роль не определена'}</div>
                     </div>
                     <ChevronDown className="h-4 w-4 text-slate-400" />
                   </button>
@@ -190,11 +215,16 @@ export function DashboardLayout() {
                         </div>
                       </div>
                       <div className="p-2">
-                        <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100" onClick={() => navigate('/settings')}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                          onClick={() => navigate('/settings')}
+                        >
                           <ShieldCheck className="h-4 w-4" />
                           Настройки доступа
                         </button>
                         <button
+                          type="button"
                           className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
                           onClick={handleLogout}
                         >
@@ -217,4 +247,3 @@ export function DashboardLayout() {
     </div>
   );
 }
-

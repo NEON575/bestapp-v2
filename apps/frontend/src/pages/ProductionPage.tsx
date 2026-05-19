@@ -6,12 +6,12 @@ import { ErrorState, EmptyState, LoadingState, PageHeader, StatusBadge } from '.
 import { formatDateOnly } from '../shared/lib/format';
 
 const columns: Array<{ key: keyof ProductionBoard; title: string }> = [
-  { key: 'pending', title: 'Pending' },
-  { key: 'ready', title: 'Ready' },
-  { key: 'in_progress', title: 'In progress' },
-  { key: 'paused', title: 'Paused' },
-  { key: 'completed', title: 'Completed' },
-  { key: 'failed', title: 'Failed' }
+  { key: 'pending', title: 'В очереди' },
+  { key: 'ready', title: 'Готово' },
+  { key: 'in_progress', title: 'В работе' },
+  { key: 'paused', title: 'Пауза' },
+  { key: 'completed', title: 'Завершено' },
+  { key: 'failed', title: 'Ошибка' }
 ];
 
 export function ProductionPage() {
@@ -26,7 +26,7 @@ export function ProductionPage() {
       const data = await productionClient.board();
       setBoard(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить production board');
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить производственную доску');
     } finally {
       setLoading(false);
     }
@@ -39,7 +39,7 @@ export function ProductionPage() {
   if (loading && !board) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Production" description="Kanban-board производственных операций." />
+        <PageHeader title="Производство" description="Канбан-доска производственных операций." />
         <LoadingState rows={4} />
       </div>
     );
@@ -52,7 +52,7 @@ export function ProductionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Production"
+        title="Производство"
         description="Операции типографии по статусам: от подготовки до завершения."
       />
 
@@ -102,4 +102,3 @@ function OperationCard({ item }: { item: ProductionOperationItem }) {
     </div>
   );
 }
-

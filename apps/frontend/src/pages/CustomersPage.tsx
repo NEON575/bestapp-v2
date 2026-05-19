@@ -74,7 +74,7 @@ export function CustomersPage() {
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Customers" description="CRM-список клиентов и их взаимодействий." />
+        <PageHeader title="Клиенты" description="CRM-список клиентов и их взаимодействий." />
         <LoadingState rows={4} />
       </div>
     );
@@ -87,13 +87,9 @@ export function CustomersPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Customers"
+        title="Клиенты"
         description="Карточки клиентов, контакты и история работы."
-        actions={
-          <Button variant="secondary" onClick={() => setShowCreate((value) => !value)}>
-            {showCreate ? 'Скрыть форму' : 'Создать клиента'}
-          </Button>
-        }
+        actions={<Button variant="secondary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? 'Скрыть форму' : 'Создать клиента'}</Button>}
       />
 
       <FilterBar>
@@ -114,7 +110,7 @@ export function CustomersPage() {
             <Field label="Телефон">
               <Input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
             </Field>
-            <Field label="Email">
+            <Field label="Электронная почта">
               <Input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
             </Field>
             <Field label="Адрес">
@@ -139,7 +135,7 @@ export function CustomersPage() {
           { key: 'name', header: 'Имя', render: (row) => row.name },
           { key: 'company', header: 'Компания', render: (row) => row.companyName ?? '—' },
           { key: 'phone', header: 'Телефон', render: (row) => row.phone ?? '—' },
-          { key: 'email', header: 'Email', render: (row) => row.email ?? '—' },
+          { key: 'email', header: 'Электронная почта', render: (row) => row.email ?? '—' },
           { key: 'address', header: 'Адрес', render: (row) => row.address ?? '—' },
           { key: 'notes', header: 'Заметки', render: (row) => row.notes ?? '—' },
           {

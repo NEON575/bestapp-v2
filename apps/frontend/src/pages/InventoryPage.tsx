@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import type { InventoryMaterialItem, InventoryMovementItem, InventorySummary, WarehouseItem } from '@bestapp/shared';
 import { Button, Card, Input } from '@bestapp/ui';
 import { inventoryClient } from '../shared/api/inventory';
@@ -6,17 +6,41 @@ import {
   DataTable,
   EmptyState,
   ErrorState,
-  FilterBar,
   LoadingState,
+  Modal,
   PageHeader,
   StatCard,
   StatusBadge
 } from '../shared/components';
+import { useToast } from '../shared/toast/toast-context';
 import { formatCurrency, formatDateOnly, formatNumber } from '../shared/lib/format';
 
-type QuickAction = 'movement' | 'reserve' | 'write_off';
+type InventoryAction = 'receipt' | 'reserve' | 'write_off' | 'adjustment';
+
+type InventoryFormState = {
+  materialId: string;
+  warehouseId: string;
+  quantity: number;
+  orderId: string;
+  reservationId: string;
+  productionJobId: string;
+  note: string;
+  direction: 'increase' | 'decrease';
+};
+
+const emptyForm = (): InventoryFormState => ({
+  materialId: '',
+  warehouseId: '',
+  quantity: 1,
+  orderId: '',
+  reservationId: '',
+  productionJobId: '',
+  note: '',
+  direction: 'increase'
+});
 
 export function InventoryPage() {
+  const toast = useToast();
   const [summary, setSummary] = useState<InventorySummary | null>(null);
   const [materials, setMaterials] = useState<InventoryMaterialItem[]>([]);
   const [movements, setMovements] = useState<InventoryMovementItem[]>([]);
@@ -24,16 +48,9 @@ export function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [action, setAction] = useState<QuickAction>('movement');
-  const [form, setForm] = useState({
-    materialId: '',
-    warehouseId: '',
-    quantity: 1,
-    type: 'purchase_in',
-    orderId: '',
-    reservationId: '',
-    note: ''
-  });
+  const [action, setAction] = useState<InventoryAction | null>(null);
+  const [form, setForm] = useState<InventoryFormState>(emptyForm());
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -61,13 +78,36 @@ export function InventoryPage() {
     void load();
   }, []);
 
+  const lowStockMaterials = useMemo(() => summary?.materialsBelowMinimum ?? [], [summary]);
+
+  const openAction = (nextAction: InventoryAction) => {
+    setAction(nextAction);
+    setForm(emptyForm());
+    setFormError(null);
+  };
+
+  const closeAction = () => {
+    setAction(null);
+    setForm(emptyForm());
+    setFormError(null);
+  };
+
   const submitAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
+    setFormError(null);
     setError(null);
 
     try {
+      if (!form.materialId || !form.warehouseId) {
+        throw new Error('Выберите материал и склад');
+      }
+
       if (action === 'reserve') {
+        if (!form.orderId) {
+          throw new Error('Для резерва нужен заказ');
+        }
+
         await inventoryClient.reserve({
           orderId: form.orderId,
           materialId: form.materialId,
@@ -80,23 +120,36 @@ export function InventoryPage() {
           materialId: form.materialId,
           warehouseId: form.warehouseId,
           reservationId: form.reservationId || undefined,
+          orderId: form.orderId || undefined,
+          productionJobId: form.productionJobId || undefined,
           quantity: Number(form.quantity),
           note: form.note
         });
-      } else {
+      } else if (action === 'adjustment') {
         await inventoryClient.createMovement({
           materialId: form.materialId,
           warehouseId: form.warehouseId,
-          type: form.type,
-          quantity: Number(form.quantity),
+          type: 'adjustment',
+          quantity: form.direction === 'decrease' ? -Math.abs(Number(form.quantity)) : Math.abs(Number(form.quantity)),
+          note: form.note
+        });
+      } else if (action === 'receipt') {
+        await inventoryClient.createMovement({
+          materialId: form.materialId,
+          warehouseId: form.warehouseId,
+          type: 'purchase_in',
+          quantity: Math.abs(Number(form.quantity)),
           note: form.note
         });
       }
 
-      setForm((current) => ({ ...current, note: '' }));
+      toast.success('Складская операция выполнена');
+      closeAction();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось выполнить складскую операцию');
+      const message = e instanceof Error ? e.message : 'Не удалось выполнить складскую операцию';
+      setFormError(message);
+      toast.error('Не удалось выполнить складскую операцию', message);
     } finally {
       setSaving(false);
     }
@@ -105,7 +158,7 @@ export function InventoryPage() {
   if (loading && !summary) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Inventory" description="Остатки, движения и минимальные запасы." />
+        <PageHeader title="Склад" description="Остатки, движения и минимальные запасы." />
         <LoadingState rows={4} />
       </div>
     );
@@ -115,113 +168,38 @@ export function InventoryPage() {
     return <ErrorState description={error} onRetry={() => void load()} />;
   }
 
-  const lowStockMaterials = summary?.materialsBelowMinimum ?? [];
-
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Inventory"
+        title="Склад"
         description="Складской контроль: остатки, резервы, списания и движения."
+        actions={
+          <>
+            <Button variant="secondary" type="button" onClick={() => openAction('receipt')}>
+              Приход
+            </Button>
+            <Button variant="secondary" type="button" onClick={() => openAction('reserve')}>
+              Резерв
+            </Button>
+            <Button variant="secondary" type="button" onClick={() => openAction('write_off')}>
+              Списание
+            </Button>
+            <Button type="button" onClick={() => openAction('adjustment')}>
+              Корректировка
+            </Button>
+          </>
+        }
       />
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Всего материалов" value={String(summary?.totalMaterials ?? 0)} />
-        <StatCard label="Low stock" value={String(summary?.lowStockCount ?? 0)} accent="rose" />
-        <StatCard label="Stock value" value={formatCurrency(summary?.totalStockValue)} accent="emerald" />
-        <StatCard label="Reserved value" value={formatCurrency(summary?.reservedValue)} accent="amber" />
+        <StatCard label="Мало на складе" value={String(summary?.lowStockCount ?? 0)} accent="rose" />
+        <StatCard label="Стоимость запасов" value={formatCurrency(summary?.totalStockValue)} accent="emerald" />
+        <StatCard label="Зарезервировано" value={formatCurrency(summary?.reservedValue)} accent="amber" />
         <StatCard label="Критических позиций" value={String(lowStockMaterials.length)} accent="sky" />
       </div>
-
-      <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">Быстрое складское действие</h2>
-            <p className="text-sm text-slate-500">Приход, резерв, списание и ручное движение склада.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(['movement', 'reserve', 'write_off'] as const).map((item) => (
-              <Button key={item} variant={action === item ? 'primary' : 'secondary'} type="button" onClick={() => setAction(item)}>
-                {item === 'movement' ? 'Движение' : item === 'reserve' ? 'Резерв' : 'Списание'}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={submitAction}>
-          <Field label="Материал">
-            <select
-              value={form.materialId}
-              onChange={(event) => setForm((current) => ({ ...current, materialId: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              required
-            >
-              <option value="">Выберите материал</option>
-              {materials.map((material) => (
-                <option key={material.id} value={material.id}>
-                  {material.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Склад">
-            <select
-              value={form.warehouseId}
-              onChange={(event) => setForm((current) => ({ ...current, warehouseId: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-            >
-              <option value="">Выберите склад</option>
-              {warehouses.map((warehouse) => (
-                <option key={warehouse.id} value={warehouse.id}>
-                  {warehouse.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Количество">
-            <Input type="number" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: Number(event.target.value) }))} />
-          </Field>
-          {action === 'movement' ? (
-            <Field label="Тип движения">
-              <select
-                value={form.type}
-                onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              >
-                <option value="purchase_in">purchase_in</option>
-                <option value="reserve">reserve</option>
-                <option value="write_off">write_off</option>
-                <option value="return">return</option>
-                <option value="adjustment">adjustment</option>
-                <option value="waste">waste</option>
-              </select>
-            </Field>
-          ) : null}
-          {action === 'reserve' ? (
-            <Field label="Order ID">
-              <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} required />
-            </Field>
-          ) : null}
-          {action === 'write_off' ? (
-            <Field label="Reservation ID">
-              <Input
-                value={form.reservationId}
-                onChange={(event) => setForm((current) => ({ ...current, reservationId: event.target.value }))}
-                placeholder="Если списываете из резерва"
-              />
-            </Field>
-          ) : null}
-          <Field label="Комментарий">
-            <Input value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} />
-          </Field>
-          <div className="md:col-span-2 xl:col-span-4 flex justify-end">
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Выполняем...' : 'Применить'}
-            </Button>
-          </div>
-        </form>
-      </Card>
 
       <Card className="border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-950">Материалы</h2>
@@ -232,21 +210,21 @@ export function InventoryPage() {
             columns={[
               { key: 'name', header: 'Название', render: (row) => row.name },
               { key: 'category', header: 'Категория', render: (row) => row.category?.name ?? '—' },
-              { key: 'sku', header: 'SKU', render: (row) => row.sku ?? '—' },
+              { key: 'sku', header: 'Артикул', render: (row) => row.sku ?? '—' },
               { key: 'unit', header: 'Ед.', render: (row) => row.unit },
               { key: 'onHand', header: 'Остаток', render: (row) => formatNumber(row.onHand) },
               { key: 'reserved', header: 'Резерв', render: (row) => formatNumber(row.reserved) },
               { key: 'available', header: 'Доступно', render: (row) => formatNumber(row.available) },
-              { key: 'min', header: 'Min stock', render: (row) => formatNumber(row.minStockLevel) },
+              { key: 'min', header: 'Мин. запас', render: (row) => formatNumber(row.minStockLevel) },
               { key: 'cost', header: 'Себестоимость', render: (row) => formatCurrency(row.costPrice) },
               {
                 key: 'state',
                 header: 'Состояние',
                 render: (row) => (
                   <StatusBadge
-                    kind="movement"
-                    status={row.available && row.available <= row.minStockLevel ? 'waste' : 'purchase_in'}
-                    label={row.available && row.available <= row.minStockLevel ? 'Low' : 'OK'}
+                    kind="custom"
+                    status={row.available && row.available <= row.minStockLevel ? 'low_stock' : 'ok'}
+                    label={row.available && row.available <= row.minStockLevel ? 'Мало на складе' : 'Норма'}
                   />
                 )
               }
@@ -270,12 +248,12 @@ export function InventoryPage() {
                         Остаток {material.available} · Минимум {material.minStockLevel}
                       </div>
                     </div>
-                    <StatusBadge kind="movement" status="adjustment" label="Low" />
+                    <StatusBadge kind="custom" status="low_stock" label="Мало на складе" />
                   </div>
                 </div>
               ))
             ) : (
-              <EmptyState title="Нет дефицита" description="Все материалы выше минимального уровня." />
+              <EmptyState title="Дефицита нет" description="Все материалы выше минимального уровня." />
             )}
           </div>
         </Card>
@@ -303,13 +281,122 @@ export function InventoryPage() {
           </div>
         </Card>
       </div>
+
+      <Modal
+        open={action !== null}
+        title={
+          action === 'receipt'
+            ? 'Приход материала'
+            : action === 'reserve'
+              ? 'Резерв материала'
+              : action === 'write_off'
+                ? 'Списание материала'
+                : 'Корректировка склада'
+        }
+        description="Заполните поля операции и сохраните движение склада."
+        onClose={closeAction}
+      >
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={submitAction}>
+          <Field label="Материал">
+            <select
+              value={form.materialId}
+              onChange={(event) => setForm((current) => ({ ...current, materialId: event.target.value }))}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              required
+            >
+              <option value="">Выберите материал</option>
+              {materials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Склад">
+            <select
+              value={form.warehouseId}
+              onChange={(event) => setForm((current) => ({ ...current, warehouseId: event.target.value }))}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              required
+            >
+              <option value="">Выберите склад</option>
+              {warehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Количество">
+            <Input type="number" min={1} value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: Number(event.target.value) }))} />
+          </Field>
+
+          {action === 'reserve' ? (
+            <Field label="Заказ">
+              <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} required />
+            </Field>
+          ) : null}
+
+          {action === 'write_off' ? (
+            <>
+              <Field label="Резерв ID">
+                <Input value={form.reservationId} onChange={(event) => setForm((current) => ({ ...current, reservationId: event.target.value }))} />
+              </Field>
+              <Field label="Заказ ID">
+                <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} />
+              </Field>
+              <Field label="Задание ID">
+                <Input value={form.productionJobId} onChange={(event) => setForm((current) => ({ ...current, productionJobId: event.target.value }))} />
+              </Field>
+            </>
+          ) : null}
+
+          {action === 'adjustment' ? (
+            <Field label="Тип корректировки">
+              <select
+                value={form.direction}
+                onChange={(event) => setForm((current) => ({ ...current, direction: event.target.value as InventoryFormState['direction'] }))}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              >
+                <option value="increase">Увеличить</option>
+                <option value="decrease">Уменьшить</option>
+              </select>
+            </Field>
+          ) : null}
+
+          <Field label="Комментарий" className="md:col-span-2">
+            <Input value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} />
+          </Field>
+
+          {formError ? <div className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
+
+          <div className="md:col-span-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={closeAction}>
+              Отмена
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Выполняем...' : 'Сохранить'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  children,
+  className
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <label className="block space-y-2">
+    <label className={`block space-y-2 ${className ?? ''}`}>
       <span className="text-sm font-medium text-slate-700">{label}</span>
       {children}
     </label>

@@ -75,7 +75,7 @@ export function CustomerDetailPage() {
           <div className="mt-4 space-y-3 text-sm text-slate-600">
             <p>Компания: {customer.companyName ?? '—'}</p>
             <p>Телефон: {customer.phone ?? '—'}</p>
-            <p>Email: {customer.email ?? '—'}</p>
+            <p>Электронная почта: {customer.email ?? '—'}</p>
             <p>Адрес: {customer.address ?? '—'}</p>
             <p>Заметки: {customer.notes ?? '—'}</p>
             <p>Создан: {formatDateOnly(customer.createdAt)}</p>

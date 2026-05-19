@@ -10,20 +10,20 @@ export function AuthLayout() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-300">BestApp ERP / MIS</p>
             <h1 className="mt-6 max-w-2xl text-5xl font-semibold leading-tight">
-              Производственный контроль, склад, финансы и заказы в одном enterprise-контуре.
+              Производственный контроль, склад, финансы и заказы в одном корпоративном контуре.
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-slate-300">
-              {APP_NAME} помогает типографии управлять заказом от расчета до выдачи: с точными
-              остатками, финансовой дисциплиной, audit trail и производственными маршрутами.
+              {APP_NAME} помогает типографии управлять заказом от расчета до выдачи: с точными остатками, финансовой дисциплиной, журналом аудита и
+              производственными маршрутами.
             </p>
           </div>
 
           <div className="grid gap-3 text-sm text-slate-300 xl:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-              Сильная архитектура для growth, аналитики и будущего AI-помощника.
+              Сильная архитектура для роста, аналитики и будущего AI-помощника.
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-              Responsive desktop, tablet, mobile и PWA-ready рабочее место.
+              Поддержка настольных, планшетных и мобильных устройств, а также PWA-режима в одном рабочем месте.
             </div>
           </div>
         </div>
@@ -37,4 +37,3 @@ export function AuthLayout() {
     </div>
   );
 }
-

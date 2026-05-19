@@ -5,6 +5,7 @@ import { OrderStatus } from '@bestapp/shared';
 import { Button, Card, Input } from '@bestapp/ui';
 import { customersClient } from '../shared/api/customers';
 import { ordersClient } from '../shared/api/orders';
+import { getOrderStatusLabel } from '../shared/lib/order';
 import {
   DataTable,
   EmptyState,
@@ -122,7 +123,7 @@ export function OrdersPage() {
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Orders" description="Список заказов типографии с фильтрами и быстрыми действиями." />
+        <PageHeader title="Заказы" description="Список заказов типографии с фильтрами и быстрыми действиями." />
         <LoadingState rows={4} />
       </div>
     );
@@ -135,7 +136,7 @@ export function OrdersPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Orders"
+        title="Заказы"
         description="Полный список заказов: статус, клиент, менеджер, суммы, долг и дедлайн."
         actions={<Button onClick={() => navigate('/orders/new')}>Создать заказ</Button>}
       />
@@ -179,51 +180,27 @@ export function OrdersPage() {
         </div>
 
         <div className="w-full lg:w-44">
-          <Input
-            value={query.managerId}
-            onChange={(event) => updateQuery({ managerId: event.target.value, page: 1 })}
-            placeholder="Manager ID"
-          />
+          <Input value={query.managerId} onChange={(event) => updateQuery({ managerId: event.target.value, page: 1 })} placeholder="ID менеджера" />
         </div>
 
         <div className="flex flex-wrap gap-3 text-sm text-slate-600">
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={query.hasDebt}
-              onChange={(event) => updateQuery({ hasDebt: event.target.checked, page: 1 })}
-            />
+            <input type="checkbox" checked={query.hasDebt} onChange={(event) => updateQuery({ hasDebt: event.target.checked, page: 1 })} />
             Есть долг
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={query.inProduction}
-              onChange={(event) => updateQuery({ inProduction: event.target.checked, page: 1 })}
-            />
+            <input type="checkbox" checked={query.inProduction} onChange={(event) => updateQuery({ inProduction: event.target.checked, page: 1 })} />
             В производстве
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={query.overdue}
-              onChange={(event) => updateQuery({ overdue: event.target.checked, page: 1 })}
-            />
+            <input type="checkbox" checked={query.overdue} onChange={(event) => updateQuery({ overdue: event.target.checked, page: 1 })} />
             Просроченные
           </label>
         </div>
 
         <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto">
-          <Input
-            type="date"
-            value={query.dateFrom ?? ''}
-            onChange={(event) => updateQuery({ dateFrom: event.target.value, page: 1 })}
-          />
-          <Input
-            type="date"
-            value={query.dateTo ?? ''}
-            onChange={(event) => updateQuery({ dateTo: event.target.value, page: 1 })}
-          />
+          <Input type="date" value={query.dateFrom ?? ''} onChange={(event) => updateQuery({ dateFrom: event.target.value, page: 1 })} />
+          <Input type="date" value={query.dateTo ?? ''} onChange={(event) => updateQuery({ dateTo: event.target.value, page: 1 })} />
         </div>
       </FilterBar>
 
@@ -300,7 +277,7 @@ export function OrdersPage() {
                   <option value="">{savingId === row.id ? 'Сохраняем...' : 'Изменить статус'}</option>
                   {transitions[row.status]?.map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {getOrderStatusLabel(status)}
                     </option>
                   ))}
                 </select>
@@ -325,3 +302,4 @@ export function OrdersPage() {
     </div>
   );
 }
+

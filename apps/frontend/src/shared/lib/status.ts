@@ -1,9 +1,11 @@
 import {
+  DebtStatus,
   InvoiceStatus,
   OrderStatus,
   PaymentStatus,
   ProductionOperationStatus,
-  StockMovementType
+  StockMovementType,
+  StockReservationStatus
 } from '@bestapp/shared';
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
@@ -20,6 +22,74 @@ const toneClasses: Record<Tone, string> = {
 function normalize(value?: string | null) {
   return (value ?? '').toLowerCase();
 }
+
+function titleCase(value: string) {
+  return value
+    .split(/[_\s-]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+const orderStatusLabels: Record<string, string> = {
+  [OrderStatus.DRAFT]: 'Черновик',
+  [OrderStatus.CALCULATED]: 'Рассчитан',
+  [OrderStatus.APPROVED]: 'Утвержден',
+  [OrderStatus.IN_PRODUCTION]: 'В производстве',
+  [OrderStatus.READY]: 'Готов',
+  [OrderStatus.DELIVERED]: 'Выдан',
+  [OrderStatus.CANCELLED]: 'Отменен'
+};
+
+const invoiceStatusLabels: Record<string, string> = {
+  [InvoiceStatus.DRAFT]: 'Черновик',
+  [InvoiceStatus.ISSUED]: 'Выставлен',
+  [InvoiceStatus.PARTIALLY_PAID]: 'Частично оплачен',
+  [InvoiceStatus.PAID]: 'Оплачен',
+  [InvoiceStatus.OVERDUE]: 'Просрочен',
+  [InvoiceStatus.CANCELLED]: 'Отменен'
+};
+
+const paymentStatusLabels: Record<string, string> = {
+  [PaymentStatus.PENDING]: 'В ожидании',
+  [PaymentStatus.COMPLETED]: 'Оплачен',
+  [PaymentStatus.FAILED]: 'Ошибка',
+  [PaymentStatus.REVERSED]: 'Возвращен'
+};
+
+const productionStatusLabels: Record<string, string> = {
+  [ProductionOperationStatus.PENDING]: 'В очереди',
+  [ProductionOperationStatus.READY]: 'Готов',
+  [ProductionOperationStatus.IN_PROGRESS]: 'В работе',
+  [ProductionOperationStatus.PAUSED]: 'Пауза',
+  [ProductionOperationStatus.COMPLETED]: 'Завершен',
+  [ProductionOperationStatus.FAILED]: 'Ошибка',
+  [ProductionOperationStatus.CANCELLED]: 'Отменен'
+};
+
+const movementTypeLabels: Record<string, string> = {
+  [StockMovementType.PURCHASE_IN]: 'Поступление',
+  [StockMovementType.RESERVE]: 'Резерв',
+  [StockMovementType.WRITE_OFF]: 'Списание',
+  [StockMovementType.RETURN]: 'Возврат',
+  [StockMovementType.ADJUSTMENT]: 'Корректировка',
+  [StockMovementType.WASTE]: 'Потери'
+};
+
+const reservationStatusLabels: Record<string, string> = {
+  [StockReservationStatus.OPEN]: 'Открыт',
+  [StockReservationStatus.RESERVED]: 'Зарезервирован',
+  [StockReservationStatus.RELEASED]: 'Освобожден',
+  [StockReservationStatus.CONSUMED]: 'Списан',
+  [StockReservationStatus.CANCELLED]: 'Отменен'
+};
+
+const debtStatusLabels: Record<string, string> = {
+  [DebtStatus.OPEN]: 'Открыт',
+  [DebtStatus.PARTIAL]: 'Частично',
+  [DebtStatus.OVERDUE]: 'Просрочен',
+  [DebtStatus.CLOSED]: 'Закрыт'
+};
 
 export function getToneForOrderStatus(status?: string | null): Tone {
   switch (normalize(status)) {
@@ -100,6 +170,47 @@ export function getToneForMovementType(type?: string | null): Tone {
     default:
       return 'neutral';
   }
+}
+
+export function getToneForReservationStatus(status?: string | null): Tone {
+  switch (normalize(status)) {
+    case StockReservationStatus.RESERVED:
+      return 'info';
+    case StockReservationStatus.CONSUMED:
+      return 'success';
+    case StockReservationStatus.RELEASED:
+      return 'muted';
+    case StockReservationStatus.CANCELLED:
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+export function getToneForDebtStatus(status?: string | null): Tone {
+  switch (normalize(status)) {
+    case DebtStatus.CLOSED:
+      return 'success';
+    case DebtStatus.PARTIAL:
+      return 'warning';
+    case DebtStatus.OVERDUE:
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+export function getStatusLabel(kind: 'order' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom', status?: string | null) {
+  const normalized = normalize(status);
+
+  if (kind === 'order') return orderStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'invoice') return invoiceStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'payment') return paymentStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'production') return productionStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'movement') return movementTypeLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'reservation') return reservationStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'debt') return debtStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  return status ? titleCase(status) : '—';
 }
 
 export function toneClass(tone: Tone) {

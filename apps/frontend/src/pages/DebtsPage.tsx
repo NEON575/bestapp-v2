@@ -35,7 +35,7 @@ export function DebtsPage() {
   if (loading) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Debts" description="Дебиторка и кредиторка." />
+        <PageHeader title="Долги" description="Дебиторка и кредиторка." />
         <LoadingState rows={3} />
       </div>
     );
@@ -47,7 +47,7 @@ export function DebtsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Debts" description="Кто должен нам и кому должны мы." />
+      <PageHeader title="Долги" description="Кто должен нам и кому должны мы." />
 
       <div className="grid gap-5 xl:grid-cols-2">
         <DebtTable title="Дебиторка" data={receivables} />
@@ -82,7 +82,7 @@ function DebtTable({ title, data, isPayable }: { title: string; data: DebtItem[]
             {
               key: 'status',
               header: 'Статус',
-              render: (row) => <StatusBadge kind="custom" status={row.status} />
+              render: (row) => <StatusBadge kind="debt" status={row.status} />
             }
           ]}
           emptyState={<EmptyState title="Нет данных" description="Список пуст." />}

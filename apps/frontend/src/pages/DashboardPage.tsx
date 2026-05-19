@@ -9,14 +9,13 @@ import {
   Percent,
   ReceiptText,
   TrendingUp,
-  Users2,
   Wallet
 } from 'lucide-react';
 import type { DashboardSummary, InventorySummary } from '@bestapp/shared';
 import { analyticsClient } from '../shared/api/analytics';
 import { inventoryClient } from '../shared/api/inventory';
 import { StatCard, PageHeader, DataTable, StatusBadge, LoadingState, ErrorState, EmptyState } from '../shared/components';
-import { formatCurrency, formatDateOnly, formatPercent } from '../shared/lib/format';
+import { formatCurrency, formatDateOnly } from '../shared/lib/format';
 import { Button, Card } from '@bestapp/ui';
 
 type DashboardState = {
@@ -33,15 +32,12 @@ export function DashboardPage() {
   const load = async () => {
     setState({ loading: true, error: null });
     try {
-      const [dashboard, inventory] = await Promise.all([
-        analyticsClient.dashboard(),
-        inventoryClient.summary()
-      ]);
+      const [dashboard, inventory] = await Promise.all([analyticsClient.dashboard(), inventoryClient.summary()]);
       setState({ dashboard, inventory, loading: false, error: null });
     } catch (error) {
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : 'Не удалось загрузить dashboard'
+        error: error instanceof Error ? error.message : 'Не удалось загрузить панель'
       });
     }
   };
@@ -68,16 +64,13 @@ export function DashboardPage() {
     { label: 'Долги клиентов', value: formatCurrency(dashboard?.totalDebt), icon: Wallet, accent: 'amber' as const },
     { label: 'Касса', value: formatCurrency(dashboard?.cashboxBalance), icon: Wallet, accent: 'sky' as const },
     { label: 'Прибыль месяца', value: formatCurrency(dashboard?.monthProfit), icon: TrendingUp, accent: 'emerald' as const },
-    { label: 'Low stock', value: String(dashboard?.lowStockMaterials ?? 0), icon: Percent, accent: 'rose' as const }
+    { label: 'Мало на складе', value: String(dashboard?.lowStockMaterials ?? 0), icon: Percent, accent: 'rose' as const }
   ];
 
   if (state.loading) {
     return (
       <div className="space-y-5">
-        <PageHeader
-          title="Dashboard"
-          description="Оперативная панель директора и менеджеров типографии."
-        />
+        <PageHeader title="Панель" description="Оперативная панель директора и менеджеров типографии." />
         <LoadingState rows={3} />
       </div>
     );
@@ -90,7 +83,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Dashboard"
+        title="Панель"
         description="Ключевые показатели: заказы, производство, склад, деньги и прибыль."
         actions={
           <>
@@ -113,7 +106,7 @@ export function DashboardPage() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Последние заказы</h2>
-              <p className="mt-1 text-sm text-slate-500">Актуальный поток по production и finance.</p>
+              <p className="mt-1 text-sm text-slate-500">Актуальный поток по производству и финансам.</p>
             </div>
             <Button variant="secondary" onClick={() => navigate('/orders')}>
               Все заказы
@@ -155,12 +148,7 @@ export function DashboardPage() {
                 render: (row) => formatCurrency(row.totalAmount)
               }
             ]}
-            emptyState={
-              <EmptyState
-                title="Нет заказов"
-                description="После создания заказов они появятся здесь автоматически."
-              />
-            }
+            emptyState={<EmptyState title="Заказов нет" description="После создания заказов они появятся здесь автоматически." />}
           />
         </Card>
 
@@ -179,9 +167,7 @@ export function DashboardPage() {
                         <div className="truncate font-semibold text-slate-950">
                           {payment.reference ?? payment.invoice?.number ?? payment.order?.number ?? 'Платеж'}
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {formatDateOnly(payment.paidAt ?? payment.createdAt)}
-                        </div>
+                        <div className="mt-1 text-xs text-slate-500">{formatDateOnly(payment.paidAt ?? payment.createdAt)}</div>
                       </div>
                       <StatusBadge kind="payment" status={payment.status} />
                     </div>
@@ -231,7 +217,7 @@ export function DashboardPage() {
                           Остаток {material.available} {material.unit} · минимум {material.minStockLevel}
                         </div>
                       </div>
-                      <StatusBadge kind="movement" status="adjustment" label="Low" />
+                      <StatusBadge kind="custom" status="low_stock" label="Мало на складе" />
                     </div>
                   </div>
                 ))

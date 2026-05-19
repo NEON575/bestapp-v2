@@ -4,30 +4,41 @@ import type { OrderDetail } from '@bestapp/shared';
 import { Button, Card } from '@bestapp/ui';
 import { ordersClient } from '../shared/api/orders';
 import {
+  ConfirmDialog,
   DataTable,
+  EmptyState,
   ErrorState,
   LoadingState,
   PageHeader,
-  StatusBadge,
-  EmptyState
+  StatusBadge
 } from '../shared/components';
+import { useToast } from '../shared/toast/toast-context';
 import { formatCurrency, formatDateOnly, formatPercent } from '../shared/lib/format';
+import {
+  getNextOrderWorkflowAction,
+  getOrderWorkflowActionLabel,
+  isOrderCancelable,
+  type OrderWorkflowAction
+} from '../shared/lib/order';
 
-const workflowButtons = [
-  { action: 'calculatePrice', label: 'Рассчитать цену' },
-  { action: 'approve', label: 'Утвердить' },
-  { action: 'startProduction', label: 'Старт производства' },
-  { action: 'markReady', label: 'Готов' },
-  { action: 'deliver', label: 'Выдать' }
-] as const;
+type ConfirmState =
+  | {
+      action: 'approve' | 'startProduction' | 'deliver' | 'cancel';
+      title: string;
+      description: string;
+      confirmLabel: string;
+    }
+  | null;
 
 export function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<OrderWorkflowAction | 'cancel' | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null);
 
   const load = async () => {
     if (!id) {
@@ -53,14 +64,54 @@ export function OrderDetailPage() {
     void load();
   }, [id]);
 
+  const nextAction = useMemo(() => getNextOrderWorkflowAction(order?.status), [order?.status]);
   const profitability = useMemo(() => order?.profitability, [order]);
 
-  const runAction = async (action: keyof Pick<typeof ordersClient, 'calculatePrice' | 'approve' | 'startProduction' | 'markReady' | 'deliver'>) => {
+  const promptAction = (action: 'approve' | 'startProduction' | 'deliver') => {
+    const meta = {
+      approve: {
+        title: 'Утвердить заказ',
+        description: 'После утверждения заказ можно будет передать в производство.',
+        confirmLabel: 'Утвердить'
+      },
+      startProduction: {
+        title: 'Запустить производство',
+        description: 'Будут созданы производственные задания и складские резервы.',
+        confirmLabel: 'Запустить'
+      },
+      deliver: {
+        title: 'Выдать заказ',
+        description: 'Заказ перейдет в статус "Выдан" и станет завершенным.',
+        confirmLabel: 'Выдать'
+      }
+    }[action];
+
+    setConfirmState({ action, ...meta });
+  };
+
+  const runWorkflow = async (action: OrderWorkflowAction) => {
     if (!id) return;
     setActionLoading(action);
     try {
       await ordersClient[action](id);
+      toast.success('Действие выполнено', getOrderWorkflowActionLabel(action));
       await load();
+    } catch (e) {
+      toast.error('Не удалось выполнить действие', e instanceof Error ? e.message : 'Повторите попытку позже');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const runCancel = async () => {
+    if (!id) return;
+    setActionLoading('cancel');
+    try {
+      await ordersClient.remove(id);
+      toast.warning('Заказ отменен', 'Заказ был удален из рабочего потока');
+      navigate('/orders');
+    } catch (e) {
+      toast.error('Не удалось отменить заказ', e instanceof Error ? e.message : 'Повторите попытку позже');
     } finally {
       setActionLoading(null);
     }
@@ -78,25 +129,46 @@ export function OrderDetailPage() {
     return <EmptyState title="Заказ не найден" actionLabel="К списку заказов" onAction={() => navigate('/orders')} />;
   }
 
+  const canCancel = isOrderCancelable(order.status);
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={`Заказ ${order.number}`}
-        description={`Полная карточка заказа и его производственно-финансовый контур.`}
+        description="Полная карточка заказа, расчет, производство, склад, оплаты и история изменений."
         actions={
           <>
             <Button variant="secondary" onClick={() => navigate('/orders')}>
               К списку
             </Button>
-            {workflowButtons.map((button) => (
+            {nextAction ? (
               <Button
-                key={button.action}
-                onClick={() => void runAction(button.action)}
-                disabled={actionLoading === button.action}
+                onClick={() =>
+                  nextAction === 'approve' || nextAction === 'startProduction' || nextAction === 'deliver'
+                    ? promptAction(nextAction)
+                    : void runWorkflow(nextAction)
+                }
+                disabled={actionLoading === nextAction}
               >
-                {actionLoading === button.action ? '...' : button.label}
+                {actionLoading === nextAction ? 'Выполняется...' : getOrderWorkflowActionLabel(nextAction)}
               </Button>
-            ))}
+            ) : null}
+            {canCancel ? (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setConfirmState({
+                    action: 'cancel',
+                    title: 'Отменить заказ',
+                    description: 'Заказ будет удален из рабочего потока и дальнейшие производственные действия станут недоступны.',
+                    confirmLabel: 'Отменить заказ'
+                  })
+                }
+                disabled={actionLoading === 'cancel'}
+              >
+                {actionLoading === 'cancel' ? 'Выполняется...' : 'Отменить заказ'}
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -112,22 +184,10 @@ export function OrderDetailPage() {
           </div>
 
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Дедлайн</dt>
-              <dd className="mt-1 text-sm font-semibold text-slate-950">{formatDateOnly(order.deadlineAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Создан</dt>
-              <dd className="mt-1 text-sm font-semibold text-slate-950">{formatDateOnly(order.createdAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Комментарий</dt>
-              <dd className="mt-1 text-sm leading-6 text-slate-700">{order.comment ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Долг клиента</dt>
-              <dd className="mt-1 text-sm font-semibold text-slate-950">{formatCurrency(order.customerDebtAmount)}</dd>
-            </div>
+            <Info label="Дедлайн" value={formatDateOnly(order.deadlineAt)} />
+            <Info label="Создан" value={formatDateOnly(order.createdAt)} />
+            <Info label="Комментарий" value={order.comment ?? '—'} />
+            <Info label="Долг клиента" value={formatCurrency(order.customerDebtAmount)} />
           </dl>
         </Card>
 
@@ -145,12 +205,8 @@ export function OrderDetailPage() {
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Маржа</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-950">
-            {formatPercent(order.marginPercent)}
-          </div>
-          <div className="mt-1 text-sm text-slate-500">
-            {profitability?.isProfitable ? 'Заказ прибыльный' : 'Заказ убыточный'}
-          </div>
+          <div className="mt-2 text-2xl font-semibold text-slate-950">{formatPercent(order.marginPercent)}</div>
+          <div className="mt-1 text-sm text-slate-500">{profitability?.isProfitable ? 'Заказ прибыльный' : 'Заказ убыточный'}</div>
         </Card>
       </div>
 
@@ -163,11 +219,7 @@ export function OrderDetailPage() {
             columns={[
               { key: 'name', header: 'Позиция', render: (row) => row.name },
               { key: 'type', header: 'Тип', render: (row) => row.productType },
-              {
-                key: 'size',
-                header: 'Размер',
-                render: (row) => `${row.width} x ${row.height}`
-              },
+              { key: 'size', header: 'Размер', render: (row) => `${row.width} × ${row.height}` },
               { key: 'quantity', header: 'Количество', render: (row) => row.quantity },
               { key: 'color', header: 'Цветность', render: (row) => row.colorMode },
               { key: 'material', header: 'Материал', render: (row) => row.materialId ?? '—' },
@@ -190,11 +242,7 @@ export function OrderDetailPage() {
             <Metric label="Накладные" value={formatCurrency(order.costCalculation?.overheadCost)} />
             <Metric label="Waste %" value={formatPercent(order.costCalculation?.wastePercent)} />
             <Metric label="Profit %" value={formatPercent(order.costCalculation?.profitPercent)} />
-            <Metric
-              label="Рекоменд. цена"
-              value={formatCurrency(order.costCalculation?.recommendedPrice)}
-              className="sm:col-span-2"
-            />
+            <Metric label="Рекоменд. цена" value={formatCurrency(order.costCalculation?.recommendedPrice)} className="sm:col-span-2" />
           </div>
 
           {order.costCalculation?.lines?.length ? (
@@ -250,7 +298,7 @@ export function OrderDetailPage() {
                         {reservation.quantity} {reservation.material?.unit ?? ''}
                       </div>
                     </div>
-                    <StatusBadge kind="custom" status={reservation.status} />
+                    <StatusBadge kind="reservation" status={reservation.status} />
                   </div>
                 </div>
               ))
@@ -298,8 +346,10 @@ export function OrderDetailPage() {
                     <StatusBadge kind="invoice" status={invoice.status} />
                   </div>
                   <div className="mt-3 flex justify-between text-sm text-slate-600">
-                    <span>{formatCurrency(invoice.paidAmount)} / {formatCurrency(invoice.totalAmount)}</span>
-                    <span>{invoice.receivable?.status ?? '—'}</span>
+                    <span>
+                      {formatCurrency(invoice.paidAmount)} / {formatCurrency(invoice.totalAmount)}
+                    </span>
+                    <StatusBadge kind="debt" status={invoice.receivable?.status} />
                   </div>
                 </div>
               ))
@@ -318,7 +368,9 @@ export function OrderDetailPage() {
                     </div>
                     <StatusBadge kind="payment" status={payment.status} />
                   </div>
-                  <div className="mt-2 text-sm text-slate-600">{formatCurrency(payment.amount)} · {payment.method}</div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {formatCurrency(payment.amount)} · {payment.method}
+                  </div>
                 </div>
               ))
             ) : (
@@ -328,20 +380,16 @@ export function OrderDetailPage() {
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Profitability</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Прибыльность</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Metric label="Net profit" value={formatCurrency(order.profitability.netProfit)} />
-            <Metric label="Margin" value={formatPercent(order.profitability.marginPercent)} />
-            <Metric label="Debt" value={formatCurrency(order.profitability.customerDebtAmount)} />
-            <Metric
-              label="Profitable"
-              value={order.profitability.isProfitable ? 'Да' : 'Нет'}
-              className="sm:col-span-2"
-            />
+            <Metric label="Чистая прибыль" value={formatCurrency(order.profitability.netProfit)} />
+            <Metric label="Маржа" value={formatPercent(order.profitability.marginPercent)} />
+            <Metric label="Долг" value={formatCurrency(order.profitability.customerDebtAmount)} />
+            <Metric label="Прибыльный" value={order.profitability.isProfitable ? 'Да' : 'Нет'} className="sm:col-span-2" />
           </div>
 
           <div className="mt-5">
-            <SectionTitle title="Audit history" />
+            <SectionTitle title="История изменений" />
             <div className="mt-3 space-y-2">
               {order.auditLogs.length ? (
                 order.auditLogs.map((log) => (
@@ -362,6 +410,34 @@ export function OrderDetailPage() {
           </div>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(confirmState)}
+        title={confirmState?.title ?? ''}
+        description={confirmState?.description}
+        confirmLabel={confirmState?.confirmLabel}
+        onCancel={() => setConfirmState(null)}
+        onConfirm={() => {
+          const action = confirmState?.action;
+          setConfirmState(null);
+          if (!action) return;
+          if (action === 'cancel') {
+            void runCancel();
+          } else {
+            void runWorkflow(action);
+          }
+        }}
+        loading={actionLoading !== null}
+      />
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold leading-6 text-slate-950">{value}</dd>
     </div>
   );
 }
