@@ -4,8 +4,8 @@ import type {
   InventoryMaterialItem,
   InventoryMovementItem,
   InventorySummary,
+  MaterialQueryDto,
   PaginatedResponse,
-  PaginationQuery,
   ReserveStockDto,
   UpdateMaterialDto,
   WriteOffStockDto,
@@ -21,7 +21,7 @@ export const inventoryClient = {
     return data;
   },
 
-  async materials(query: PaginationQuery = {}) {
+  async materials(query: MaterialQueryDto = {}) {
     const { data } = await api.get<PaginatedResponse<InventoryMaterialItem>>('/inventory/materials', {
       params: buildQueryParams(query)
     });
@@ -90,4 +90,3 @@ export const inventoryClient = {
     return data;
   }
 };
-

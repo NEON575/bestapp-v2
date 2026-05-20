@@ -10,7 +10,8 @@ const expectedSheetColumns: Record<string, string[]> = {
   'Satış': ['Tarix', 'Müştəri', 'Menecer', 'Kateqoriya', 'Məhsul', 'Say', 'Satış məb.', 'Ödəniş', 'Qalıq', 'Xeyir'],
   'Alış': ['Tarix', 'Təchizatçı', 'Alış Məbləğ', 'Ödəniş', 'Qalıq borc'],
   'Maaş': ['Tarix', 'Ad', 'Maaş', 'Bonus', 'Ödəniş', 'Qalıq'],
-  'Kağız': ['kod', 'ad', 'qram', 'razmer', 'qiymət']
+  'Kağız': ['kod', 'ad', 'qram', 'razmer', 'qiymət'],
+  'Məhsul': ['təchizatçı', 'material', 'kateqoriya', 'qiymət', 'vahid']
 };
 
 function normalizeCell(value: unknown) {
@@ -54,7 +55,18 @@ export class ImportService {
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }) as unknown[][];
         const columns = extractColumns(rows);
         const expected = expectedSheetColumns[sheetName] ?? [];
-        const mappingErrors = expected.filter((column) => !columns.includes(column)).map((column) => `Kolonka tapılmadı: ${column}`);
+        const mappingErrors = expected
+          .filter((column) => !columns.includes(column))
+          .map((column) => `Kolonka tapılmadı: ${column}`);
+
+        if (sheetName === 'Kağız') {
+          mappingErrors.push('Target: Materiallar / Kağız kateqoriyası');
+        }
+
+        if (sheetName === 'Məhsul') {
+          mappingErrors.push('Target: Materiallar / uyğun kateqoriya');
+        }
+
         const confidence = calculateConfidence(expected, columns);
 
         return {

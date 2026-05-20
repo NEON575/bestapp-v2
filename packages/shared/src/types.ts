@@ -398,12 +398,20 @@ export interface InventoryMaterialItem {
   name: string;
   sku?: string | null;
   unit: string;
+  gram?: number | null;
+  size?: string | null;
+  packPrice?: number;
+  quantityInPack?: number;
+  unitCost?: number;
+  vatIncluded?: boolean;
   minStockLevel: number;
   onHand?: number;
   reserved?: number;
   available?: number;
   costPrice?: number;
+  notes?: string | null;
   category?: MaterialCategoryItem | null;
+  supplier?: SupplierItem | null;
 }
 
 export interface MaterialCategoryItem {

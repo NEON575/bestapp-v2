@@ -4,6 +4,22 @@ import { Button } from '@bestapp/ui';
 import { importClient } from '../shared/api/import';
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '../shared/components';
 
+function sheetTargetLabel(name: string) {
+  if (name === 'Kağız') {
+    return 'Materiallar / Kağız kateqoriyası';
+  }
+
+  if (name === 'Məhsul') {
+    return 'Materiallar / uyğun kateqoriya';
+  }
+
+  if (name === 'Satış') {
+    return 'Satış əsas jurnal';
+  }
+
+  return name;
+}
+
 export function ImportExcelPage() {
   const [preview, setPreview] = useState<ExcelImportPreviewResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -66,6 +82,7 @@ export function ImportExcelPage() {
               <div key={sheet.name} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-slate-950">{sheet.name}</div>
+                  <div className="mt-1 text-xs text-slate-500">{sheetTargetLabel(sheet.name)}</div>
                   <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${sheet.found ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
                     {sheet.found ? 'Tapıldı' : 'Tapılmadı'}
                   </span>
@@ -81,6 +98,7 @@ export function ImportExcelPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-950">{sheet.name}</h3>
+                  <p className="mt-1 text-xs text-slate-500">{sheetTargetLabel(sheet.name)}</p>
                   <p className="mt-1 text-sm text-slate-500">{sheet.rows} sətir aşkarlandı • confidence {sheet.confidence ?? 0}%</p>
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${(sheet.confidence ?? 0) >= 80 ? 'bg-emerald-50 text-emerald-700' : (sheet.confidence ?? 0) >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>

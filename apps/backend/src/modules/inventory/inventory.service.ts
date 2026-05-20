@@ -8,6 +8,7 @@ import { calculateInventorySummary } from '../../common/business/inventory-summa
 import {
   CreateMaterialDto,
   CreateStockMovementDto,
+  MaterialQueryDto,
   ReserveStockDto,
   UpdateMaterialDto,
   WriteOffStockDto
@@ -25,6 +26,33 @@ function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
 
 function roundQty(value: number) {
   return Math.round(value * 10000) / 10000;
+}
+
+function resolveMaterialUnitCost(input: {
+  unitCost?: number | null;
+  costPrice?: number | null;
+  packPrice?: number | null;
+  quantityInPack?: number | null;
+}) {
+  if (input.unitCost != null && Number.isFinite(input.unitCost)) {
+    return input.unitCost;
+  }
+
+  if (
+    input.packPrice != null &&
+    Number.isFinite(input.packPrice) &&
+    input.quantityInPack != null &&
+    Number.isFinite(input.quantityInPack) &&
+    input.quantityInPack > 0
+  ) {
+    return roundQty(input.packPrice / input.quantityInPack);
+  }
+
+  if (input.costPrice != null && Number.isFinite(input.costPrice)) {
+    return input.costPrice;
+  }
+
+  return 0;
 }
 
 @Injectable()
@@ -224,17 +252,69 @@ export class InventoryService {
     return this.findMaterials({ page: 1, limit: 20 });
   }
 
-  async findMaterials(query: PaginationQueryDto) {
+  private mapMaterial(material: {
+    id: string;
+    name: string;
+    sku: string | null;
+    unit: string;
+    gram?: Prisma.Decimal | null;
+    size?: string | null;
+    packPrice?: Prisma.Decimal | null;
+    quantityInPack?: number | null;
+    unitCost?: Prisma.Decimal | null;
+    vatIncluded?: boolean | null;
+    minStockLevel: Prisma.Decimal | number | string;
+    costPrice?: Prisma.Decimal | number | string | null;
+    notes?: string | null;
+    category?: { id: string; code: string; name: string; description: string | null } | null;
+    supplier?: { id: string; code: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; isActive: boolean } | null;
+    stockLevels?: Array<{ onHand: Prisma.Decimal | number | string; reserved: Prisma.Decimal | number | string; available: Prisma.Decimal | number | string }>;
+  }) {
+    const stockLevels = material.stockLevels ?? [];
+    const onHand = roundQty(stockLevels.reduce((sum, level) => sum + toNumber(level.onHand), 0));
+    const reserved = roundQty(stockLevels.reduce((sum, level) => sum + toNumber(level.reserved), 0));
+    const available = roundQty(stockLevels.reduce((sum, level) => sum + toNumber(level.available), 0));
+    const unitCost = toNumber(material.unitCost ?? material.costPrice);
+
+    return {
+      id: material.id,
+      name: material.name,
+      sku: material.sku,
+      unit: material.unit,
+      gram: material.gram != null ? toNumber(material.gram) : null,
+      size: material.size ?? null,
+      packPrice: toNumber(material.packPrice),
+      quantityInPack: material.quantityInPack ?? 1,
+      unitCost,
+      vatIncluded: Boolean(material.vatIncluded),
+      minStockLevel: toNumber(material.minStockLevel),
+      onHand,
+      reserved,
+      available,
+      costPrice: toNumber(material.costPrice ?? material.unitCost),
+      notes: material.notes ?? null,
+      category: material.category ?? null,
+      supplier: material.supplier ?? null
+    };
+  }
+
+  async findMaterials(query: MaterialQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
     const where: Prisma.MaterialWhereInput = {
       deletedAt: null,
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...(query.gram ? { gram: query.gram } : {}),
+      ...(query.size ? { size: { contains: query.size, mode: 'insensitive' } } : {}),
       ...(query.search
         ? {
             OR: [
               { name: { contains: query.search, mode: 'insensitive' } },
               { sku: { contains: query.search, mode: 'insensitive' } },
               { unit: { contains: query.search, mode: 'insensitive' } },
-              { category: { name: { contains: query.search, mode: 'insensitive' } } }
+              { category: { name: { contains: query.search, mode: 'insensitive' } } },
+              { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+              { size: { contains: query.search, mode: 'insensitive' } }
             ]
           }
         : {})
@@ -243,32 +323,12 @@ export class InventoryService {
     const orderByField = query.sortBy ?? 'createdAt';
     const orderBy = { [orderByField]: query.sortOrder ?? 'desc' } as Prisma.MaterialOrderByWithRelationInput;
 
-    const [total, data] = await this.prisma.$transaction([
-      this.prisma.material.count({ where }),
-      this.prisma.material.findMany({
-        where,
-        skip,
-        take,
-        orderBy,
-        include: {
-          category: true,
-          stockLevels: {
-            include: {
-              warehouse: true
-            }
-          }
-        }
-      })
-    ]);
-
-    return buildPaginatedResponse(data, total, page, limit);
-  }
-
-  findOneMaterial(id: string) {
-    return this.prisma.material.findFirst({
-      where: { id, deletedAt: null },
+    const materials = await this.prisma.material.findMany({
+      where,
+      orderBy,
       include: {
         category: true,
+        supplier: true,
         stockLevels: {
           include: {
             warehouse: true
@@ -276,35 +336,99 @@ export class InventoryService {
         }
       }
     });
+
+    const normalized = materials.map((material) => this.mapMaterial(material));
+    const filtered = query.lowStockOnly
+      ? normalized.filter((material) => material.available <= material.minStockLevel)
+      : normalized;
+    const paged = filtered.slice(skip, skip + take);
+
+    return buildPaginatedResponse(paged, filtered.length, page, limit);
+  }
+
+  async findOneMaterial(id: string) {
+    const material = await this.prisma.material.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        category: true,
+        supplier: true,
+        stockLevels: {
+          include: {
+            warehouse: true
+          }
+        }
+      }
+    });
+
+    if (!material) {
+      return null;
+    }
+
+    return this.mapMaterial(material);
   }
 
   async createMaterial(dto: CreateMaterialDto) {
+    const quantityInPack = dto.quantityInPack ? Math.max(1, Math.round(dto.quantityInPack)) : 1;
+    const unitCost = resolveMaterialUnitCost({
+      unitCost: dto.unitCost,
+      costPrice: dto.costPrice,
+      packPrice: dto.packPrice,
+      quantityInPack
+    });
+
     return this.prisma.material.create({
       data: {
         categoryId: dto.categoryId,
+        supplierId: dto.supplierId,
         name: dto.name,
         sku: dto.sku,
         unit: dto.unit,
+        gram: dto.gram,
+        size: dto.size,
+        packPrice: dto.packPrice ?? 0,
+        quantityInPack,
+        unitCost,
+        vatIncluded: dto.vatIncluded ?? false,
         minStockLevel: dto.minStockLevel ?? 0,
         stockQuantity: dto.stockQuantity ?? 0,
         reservedQuantity: dto.reservedQuantity ?? 0,
-        costPrice: dto.costPrice ?? 0
+        costPrice: dto.costPrice ?? unitCost,
+        notes: dto.notes
       }
     });
   }
 
-  updateMaterial(id: string, dto: UpdateMaterialDto) {
+  async updateMaterial(id: string, dto: UpdateMaterialDto) {
+    const existing = await this.ensureMaterial(id);
+    const quantityInPack = dto.quantityInPack ? Math.max(1, Math.round(dto.quantityInPack)) : 1;
+    const nextQuantityInPack = dto.quantityInPack != null ? quantityInPack : (existing as any).quantityInPack ?? 1;
+    const nextPackPrice = dto.packPrice ?? toNumber((existing as any).packPrice);
+    const unitCost = resolveMaterialUnitCost({
+      unitCost: dto.unitCost,
+      costPrice: dto.costPrice ?? toNumber((existing as any).costPrice),
+      packPrice: nextPackPrice,
+      quantityInPack: nextQuantityInPack
+    });
+
     return this.prisma.material.update({
       where: { id },
       data: {
         categoryId: dto.categoryId,
+        supplierId: dto.supplierId,
         name: dto.name,
         sku: dto.sku,
         unit: dto.unit,
+        gram: dto.gram,
+        size: dto.size,
+        packPrice: dto.packPrice,
+        quantityInPack: dto.quantityInPack != null ? quantityInPack : undefined,
+        unitCost,
+        vatIncluded: dto.vatIncluded,
         minStockLevel: dto.minStockLevel,
         stockQuantity: dto.stockQuantity,
         reservedQuantity: dto.reservedQuantity,
-        costPrice: dto.costPrice
+        costPrice: dto.costPrice ?? unitCost,
+        notes: dto.notes
       }
     });
   }
@@ -581,17 +705,25 @@ export class InventoryService {
       const onHand = stockLevels.reduce((sum, level) => sum + toNumber(level.onHand), 0);
       const reserved = stockLevels.reduce((sum, level) => sum + toNumber(level.reserved), 0);
       const available = stockLevels.reduce((sum, level) => sum + toNumber(level.available), 0);
+      const unitCost = toNumber((material as any).unitCost ?? material.costPrice);
 
       return {
         id: material.id,
         name: material.name,
         sku: material.sku,
         unit: material.unit,
+        gram: (material as any).gram != null ? toNumber((material as any).gram) : null,
+        size: (material as any).size ?? null,
+        packPrice: toNumber((material as any).packPrice),
+        quantityInPack: (material as any).quantityInPack ?? 1,
+        unitCost,
+        vatIncluded: Boolean((material as any).vatIncluded),
         minStockLevel: toNumber(material.minStockLevel),
         onHand,
         reserved,
         available,
-        costPrice: toNumber(material.costPrice)
+        costPrice: unitCost,
+        notes: (material as any).notes ?? null
       };
     });
 

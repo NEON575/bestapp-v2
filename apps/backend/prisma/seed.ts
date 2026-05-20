@@ -144,9 +144,18 @@ async function main() {
 
   const categoryRows = await Promise.all(
     [
-      { code: 'paper', name: 'Paper', description: 'Paper and board' },
-      { code: 'ink', name: 'Ink', description: 'Printing inks' },
-      { code: 'consumables', name: 'Consumables', description: 'Auxiliary production materials' }
+      { code: 'paper', name: 'Kağız', description: 'Kağız və çap kağızları' },
+      { code: 'cardboard', name: 'Karton', description: 'Karton və qalın əsas materiallar' },
+      { code: 'ink', name: 'Boya', description: 'Çap boyaları' },
+      { code: 'plate', name: 'Forma / Plastina', description: 'Forma və plastina materialları' },
+      { code: 'lamination', name: 'Laminasiya', description: 'Laminasiya materialları' },
+      { code: 'spiral', name: 'Spiral', description: 'Spiral materialları' },
+      { code: 'poni', name: 'Poni', description: 'Poni materialları' },
+      { code: 'knife', name: 'Bıçaq', description: 'Bıçaq və kəsim alətləri' },
+      { code: 'manual', name: 'Əl işi materialları', description: 'Əl işi üçün köməkçi materiallar' },
+      { code: 'chemical', name: 'Kimyəvi maddələr', description: 'Kimyəvi köməkçi maddələr' },
+      { code: 'packaging', name: 'Qablaşdırma', description: 'Qablaşdırma materialları' },
+      { code: 'other', name: 'Digər', description: 'Digər materiallar' }
     ].map((category) =>
       prisma.materialCategory.upsert({
         where: { code: category.code },
@@ -198,7 +207,7 @@ async function main() {
 
   const paperCategory = categoryRows.find((row) => row.code === 'paper');
   const inkCategory = categoryRows.find((row) => row.code === 'ink');
-  const consumablesCategory = categoryRows.find((row) => row.code === 'consumables');
+  const laminationCategory = categoryRows.find((row) => row.code === 'lamination');
 
   const [mainWarehouse] = warehouseRows;
 
@@ -208,6 +217,12 @@ async function main() {
         sku: 'PAPER-A2-150',
         name: 'Coated Paper A2 150gsm',
         unit: 'sheet',
+        gram: 150,
+        size: 'A2',
+        packPrice: 35,
+        quantityInPack: 100,
+        unitCost: 0.35,
+        vatIncluded: true,
         costPrice: 0.35,
         minStockLevel: 1000,
         stockQuantity: 10000,
@@ -218,6 +233,7 @@ async function main() {
         sku: 'INK-CMYK',
         name: 'CMYK Ink Set',
         unit: 'set',
+        unitCost: 85,
         costPrice: 85,
         minStockLevel: 20,
         stockQuantity: 120,
@@ -228,10 +244,13 @@ async function main() {
         sku: 'LAM-FILM',
         name: 'Lamination Film',
         unit: 'roll',
+        quantityInPack: 1,
+        packPrice: 12.5,
+        unitCost: 12.5,
         costPrice: 12.5,
         minStockLevel: 30,
         stockQuantity: 200,
-        categoryId: consumablesCategory?.id,
+        categoryId: laminationCategory?.id,
         supplierId: supplierRows[1]?.id
       }
     ].map((material) =>
@@ -240,6 +259,12 @@ async function main() {
         update: {
           name: material.name,
           unit: material.unit,
+          gram: material.gram,
+          size: material.size,
+          packPrice: material.packPrice ?? 0,
+          quantityInPack: material.quantityInPack ?? 1,
+          unitCost: material.unitCost ?? material.costPrice,
+          vatIncluded: material.vatIncluded ?? false,
           costPrice: material.costPrice,
           minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,
@@ -250,6 +275,12 @@ async function main() {
           sku: material.sku,
           name: material.name,
           unit: material.unit,
+          gram: material.gram,
+          size: material.size,
+          packPrice: material.packPrice ?? 0,
+          quantityInPack: material.quantityInPack ?? 1,
+          unitCost: material.unitCost ?? material.costPrice,
+          vatIncluded: material.vatIncluded ?? false,
           costPrice: material.costPrice,
           minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,

@@ -385,11 +385,18 @@ model Material {
   name            String
   sku             String?         @unique
   unit            String
+  gram            Decimal?        @db.Decimal(10, 2)
+  size            String?
+  packPrice       Decimal         @default(0) @db.Decimal(18, 2)
+  quantityInPack  Int             @default(1)
+  unitCost        Decimal         @default(0) @db.Decimal(18, 4)
+  vatIncluded     Boolean         @default(false)
   isActive        Boolean         @default(true)
   minStockLevel   Decimal         @default(0) @db.Decimal(18, 4)
   stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
   reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
   costPrice       Decimal         @default(0) @db.Decimal(18, 4)
+  notes           String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?

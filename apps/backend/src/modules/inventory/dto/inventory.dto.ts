@@ -1,13 +1,7 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsEnum,
-  IsNumber,
-  IsOptional,
-  IsString,
-  ValidateNested
-} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { PaginationQueryDto } from '../../../common/query/pagination.dto';
 
 export enum StockMovementTypeDto {
   purchase_in = 'purchase_in',
@@ -16,6 +10,35 @@ export enum StockMovementTypeDto {
   return = 'return',
   adjustment = 'adjustment',
   waste = 'waste'
+}
+
+export class MaterialQueryDto extends PaginationQueryDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  supplierId?: string;
+
+  @ApiProperty({ required: false, example: 300 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  gram?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  size?: string;
+
+  @ApiProperty({ required: false, example: true })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  lowStockOnly?: boolean;
 }
 
 export class CreateMaterialDto {
@@ -37,25 +60,65 @@ export class CreateMaterialDto {
   @IsString()
   unit!: string;
 
-  @ApiProperty({ example: 10 })
+  @ApiProperty({ required: false, example: 300 })
+  @IsOptional()
+  @IsNumber()
+  gram?: number;
+
+  @ApiProperty({ required: false, example: 'A3' })
+  @IsOptional()
+  @IsString()
+  size?: string;
+
+  @ApiProperty({ required: false, example: 45 })
+  @IsOptional()
+  @IsNumber()
+  packPrice?: number;
+
+  @ApiProperty({ required: false, example: 250 })
+  @IsOptional()
+  @IsNumber()
+  quantityInPack?: number;
+
+  @ApiProperty({ required: false, example: 0.18 })
+  @IsOptional()
+  @IsNumber()
+  unitCost?: number;
+
+  @ApiProperty({ required: false, example: true })
+  @IsOptional()
+  @IsBoolean()
+  vatIncluded?: boolean;
+
+  @ApiProperty({ required: false, example: 10 })
   @IsOptional()
   @IsNumber()
   minStockLevel?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   stockQuantity?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   reservedQuantity?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   costPrice?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  supplierId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class UpdateMaterialDto extends PartialType(CreateMaterialDto) {}

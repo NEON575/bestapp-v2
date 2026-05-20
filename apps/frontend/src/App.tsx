@@ -19,7 +19,7 @@ import { PurchasesPage } from './pages/PurchasesPage';
 import { CustomerDebtsPage } from './pages/CustomerDebtsPage';
 import { SupplierDebtsPage } from './pages/SupplierDebtsPage';
 import { SalariesPage } from './pages/SalariesPage';
-import { PapersPage } from './pages/PapersPage';
+import { MaterialsPage } from './pages/MaterialsPage';
 import { ImportExcelPage } from './pages/ImportExcelPage';
 
 export function App() {
@@ -54,7 +54,8 @@ export function App() {
         <Route path="supplier-debts" element={<SupplierDebtsPage />} />
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="salaries" element={<SalariesPage />} />
-        <Route path="papers" element={<PapersPage />} />
+        <Route path="materials" element={<MaterialsPage />} />
+        <Route path="papers" element={<Navigate to="/materials" replace />} />
         <Route path="import-excel" element={<ImportExcelPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

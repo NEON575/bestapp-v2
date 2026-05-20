@@ -41,7 +41,7 @@ const navItems: NavItem[] = [
   { to: '/customers', label: 'Müştəri', icon: Users2 },
   { to: '/production', label: 'İstehsal', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
   { to: '/inventory', label: 'Anbar', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
-  { to: '/papers', label: 'Kağız', icon: SquareStack, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/materials', label: 'Materiallar', icon: SquareStack, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
   { to: '/import-excel', label: 'Import Excel', icon: ScanSearch, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
   { to: '/finance', label: 'Maliyyə', icon: CircleDollarSign, roles: ['super_admin', 'owner', 'accountant'] },
   { to: '/customer-debts', label: 'Müştəri borcu', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },

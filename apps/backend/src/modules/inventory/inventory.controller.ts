@@ -5,6 +5,7 @@ import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import {
   CreateMaterialDto,
   CreateStockMovementDto,
+  MaterialQueryDto,
   ReserveStockDto,
   UpdateMaterialDto,
   WriteOffStockDto
@@ -18,7 +19,7 @@ export class InventoryController {
 
   @Get('materials')
   @Roles('super_admin', 'owner', 'warehouse', 'manager')
-  findMaterials(@Query() query: PaginationQueryDto) {
+  findMaterials(@Query() query: MaterialQueryDto) {
     return this.inventoryService.findMaterials(query);
   }
 

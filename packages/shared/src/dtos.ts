@@ -60,16 +60,32 @@ export interface UpdateOrderDto extends Partial<CreateOrderDto> {}
 
 export interface CreateMaterialDto {
   categoryId?: string;
+  supplierId?: string;
   name: string;
   sku?: string;
   unit: string;
+  gram?: number;
+  size?: string;
+  packPrice?: number;
+  quantityInPack?: number;
+  unitCost?: number;
+  vatIncluded?: boolean;
   minStockLevel?: number;
   stockQuantity?: number;
   reservedQuantity?: number;
   costPrice?: number;
+  notes?: string;
 }
 
 export interface UpdateMaterialDto extends Partial<CreateMaterialDto> {}
+
+export interface MaterialQueryDto extends PaginationQueryDto {
+  categoryId?: string;
+  supplierId?: string;
+  gram?: number;
+  size?: string;
+  lowStockOnly?: boolean;
+}
 
 export interface CreateInvoiceDto {
   orderId: string;
