@@ -12,7 +12,7 @@
     "dev:all": "concurrently -n backend,frontend -c green,blue \"node scripts/run-workspace-command.mjs apps/backend dev\" \"node scripts/run-workspace-command.mjs apps/frontend dev\"",
     "build": "npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend && npm run build -w @bestapp/frontend",
     "lint": "npm run lint -w @bestapp/backend && npm run lint -w @bestapp/frontend",
-    "db:migrate": "node scripts/run-workspace-command.mjs apps/backend prisma:migrate",
+    "db:migrate": "node scripts/prisma-migrate-local.mjs",
     "db:seed": "node scripts/run-workspace-command.mjs apps/backend prisma:seed",
     "prisma:generate": "node scripts/run-workspace-command.mjs apps/backend prisma:generate",
     "setup:local": "node scripts/setup-local.mjs",
