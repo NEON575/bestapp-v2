@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { SalesService } from './sales.service';
 import { CreateSalesEntryDto, QuickCreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
+import type { Response } from 'express';
 
 @ApiTags('sales')
 @Controller('sales')
@@ -25,6 +26,15 @@ export class SalesController {
   @Roles('super_admin', 'owner', 'manager', 'accountant')
   summary(@Query() query: SalesEntryQueryDto) {
     return this.salesService.summary(query);
+  }
+
+  @Get('export')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  async export(@Query() query: SalesEntryQueryDto, @Res() res: Response) {
+    const buffer = await this.salesService.export(query);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="satis-export.xlsx"');
+    res.send(buffer);
   }
 
   @Get('customer-debts')

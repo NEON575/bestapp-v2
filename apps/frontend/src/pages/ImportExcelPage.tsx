@@ -24,13 +24,13 @@ export function ImportExcelPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Import Excel" description="BestApp.xlsm faylını yükləyin və mapping preview görün." />
+      <PageHeader title="Import Excel" description="BestApp.xlsm faylı üçün preview, mapping status və ilk sətirlər." />
 
       <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 shadow-sm">
         <div className="flex flex-col items-start gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">BestApp.xlsm preview</h2>
-            <p className="mt-1 text-sm text-slate-500">Hələ yekun import yoxdur. Bu mərhələdə vərəqlər, kolonlar və mapping xətaları göstərilir.</p>
+            <p className="mt-1 text-sm text-slate-500">Hələ final import yoxdur. Bu mərhələdə əsas vərəqlər, confidence və nümunə sətirlər göstərilir.</p>
           </div>
           <label className="inline-flex cursor-pointer items-center gap-3 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white">
             <input
@@ -51,8 +51,7 @@ export function ImportExcelPage() {
 
       {loading ? <LoadingState rows={4} /> : null}
       {error ? <ErrorState description={error} /> : null}
-
-      {!loading && !error && !preview ? <EmptyState title="Hələ preview yoxdur" description="BestApp.xlsm faylı seçdikdən sonra nəticə burada görünəcək." /> : null}
+      {!loading && !error && !preview ? <EmptyState title="Preview yoxdur" description="BestApp.xlsm faylı seçdikdən sonra nəticə burada görünəcək." /> : null}
 
       {preview ? (
         <div className="space-y-4">
@@ -62,16 +61,31 @@ export function ImportExcelPage() {
             {preview.workbookError ? <div className="mt-2 text-sm text-rose-600">{preview.workbookError}</div> : null}
           </div>
 
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {(preview.requiredSheets ?? []).map((sheet) => (
+              <div key={sheet.name} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-slate-950">{sheet.name}</div>
+                  <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${sheet.found ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    {sheet.found ? 'Tapıldı' : 'Tapılmadı'}
+                  </span>
+                </div>
+                <div className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">Mapping confidence</div>
+                <div className="mt-1 text-lg font-semibold text-slate-950">{sheet.confidence}%</div>
+              </div>
+            ))}
+          </div>
+
           {preview.sheets.map((sheet) => (
             <div key={sheet.name} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-950">{sheet.name}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{sheet.rows} sətir aşkarlandı</p>
+                  <p className="mt-1 text-sm text-slate-500">{sheet.rows} sətir aşkarlandı • confidence {sheet.confidence ?? 0}%</p>
                 </div>
-                <Button variant="secondary" className="pointer-events-none">
-                  Preview
-                </Button>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${(sheet.confidence ?? 0) >= 80 ? 'bg-emerald-50 text-emerald-700' : (sheet.confidence ?? 0) >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+                  {(sheet.confidence ?? 0) >= 80 ? 'Yaxşı uyğunluq' : (sheet.confidence ?? 0) >= 50 ? 'Orta uyğunluq' : 'Aşağı uyğunluq'}
+                </span>
               </div>
 
               <div className="mt-4">
@@ -96,6 +110,38 @@ export function ImportExcelPage() {
                         {message}
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">İlk 5 sətir preview</div>
+                {!sheet.sampleRows?.length ? (
+                  <div className="mt-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Preview sətiri tapılmadı.</div>
+                ) : (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          {sheet.columns.map((column) => (
+                            <th key={column} className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em]">
+                              {column}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sheet.sampleRows.map((row, index) => (
+                          <tr key={`${sheet.name}-${index}`} className="border-b border-slate-100">
+                            {sheet.columns.map((column) => (
+                              <td key={`${sheet.name}-${index}-${column}`} className="px-3 py-2 text-slate-700">
+                                {String(row[column] ?? '')}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

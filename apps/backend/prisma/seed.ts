@@ -491,6 +491,201 @@ async function main() {
     });
   }
 
+  const demoCustomers = await Promise.all(
+    [
+      { name: 'ABC Print', companyName: 'ABC MMC', phone: '+994501110001', notes: 'seed:customer:abc' },
+      { name: 'Baku Store', companyName: 'Baku Store LLC', phone: '+994501110002', notes: 'seed:customer:baku-store' },
+      { name: 'Green Media', companyName: 'Green Media', phone: '+994501110003', notes: 'seed:customer:green-media' },
+      { name: 'Office Line', companyName: 'Office Line', phone: '+994501110004', notes: 'seed:customer:office-line' }
+    ].map(async (customer) => {
+      const existing = await prisma.customer.findFirst({
+        where: { notes: customer.notes }
+      });
+
+      if (existing) {
+        return prisma.customer.update({
+          where: { id: existing.id },
+          data: customer
+        });
+      }
+
+      return prisma.customer.create({
+        data: customer
+      });
+    })
+  );
+
+  const [paperA4, paperSra3] = await Promise.all([
+    prisma.paper.findUnique({ where: { code: 'KAGIZ-A4-300' } }),
+    prisma.paper.findUnique({ where: { code: 'KAGIZ-SRA3-170' } })
+  ]);
+
+  const salesSeeds = [
+    {
+      marker: 'seed:sales:full-paid',
+      customerId: demoCustomers[0]?.id,
+      managerId: admin.id,
+      paperId: paperA4?.id,
+      date: new Date('2026-05-01T09:00:00.000Z'),
+      category: 'Vizit kart',
+      productName: 'Vizit kart 1000 ədəd',
+      quantity: 1000,
+      saleAmount: 180,
+      paymentAmount: 180,
+      paymentType: 'kart',
+      bonus: 0,
+      customerBonus: 0,
+      productionStage: 'bitib',
+      deliveryStatus: 'tehvil',
+      deliveryDate: new Date('2026-05-02T18:00:00.000Z'),
+      paymentStatus: 'odenilib',
+      qaimaStatus: 'yazilib',
+      qaimaDate: new Date('2026-05-01T10:00:00.000Z'),
+      qaimaNumber: 'Q-0001',
+      paperCost: 30,
+      plateCost: 12,
+      printCost: 20,
+      laminationCost: 8,
+      notes: 'seed:sales:full-paid'
+    },
+    {
+      marker: 'seed:sales:partial-paid',
+      customerId: demoCustomers[1]?.id,
+      managerId: admin.id,
+      paperId: paperSra3?.id,
+      date: new Date('2026-05-03T09:00:00.000Z'),
+      category: 'Flayer',
+      productName: 'A5 flayer 5000 ədəd',
+      quantity: 5000,
+      saleAmount: 420,
+      paymentAmount: 200,
+      paymentType: 'hesab',
+      bonus: 10,
+      customerBonus: 20,
+      productionStage: 'cap',
+      deliveryStatus: 'hazir',
+      deliveryDate: new Date('2026-05-05T18:00:00.000Z'),
+      paymentStatus: 'yazilib',
+      qaimaStatus: 'yazilib',
+      qaimaDate: new Date('2026-05-03T12:00:00.000Z'),
+      qaimaNumber: 'Q-0002',
+      paperCost: 120,
+      plateCost: 18,
+      printCost: 60,
+      laminationCost: 30,
+      notes: 'seed:sales:partial-paid'
+    },
+    {
+      marker: 'seed:sales:no-payment',
+      customerId: demoCustomers[2]?.id,
+      managerId: admin.id,
+      paperId: paperA4?.id,
+      date: new Date('2026-05-06T09:00:00.000Z'),
+      category: 'Blank',
+      productName: 'A4 blank 2000 ədəd',
+      quantity: 2000,
+      saleAmount: 260,
+      paymentAmount: 0,
+      paymentType: 'negd',
+      bonus: 0,
+      customerBonus: 0,
+      productionStage: 'dizayn',
+      deliveryStatus: 'sifaris',
+      paymentStatus: 'yazilib',
+      qaimaStatus: 'yazilmayib',
+      paperCost: 80,
+      plateCost: 14,
+      printCost: 42,
+      laminationCost: 0,
+      notes: 'seed:sales:no-payment'
+    },
+    {
+      marker: 'seed:sales:negative-profit',
+      customerId: demoCustomers[3]?.id,
+      managerId: admin.id,
+      paperId: paperSra3?.id,
+      date: new Date('2026-05-07T09:00:00.000Z'),
+      category: 'Kataloq',
+      productName: 'A4 kataloq 300 ədəd',
+      quantity: 300,
+      saleAmount: 150,
+      paymentAmount: 50,
+      paymentType: 'kassa',
+      bonus: 5,
+      customerBonus: 0,
+      productionStage: 'laminasiya',
+      deliveryStatus: 'hazir',
+      paymentStatus: 'yazilib',
+      qaimaStatus: 'negd',
+      paperCost: 60,
+      plateCost: 25,
+      printCost: 50,
+      laminationCost: 30,
+      notes: 'seed:sales:negative-profit'
+    }
+  ];
+
+  for (const seed of salesSeeds) {
+    const existing = await prisma.salesEntry.findFirst({
+      where: { notes: seed.marker }
+    });
+
+    const data = {
+      customerId: seed.customerId!,
+      managerId: seed.managerId,
+      paperId: seed.paperId,
+      date: seed.date,
+      category: seed.category,
+      productName: seed.productName,
+      quantity: seed.quantity,
+      saleAmount: seed.saleAmount,
+      saleUnitPrice: seed.quantity > 0 ? seed.saleAmount / seed.quantity : 0,
+      paymentAmount: seed.paymentAmount,
+      paymentType: seed.paymentType as any,
+      bonus: seed.bonus,
+      customerBonus: seed.customerBonus,
+      remainingDebt: seed.saleAmount - seed.paymentAmount - seed.customerBonus,
+      finalRemainingDebt: seed.saleAmount - seed.paymentAmount - seed.customerBonus - seed.bonus,
+      productionStage: seed.productionStage as any,
+      deliveryStatus: seed.deliveryStatus as any,
+      deliveryDate: seed.deliveryDate,
+      paymentStatus: seed.paymentStatus as any,
+      qaimaStatus: seed.qaimaStatus as any,
+      qaimaDate: seed.qaimaDate,
+      qaimaNumber: seed.qaimaNumber,
+      paperCost: seed.paperCost,
+      plateCost: seed.plateCost,
+      printCost: seed.printCost,
+      specialCutCost: 0,
+      knifeCost: 0,
+      manualWorkCost: 0,
+      spiralCost: 0,
+      poniCost: 0,
+      otherCost: 0,
+      laminationCost: seed.laminationCost,
+      totalCost: seed.paperCost + seed.plateCost + seed.printCost + seed.laminationCost,
+      profit: seed.saleAmount - seed.bonus - seed.customerBonus - (seed.paperCost + seed.plateCost + seed.printCost + seed.laminationCost),
+      profitPercent:
+        seed.paperCost + seed.plateCost + seed.printCost + seed.laminationCost > 0
+          ? Math.round(
+              ((seed.saleAmount - seed.bonus - seed.customerBonus - (seed.paperCost + seed.plateCost + seed.printCost + seed.laminationCost)) /
+                (seed.paperCost + seed.plateCost + seed.printCost + seed.laminationCost)) *
+                10000
+            ) / 100
+          : 0,
+      notes: seed.marker
+    };
+
+    if (existing) {
+      await prisma.salesEntry.update({
+        where: { id: existing.id },
+        data
+      });
+    } else {
+      await prisma.salesEntry.create({ data });
+    }
+  }
+
   void mainWarehouse;
 }
 

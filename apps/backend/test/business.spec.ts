@@ -10,6 +10,7 @@ import { calculateDashboardSummary } from '../src/common/business/dashboard-summ
 import { calculateInventorySummary } from '../src/common/business/inventory-summary';
 import { calculateFinanceSummary } from '../src/common/business/finance-summary';
 import { aggregateCustomerDebt, recalculateSalesEntry } from '../src/common/business/sales-entry';
+import { calculateSalesGridSummary } from '../src/common/business/sales-summary';
 import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../src/common/business/purchase-entry';
 import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../src/common/business/salary-entry';
 import { calculatePaperPricePerSheet } from '../src/common/business/paper-pricing';
@@ -312,4 +313,60 @@ test('paper price per sheet follows excel logic', () => {
   assert.equal(calculatePaperPricePerSheet(42, 250), 0.168);
   assert.equal(calculatePaperPricePerSheet(18, 100), 0.18);
   assert.equal(calculatePaperPricePerSheet(10, 0), 0);
+});
+
+test('sales summary totals keep filtered excel scenarios consistent', () => {
+  const rows = [
+    {
+      saleAmount: 180,
+      paymentAmount: 180,
+      bonus: 0,
+      customerBonus: 0,
+      remainingDebt: 0,
+      finalRemainingDebt: 0,
+      totalCost: 70,
+      profit: 110,
+      profitPercent: 157.14,
+      deliveryStatus: 'tehvil'
+    },
+    {
+      saleAmount: 420,
+      paymentAmount: 200,
+      bonus: 10,
+      customerBonus: 20,
+      remainingDebt: 200,
+      finalRemainingDebt: 190,
+      totalCost: 228,
+      profit: 162,
+      profitPercent: 71.05,
+      deliveryStatus: 'hazir'
+    },
+    {
+      saleAmount: 150,
+      paymentAmount: 50,
+      bonus: 5,
+      customerBonus: 0,
+      remainingDebt: 100,
+      finalRemainingDebt: 95,
+      totalCost: 165,
+      profit: -20,
+      profitPercent: -12.12,
+      deliveryStatus: 'hazir'
+    }
+  ];
+
+  const summary = calculateSalesGridSummary(rows.filter((row) => row.deliveryStatus === 'hazir'));
+
+  assert.deepEqual(summary, {
+    totalSaleAmount: 570,
+    totalPaymentAmount: 250,
+    totalBonus: 15,
+    totalCustomerBonus: 20,
+    totalRemainingDebt: 300,
+    totalFinalRemainingDebt: 285,
+    totalCost: 393,
+    totalProfit: 142,
+    averageProfitPercent: 29.47,
+    rows: 2
+  });
 });

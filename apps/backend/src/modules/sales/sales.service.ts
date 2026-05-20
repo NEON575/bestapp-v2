@@ -6,7 +6,9 @@ import { buildPaginatedResponse, normalizePagination } from '../../common/query/
 import { recalculateSalesEntry, aggregateCustomerDebt } from '../../common/business/sales-entry';
 import { mapOrderStatusToProductionStage, mapOrderStatusToSalesDeliveryStatus } from '../../common/business/sales-mapping';
 import { buildSalesEntryWhere } from '../../common/business/sales-filters';
+import { calculateSalesGridSummary } from '../../common/business/sales-summary';
 import { CreateSalesEntryDto, QuickCreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
+import * as XLSX from 'xlsx';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -442,30 +444,61 @@ export class SalesService {
       where: buildSalesEntryWhere(query)
     });
 
-    const totalSaleAmount = entries.reduce((sum, item) => sum + toNumber(item.saleAmount), 0);
-    const totalPaymentAmount = entries.reduce((sum, item) => sum + toNumber(item.paymentAmount), 0);
-    const totalBonus = entries.reduce((sum, item) => sum + toNumber(item.bonus), 0);
-    const totalCustomerBonus = entries.reduce((sum, item) => sum + toNumber(item.customerBonus), 0);
-    const totalRemainingDebt = entries.reduce((sum, item) => sum + toNumber(item.remainingDebt), 0);
-    const totalFinalRemainingDebt = entries.reduce((sum, item) => sum + toNumber(item.finalRemainingDebt), 0);
-    const totalCost = entries.reduce((sum, item) => sum + toNumber(item.totalCost), 0);
-    const totalProfit = entries.reduce((sum, item) => sum + toNumber(item.profit), 0);
-    const averageProfitPercent = entries.length
-      ? entries.reduce((sum, item) => sum + toNumber(item.profitPercent), 0) / entries.length
-      : 0;
+    return calculateSalesGridSummary(entries);
+  }
 
-    return {
-      totalSaleAmount,
-      totalPaymentAmount,
-      totalBonus,
-      totalCustomerBonus,
-      totalRemainingDebt,
-      totalFinalRemainingDebt,
-      totalCost,
-      totalProfit,
-      averageProfitPercent: Math.round(averageProfitPercent * 100) / 100,
-      rows: entries.length
-    };
+  async export(query: SalesEntryQueryDto) {
+    const entries = await this.prisma.salesEntry.findMany({
+      where: buildSalesEntryWhere(query),
+      include: {
+        customer: true,
+        manager: true
+      },
+      orderBy: { date: 'desc' }
+    });
+
+    const rows = entries.map((entry) => ({
+      'Tarix': entry.date.toISOString().slice(0, 10),
+      'Müştəri': entry.customer.name,
+      'Menecer': entry.manager?.fullName ?? '',
+      'Kateqoriya': entry.category ?? '',
+      'Məhsul': entry.productName,
+      'Say': toNumber(entry.quantity),
+      'Satış qiy.': toNumber(entry.saleUnitPrice),
+      'Satış məb.': toNumber(entry.saleAmount),
+      'Ödəniş': toNumber(entry.paymentAmount),
+      'Ödəniş növü': entry.paymentType,
+      'Bonus': toNumber(entry.bonus),
+      'Bonus Müştəri': toNumber(entry.customerBonus),
+      'Qalıq': toNumber(entry.remainingDebt),
+      'Son qalıq': toNumber(entry.finalRemainingDebt),
+      'İstehsal': entry.productionStage ?? '',
+      'Status': entry.deliveryStatus,
+      'Təhvil tarixi': entry.deliveryDate ? entry.deliveryDate.toISOString().slice(0, 10) : '',
+      'Ödəniş statusu': entry.paymentStatus ?? '',
+      'Qaimə': entry.qaimaStatus ?? '',
+      'Qaimə tarix': entry.qaimaDate ? entry.qaimaDate.toISOString().slice(0, 10) : '',
+      'Qaimə nömrə': entry.qaimaNumber ?? '',
+      'Kağız': toNumber(entry.paperCost),
+      'Forma': toNumber(entry.plateCost),
+      'Çap': toNumber(entry.printCost),
+      'Xüsusi kəsim': toNumber(entry.specialCutCost),
+      'Bıçaq': toNumber(entry.knifeCost),
+      'Əl işi': toNumber(entry.manualWorkCost),
+      'Spiral': toNumber(entry.spiralCost),
+      'Poni': toNumber(entry.poniCost),
+      'Digər': toNumber(entry.otherCost),
+      'Laminasiya': toNumber(entry.laminationCost),
+      'Ümumi xərc': toNumber(entry.totalCost),
+      'Xeyir': toNumber(entry.profit),
+      'Xeyir faiz': toNumber(entry.profitPercent),
+      'Qeyd': entry.notes ?? ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Satış');
+    return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
   }
 
   async customerDebts(query?: Partial<SalesEntryQueryDto>) {

@@ -211,6 +211,15 @@ export interface CreateSalesEntryDto {
 
 export interface UpdateSalesEntryDto extends Partial<CreateSalesEntryDto> {}
 
+export interface QuickCreateSalesEntryDto {
+  customerId: string;
+  managerId?: string;
+  date?: string;
+  productName: string;
+  quantity: number;
+  saleAmount: number;
+}
+
 export interface UpdateOrderHesablamaDto {
   paperId?: string;
   category?: string;

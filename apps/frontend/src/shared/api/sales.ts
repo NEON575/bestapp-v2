@@ -52,6 +52,14 @@ export const salesClient = {
     return data;
   },
 
+  async export(query: SalesEntryQueryDto = {}) {
+    const response = await api.get('/sales/export', {
+      params: buildQueryParams(query),
+      responseType: 'blob'
+    });
+    return response.data as Blob;
+  },
+
   async customerDebts(query: SalesEntryQueryDto = {}) {
     const { data } = await api.get<CustomerDebtSummaryItem[]>('/sales/customer-debts', {
       params: buildQueryParams(query)

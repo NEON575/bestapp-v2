@@ -124,14 +124,22 @@ export interface PaperItem {
 
 export interface ExcelImportPreviewSheet {
   name: string;
+  found?: boolean;
   rows: number;
   columns: string[];
   mappingErrors: string[];
+  confidence?: number;
+  sampleRows?: Array<Record<string, unknown>>;
 }
 
 export interface ExcelImportPreviewResult {
   fileName: string;
   sheets: ExcelImportPreviewSheet[];
+  requiredSheets?: Array<{
+    name: string;
+    found: boolean;
+    confidence: number;
+  }>;
   workbookError?: string | null;
 }
 

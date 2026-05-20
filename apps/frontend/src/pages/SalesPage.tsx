@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type {
   CreateCustomerDto,
@@ -9,21 +9,14 @@ import type {
   SalesGridSummary,
   UserSummary
 } from '@bestapp/shared';
-import { SalesDeliveryStatus, SalesPaymentStatus, SalesPaymentType, SalesProductionStage, QaimaStatus } from '@bestapp/shared';
+import { SalesDeliveryStatus, SalesPaymentStatus, SalesPaymentType } from '@bestapp/shared';
 import { Button, Input } from '@bestapp/ui';
 import { customersClient } from '../shared/api/customers';
 import { salesClient } from '../shared/api/sales';
 import { usersClient } from '../shared/api/users';
 import { EmptyState, ErrorState, FilterBar, LoadingState, Modal, PageHeader, Pagination } from '../shared/components';
 import { formatCurrency, formatDateOnly, formatNumber, formatPercent } from '../shared/lib/format';
-import {
-  getSalesLabel,
-  salesDeliveryStatusLabels,
-  salesPaymentStatusLabels,
-  salesPaymentTypeLabels,
-  salesProductionStageLabels,
-  salesQaimaLabels
-} from '../shared/lib/salesLabels';
+import { getSalesLabel, salesDeliveryStatusLabels, salesPaymentStatusLabels, salesPaymentTypeLabels, salesProductionStageLabels, salesQaimaLabels } from '../shared/lib/salesLabels';
 import { useToast } from '../shared/toast/toast-context';
 
 type QueryState = SalesEntryQueryDto & {
@@ -71,6 +64,90 @@ type SalesDraft = {
   notes: string;
 };
 
+type ColumnKey =
+  | 'date'
+  | 'customer'
+  | 'manager'
+  | 'category'
+  | 'productName'
+  | 'quantity'
+  | 'saleUnitPrice'
+  | 'saleAmount'
+  | 'paymentAmount'
+  | 'paymentType'
+  | 'bonus'
+  | 'customerBonus'
+  | 'remainingDebt'
+  | 'finalRemainingDebt'
+  | 'productionStage'
+  | 'deliveryStatus'
+  | 'deliveryDate'
+  | 'paymentStatus'
+  | 'qaimaStatus'
+  | 'qaimaDate'
+  | 'qaimaNumber'
+  | 'paperCost'
+  | 'plateCost'
+  | 'printCost'
+  | 'specialCutCost'
+  | 'knifeCost'
+  | 'manualWorkCost'
+  | 'spiralCost'
+  | 'poniCost'
+  | 'otherCost'
+  | 'laminationCost'
+  | 'totalCost'
+  | 'profit'
+  | 'profitPercent'
+  | 'notes';
+
+type ColumnDef = {
+  key: ColumnKey;
+  label: string;
+  sticky?: { side: 'left' | 'right'; offset: number };
+  editable?: boolean;
+};
+
+const STORAGE_KEY = 'bestapp.sales.visible-columns';
+
+const columns: ColumnDef[] = [
+  { key: 'date', label: 'Tarix', sticky: { side: 'left', offset: 0 }, editable: true },
+  { key: 'customer', label: 'Müştəri', sticky: { side: 'left', offset: 120 }, editable: true },
+  { key: 'manager', label: 'Menecer', editable: true },
+  { key: 'category', label: 'Kateqoriya', editable: true },
+  { key: 'productName', label: 'Məhsul', sticky: { side: 'left', offset: 360 }, editable: true },
+  { key: 'quantity', label: 'Say', editable: true },
+  { key: 'saleUnitPrice', label: 'Satış qiy.' },
+  { key: 'saleAmount', label: 'Satış məb.', editable: true },
+  { key: 'paymentAmount', label: 'Ödəniş', editable: true },
+  { key: 'paymentType', label: 'Ödəniş növü', editable: true },
+  { key: 'bonus', label: 'Bonus', editable: true },
+  { key: 'customerBonus', label: 'Bonus Müştəri', editable: true },
+  { key: 'remainingDebt', label: 'Qalıq', sticky: { side: 'right', offset: 280 } },
+  { key: 'finalRemainingDebt', label: 'Son qalıq', sticky: { side: 'right', offset: 140 } },
+  { key: 'productionStage', label: 'İstehsal', editable: true },
+  { key: 'deliveryStatus', label: 'Status', editable: true },
+  { key: 'deliveryDate', label: 'Təhvil tarixi', editable: true },
+  { key: 'paymentStatus', label: 'Ödəniş statusu', editable: true },
+  { key: 'qaimaStatus', label: 'Qaimə', editable: true },
+  { key: 'qaimaDate', label: 'Qaimə tarix', editable: true },
+  { key: 'qaimaNumber', label: 'Qaimə nömrə', editable: true },
+  { key: 'paperCost', label: 'Kağız', editable: true },
+  { key: 'plateCost', label: 'Forma', editable: true },
+  { key: 'printCost', label: 'Çap', editable: true },
+  { key: 'specialCutCost', label: 'Xüsusi kəsim', editable: true },
+  { key: 'knifeCost', label: 'Bıçaq', editable: true },
+  { key: 'manualWorkCost', label: 'Əl işi', editable: true },
+  { key: 'spiralCost', label: 'Spiral', editable: true },
+  { key: 'poniCost', label: 'Poni', editable: true },
+  { key: 'otherCost', label: 'Digər', editable: true },
+  { key: 'laminationCost', label: 'Laminasiya', editable: true },
+  { key: 'totalCost', label: 'Ümumi xərc' },
+  { key: 'profit', label: 'Xeyir', sticky: { side: 'right', offset: 0 } },
+  { key: 'profitPercent', label: 'Xeyir faiz' },
+  { key: 'notes', label: 'Qeyd', editable: true }
+];
+
 const initialQuery: QueryState = {
   page: 1,
   limit: 25,
@@ -89,18 +166,6 @@ const initialQuery: QueryState = {
   paymentStatus: '',
   hasDebt: false,
   onlyUndelivered: false
-};
-
-const leftSticky = {
-  date: 0,
-  customer: 120,
-  product: 360
-};
-
-const rightSticky = {
-  profit: 0,
-  finalDebt: 140,
-  debt: 280
 };
 
 function toInputDate(value?: string | null) {
@@ -149,10 +214,10 @@ function createDraft(row: SalesEntryItem): SalesDraft {
   };
 }
 
-function createQuickRow(customerId = ''): SalesDraft {
+function createQuickRow(): SalesDraft {
   return {
     date: toInputDate(new Date().toISOString()),
-    customerId,
+    customerId: '',
     managerId: '',
     category: '',
     productName: '',
@@ -183,7 +248,28 @@ function createQuickRow(customerId = ''): SalesDraft {
   };
 }
 
-function summaryItems(summary: SalesGridSummary | null) {
+function getDraftCalculated(draft: SalesDraft) {
+  const totalCost =
+    draft.paperCost +
+    draft.plateCost +
+    draft.printCost +
+    draft.specialCutCost +
+    draft.knifeCost +
+    draft.manualWorkCost +
+    draft.spiralCost +
+    draft.poniCost +
+    draft.otherCost +
+    draft.laminationCost;
+  const profit = draft.saleAmount - draft.bonus - draft.customerBonus - totalCost;
+  const profitPercent = totalCost > 0 ? (profit / totalCost) * 100 : 0;
+  const remainingDebt = draft.saleAmount - draft.paymentAmount - draft.customerBonus;
+  const finalRemainingDebt = remainingDebt - draft.bonus;
+  const saleUnitPrice = draft.quantity > 0 ? draft.saleAmount / draft.quantity : 0;
+
+  return { totalCost, profit, profitPercent, remainingDebt, finalRemainingDebt, saleUnitPrice };
+}
+
+function summaryCards(summary: SalesGridSummary | null) {
   return [
     { label: 'Satış məbləği cəmi', value: formatCurrency(summary?.totalSaleAmount) },
     { label: 'Ödəniş cəmi', value: formatCurrency(summary?.totalPaymentAmount) },
@@ -197,12 +283,31 @@ function summaryItems(summary: SalesGridSummary | null) {
   ];
 }
 
-function cellBase(sticky?: CSSProperties, extra?: string) {
-  return [
-    'border-b border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 align-top',
-    extra ?? '',
-    sticky ? 'sticky z-10' : ''
-  ].join(' ');
+function getStoredColumns() {
+  if (typeof window === 'undefined') {
+    return columns.map((column) => column.key);
+  }
+
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return columns.map((column) => column.key);
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as ColumnKey[];
+    return parsed.filter((key) => columns.some((column) => column.key === key));
+  } catch {
+    return columns.map((column) => column.key);
+  }
+}
+
+function stickyCellClass(sticky?: ColumnDef['sticky']) {
+  return sticky ? 'sticky z-10' : '';
+}
+
+function stickyCellStyle(sticky?: ColumnDef['sticky']): CSSProperties | undefined {
+  if (!sticky) return undefined;
+  return sticky.side === 'left' ? { left: sticky.offset } : { right: sticky.offset };
 }
 
 export function SalesPage() {
@@ -213,6 +318,8 @@ export function SalesPage() {
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [managers, setManagers] = useState<UserSummary[]>([]);
   const [query, setQuery] = useState<QueryState>(initialQuery);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(() => getStoredColumns());
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SalesDraft | null>(null);
   const [quickRowOpen, setQuickRowOpen] = useState(false);
@@ -220,8 +327,20 @@ export function SalesPage() {
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState<CreateCustomerDto>({ name: '', phone: '', companyName: '' });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
+  const [savingQuickRow, setSavingQuickRow] = useState(false);
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const activeColumns = useMemo(() => columns.filter((column) => visibleColumns.includes(column.key)), [visibleColumns]);
+  const totals = useMemo(() => summaryCards(summary), [summary]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleColumns));
+    }
+  }, [visibleColumns]);
 
   const load = async (nextQuery = query) => {
     setLoading(true);
@@ -242,13 +361,11 @@ export function SalesPage() {
         const userRows = await usersClient.list();
         setManagers(userRows);
       } catch {
-        const managerMap = new Map<string, UserSummary>();
+        const map = new Map<string, UserSummary>();
         sales.data.forEach((row) => {
-          if (row.manager?.id) {
-            managerMap.set(row.manager.id, row.manager);
-          }
+          if (row.manager?.id) map.set(row.manager.id, row.manager);
         });
-        setManagers(Array.from(managerMap.values()));
+        setManagers(Array.from(map.values()));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Satış jurnalı yüklənmədi');
@@ -277,8 +394,6 @@ export function SalesPage() {
     query.onlyUndelivered
   ]);
 
-  const totals = useMemo(() => summaryItems(summary), [summary]);
-
   const updateQuery = (patch: Partial<QueryState>) => {
     setQuery((current) => ({
       ...current,
@@ -297,63 +412,62 @@ export function SalesPage() {
     setDraft(null);
   };
 
-  const saveEdit = async (id: string) => {
-    if (!draft) return;
-    if (!draft.customerId || !draft.productName.trim() || draft.quantity <= 0 || draft.saleAmount <= 0) {
-      toast.error('Sətri saxlamaq üçün Müştəri, Məhsul, Say və Satış məb. vacibdir');
+  const persistRow = async (id: string, currentDraft: SalesDraft) => {
+    if (!currentDraft.customerId || !currentDraft.productName.trim() || currentDraft.quantity <= 0 || currentDraft.saleAmount <= 0) {
+      toast.error('Müştəri, Məhsul, Say və Satış məbləği vacibdir');
       return;
     }
 
-    setSaving(true);
+    setSavingRowId(id);
     try {
       await salesClient.update(id, {
-        date: draft.date || undefined,
-        customerId: draft.customerId,
-        managerId: draft.managerId || undefined,
-        category: draft.category || undefined,
-        productName: draft.productName,
-        quantity: draft.quantity,
-        saleAmount: draft.saleAmount,
-        paymentAmount: draft.paymentAmount,
-        paymentType: draft.paymentType || undefined,
-        bonus: draft.bonus,
-        customerBonus: draft.customerBonus,
-        productionStage: draft.productionStage || undefined,
-        deliveryStatus: draft.deliveryStatus || undefined,
-        deliveryDate: draft.deliveryDate || undefined,
-        paymentStatus: draft.paymentStatus || undefined,
-        qaimaStatus: draft.qaimaStatus || undefined,
-        qaimaDate: draft.qaimaDate || undefined,
-        qaimaNumber: draft.qaimaNumber || undefined,
-        paperCost: draft.paperCost,
-        plateCost: draft.plateCost,
-        printCost: draft.printCost,
-        specialCutCost: draft.specialCutCost,
-        knifeCost: draft.knifeCost,
-        manualWorkCost: draft.manualWorkCost,
-        spiralCost: draft.spiralCost,
-        poniCost: draft.poniCost,
-        otherCost: draft.otherCost,
-        laminationCost: draft.laminationCost,
-        notes: draft.notes || undefined
+        date: currentDraft.date || undefined,
+        customerId: currentDraft.customerId,
+        managerId: currentDraft.managerId || undefined,
+        category: currentDraft.category || undefined,
+        productName: currentDraft.productName,
+        quantity: currentDraft.quantity,
+        saleAmount: currentDraft.saleAmount,
+        paymentAmount: currentDraft.paymentAmount,
+        paymentType: currentDraft.paymentType || undefined,
+        bonus: currentDraft.bonus,
+        customerBonus: currentDraft.customerBonus,
+        productionStage: currentDraft.productionStage || undefined,
+        deliveryStatus: currentDraft.deliveryStatus || undefined,
+        deliveryDate: currentDraft.deliveryDate || undefined,
+        paymentStatus: currentDraft.paymentStatus || undefined,
+        qaimaStatus: currentDraft.qaimaStatus || undefined,
+        qaimaDate: currentDraft.qaimaDate || undefined,
+        qaimaNumber: currentDraft.qaimaNumber || undefined,
+        paperCost: currentDraft.paperCost,
+        plateCost: currentDraft.plateCost,
+        printCost: currentDraft.printCost,
+        specialCutCost: currentDraft.specialCutCost,
+        knifeCost: currentDraft.knifeCost,
+        manualWorkCost: currentDraft.manualWorkCost,
+        spiralCost: currentDraft.spiralCost,
+        poniCost: currentDraft.poniCost,
+        otherCost: currentDraft.otherCost,
+        laminationCost: currentDraft.laminationCost,
+        notes: currentDraft.notes || undefined
       });
       toast.success('Satış sətri yeniləndi');
       cancelEdit();
       await load(query);
     } catch (e) {
-      toast.error('Sətri yeniləmək alınmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
+      toast.error('Satış sətri saxlanmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
     } finally {
-      setSaving(false);
+      setSavingRowId(null);
     }
   };
 
-  const saveQuickRow = async () => {
+  const persistQuickRow = async () => {
     if (!quickRow.customerId || !quickRow.productName.trim() || quickRow.quantity <= 0 || quickRow.saleAmount <= 0) {
-      toast.error('Yeni satış sətri üçün Müştəri, Məhsul, Say və Satış məb. vacibdir');
+      toast.error('Yeni satış sətri üçün Müştəri, Məhsul, Say və Satış məbləği vacibdir');
       return;
     }
 
-    setSaving(true);
+    setSavingQuickRow(true);
     try {
       const payload: QuickCreateSalesEntryDto = {
         customerId: quickRow.customerId,
@@ -369,9 +483,9 @@ export function SalesPage() {
       setQuickRow(createQuickRow());
       await load(query);
     } catch (e) {
-      toast.error('Yeni sətri yaratmaq alınmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
+      toast.error('Yeni satış sətri yaradılmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
     } finally {
-      setSaving(false);
+      setSavingQuickRow(false);
     }
   };
 
@@ -381,7 +495,7 @@ export function SalesPage() {
       return;
     }
 
-    setSaving(true);
+    setSavingCustomer(true);
     try {
       const created = await customersClient.create(newCustomer);
       const createdId = (created as { id?: string }).id;
@@ -394,10 +508,37 @@ export function SalesPage() {
         setDraft((current) => (current ? { ...current, customerId: createdId } : current));
       }
     } catch (e) {
-      toast.error('Müştəri yaratmaq alınmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
+      toast.error('Müştəri yaradılmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
     } finally {
-      setSaving(false);
+      setSavingCustomer(false);
     }
+  };
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const blob = await salesClient.export(query);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'satis-export.xlsx';
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error('Export alınmadı', e instanceof Error ? e.message : 'Xəta baş verdi');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleColumns((current) => {
+      if (current.includes(key)) {
+        const next = current.filter((item) => item !== key);
+        return next.length ? next : current;
+      }
+      return [...current, key];
+    });
   };
 
   if (loading && !rows.length && !summary) {
@@ -412,9 +553,15 @@ export function SalesPage() {
     <div className="space-y-5">
       <PageHeader
         title="Satış"
-        description="Əsas iş jurnalı: satış sətri, ödəniş, xərc, qalıq və xeyir bir cədvəldə."
+        description="Əsas iş jurnalı: satış, ödəniş, xərc, qalıq və xeyir bir cədvəldə."
         actions={
           <>
+            <Button variant="secondary" onClick={() => setShowColumnSelector(true)}>
+              Sütunları seç
+            </Button>
+            <Button variant="secondary" onClick={() => void exportExcel()} disabled={exporting}>
+              {exporting ? 'Hazırlanır...' : 'Excel-ə çıxar'}
+            </Button>
             <Button variant="secondary" onClick={() => setCustomerModalOpen(true)}>
               Tez müştəri yarat
             </Button>
@@ -470,113 +617,58 @@ export function SalesPage() {
       </FilterBar>
 
       {!rows.length && !quickRowOpen ? (
-        <EmptyState title="Satış sətri yoxdur" description="Yeni sətri əlavə edib jurnalı real iş prosesinə uyğun doldura bilərsiniz." />
+        <EmptyState title="Satış sətri yoxdur" description="Yeni sətr əlavə etdikdən sonra jurnal burada görünəcək." />
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-[3200px] border-collapse text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
-                  {[
-                    'Tarix',
-                    'Müştəri',
-                    'Menecer',
-                    'Kateqoriya',
-                    'Məhsul',
-                    'Say',
-                    'Satış qiy.',
-                    'Satış məb.',
-                    'Ödəniş',
-                    'Ödəniş növü',
-                    'Bonus',
-                    'Bonus Müştəri',
-                    'Qalıq',
-                    'Son qalıq',
-                    'İstehsal',
-                    'Status',
-                    'Təhvil tarixi',
-                    'Ödəniş statusu',
-                    'Qaimə',
-                    'Qaimə tarix',
-                    'Qaimə nömrə',
-                    'Kağız',
-                    'Forma',
-                    'Çap',
-                    'Xüsusi kəsim',
-                    'Bıçaq',
-                    'Əl işi',
-                    'Spiral',
-                    'Poni',
-                    'Digər',
-                    'Laminasiya',
-                    'Ümumi xərc',
-                    'Xeyir',
-                    'Xeyir faiz',
-                    'Qeyd',
-                    'Əməliyyat'
-                  ].map((header, index) => {
-                    const stickyStyle =
-                      index === 0
-                        ? { left: leftSticky.date }
-                        : index === 1
-                          ? { left: leftSticky.customer }
-                          : index === 4
-                            ? { left: leftSticky.product }
-                            : index === 12
-                              ? { right: rightSticky.debt }
-                              : index === 13
-                                ? { right: rightSticky.finalDebt }
-                                : index === 32
-                                  ? { right: rightSticky.profit }
-                                  : undefined;
-
-                    return (
-                      <th
-                        key={header}
-                        className={`border-b border-slate-200 px-2 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                          stickyStyle ? 'sticky z-20 bg-slate-50' : ''
-                        }`}
-                        style={stickyStyle}
-                      >
-                        {header}
-                      </th>
-                    );
-                  })}
+                  {activeColumns.map((column) => (
+                    <th
+                      key={column.key}
+                      className={`border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${stickyCellClass(column.sticky)}`}
+                      style={stickyCellStyle(column.sticky)}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                  <th className="border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em]">Əməliyyat</th>
                 </tr>
               </thead>
               <tbody>
                 {quickRowOpen ? (
-                  <SalesEditRow
+                  <SalesEditorRow
+                    rowId="quick-create"
                     draft={quickRow}
                     customers={customers}
                     managers={managers}
+                    columns={activeColumns}
+                    saving={savingQuickRow}
                     onChange={setQuickRow}
                     onCancel={() => {
                       setQuickRowOpen(false);
                       setQuickRow(createQuickRow());
                     }}
-                    onSave={() => void saveQuickRow()}
-                    saving={saving}
-                    stickyLeft={leftSticky}
-                    stickyRight={rightSticky}
+                    onSave={() => void persistQuickRow()}
                   />
                 ) : null}
                 {rows.map((row) =>
                   editingId === row.id && draft ? (
-                    <SalesEditRow
+                    <SalesEditorRow
                       key={row.id}
+                      rowId={row.id}
                       draft={draft}
                       customers={customers}
                       managers={managers}
+                      columns={activeColumns}
+                      saving={savingRowId === row.id}
                       onChange={setDraft}
                       onCancel={cancelEdit}
-                      onSave={() => void saveEdit(row.id)}
-                      saving={saving}
-                      stickyLeft={leftSticky}
-                      stickyRight={rightSticky}
+                      onSave={() => void persistRow(row.id, draft)}
                     />
                   ) : (
-                    <SalesReadRow key={row.id} row={row} onEdit={() => startEdit(row)} stickyLeft={leftSticky} stickyRight={rightSticky} />
+                    <SalesReadRow key={row.id} row={row} columns={activeColumns} onEdit={() => startEdit(row)} />
                   )
                 )}
               </tbody>
@@ -596,7 +688,18 @@ export function SalesPage() {
 
       <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => updateQuery({ page })} />
 
-      <Modal open={customerModalOpen} title="Tez müştəri yarat" description="Satış sətirindən ayrılmadan yeni müştəri yaradın." onClose={() => setCustomerModalOpen(false)} widthClassName="max-w-lg">
+      <Modal open={showColumnSelector} title="Sütunları seç" description="Satış cədvəlində görünəcək sütunları seçin." onClose={() => setShowColumnSelector(false)} widthClassName="max-w-2xl">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {columns.map((column) => (
+            <label key={column.key} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+              <input type="checkbox" checked={visibleColumns.includes(column.key)} onChange={() => toggleColumn(column.key)} />
+              {column.label}
+            </label>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal open={customerModalOpen} title="Tez müştəri yarat" description="Satış jurnalından ayrılmadan yeni müştəri yaradın." onClose={() => setCustomerModalOpen(false)} widthClassName="max-w-lg">
         <div className="space-y-4">
           <Field label="Ad">
             <Input value={newCustomer.name ?? ''} onChange={(event) => setNewCustomer((current) => ({ ...current, name: event.target.value }))} />
@@ -612,8 +715,8 @@ export function SalesPage() {
           <Button variant="secondary" onClick={() => setCustomerModalOpen(false)}>
             Bağla
           </Button>
-          <Button onClick={() => void saveCustomer()} disabled={saving}>
-            {saving ? 'Saxlanır...' : 'Yadda saxla'}
+          <Button onClick={() => void saveCustomer()} disabled={savingCustomer}>
+            {savingCustomer ? 'Saxlanılır...' : 'Yadda saxla'}
           </Button>
         </div>
       </Modal>
@@ -621,283 +724,341 @@ export function SalesPage() {
   );
 }
 
-type EditRowProps = {
+function SalesReadRow({ row, columns, onEdit }: { row: SalesEntryItem; columns: ColumnDef[]; onEdit: () => void }) {
+  return (
+    <tr className="hover:bg-slate-50/70">
+      {columns.map((column) => (
+        <td
+          key={column.key}
+          className={`border-b border-slate-200 px-2 py-1.5 text-xs align-top ${stickyCellClass(column.sticky)} ${getReadCellClass(column.key, row)}`}
+          style={stickyCellStyle(column.sticky)}
+        >
+          {renderReadValue(column.key, row)}
+        </td>
+      ))}
+      <td className="border-b border-slate-200 px-2 py-1.5 text-xs">
+        <Button className="h-8 rounded-lg px-3 text-xs" variant="secondary" onClick={onEdit}>
+          Düzəliş
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
+function SalesEditorRow({
+  rowId,
+  draft,
+  customers,
+  managers,
+  columns,
+  saving,
+  onChange,
+  onCancel,
+  onSave
+}: {
+  rowId: string;
   draft: SalesDraft;
   customers: CustomerListItem[];
   managers: UserSummary[];
-  onChange: (draft: SalesDraft) => void;
-  onSave: () => void;
-  onCancel: () => void;
+  columns: ColumnDef[];
   saving: boolean;
-  stickyLeft: typeof leftSticky;
-  stickyRight: typeof rightSticky;
-};
+  onChange: (draft: SalesDraft) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const calculated = getDraftCalculated(draft);
 
-function SalesEditRow({ draft, customers, managers, onChange, onSave, onCancel, saving, stickyLeft, stickyRight }: EditRowProps) {
-  const totalCost =
-    draft.paperCost +
-    draft.plateCost +
-    draft.printCost +
-    draft.specialCutCost +
-    draft.knifeCost +
-    draft.manualWorkCost +
-    draft.spiralCost +
-    draft.poniCost +
-    draft.otherCost +
-    draft.laminationCost;
-  const profit = draft.saleAmount - draft.bonus - draft.customerBonus - totalCost;
-  const profitPercent = totalCost > 0 ? (profit / totalCost) * 100 : 0;
-  const debt = draft.saleAmount - draft.paymentAmount - draft.customerBonus;
-  const finalDebt = debt - draft.bonus;
-  const unitPrice = draft.quantity > 0 ? draft.saleAmount / draft.quantity : 0;
-
-  const setField = <K extends keyof SalesDraft>(key: K, value: SalesDraft[K]) => {
+  const updateField = <K extends keyof SalesDraft>(key: K, value: SalesDraft[K]) => {
     onChange({ ...draft, [key]: value });
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onSave();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      const current = event.currentTarget;
+      const parent = current.closest('tr');
+      if (!parent) return;
+      const focusables = Array.from(parent.querySelectorAll<HTMLElement>('[data-sales-editor="true"]'));
+      const index = focusables.indexOf(current);
+      if (index >= 0 && index < focusables.length - 1 && !event.shiftKey) {
+        event.preventDefault();
+        focusables[index + 1]?.focus();
+      }
+      if (index > 0 && event.shiftKey) {
+        event.preventDefault();
+        focusables[index - 1]?.focus();
+      }
+    }
   };
 
   return (
     <tr className="bg-amber-50/60">
-      <StickyCell left={stickyLeft.date}>
-        <Input type="date" className="h-9 rounded-lg px-2" value={draft.date} onChange={(event) => setField('date', event.target.value)} />
-      </StickyCell>
-      <StickyCell left={stickyLeft.customer}>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.customerId} onChange={(event) => setField('customerId', event.target.value)}>
-          <option value="">Müştəri</option>
-          {customers.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </StickyCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.managerId} onChange={(event) => setField('managerId', event.target.value)}>
-          <option value="">Menecer</option>
-          {managers.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.fullName}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" value={draft.category} onChange={(event) => setField('category', event.target.value)} />
-      </PlainCell>
-      <StickyCell left={stickyLeft.product}>
-        <Input className="h-9 rounded-lg px-2" value={draft.productName} onChange={(event) => setField('productName', event.target.value)} />
-      </StickyCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="number" value={draft.quantity} onChange={(event) => setField('quantity', toNumber(event.target.value))} />
-      </PlainCell>
-      <PlainCell>{formatCurrency(unitPrice)}</PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="number" value={draft.saleAmount} onChange={(event) => setField('saleAmount', toNumber(event.target.value))} />
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="number" value={draft.paymentAmount} onChange={(event) => setField('paymentAmount', toNumber(event.target.value))} />
-      </PlainCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.paymentType} onChange={(event) => setField('paymentType', event.target.value)}>
-          {Object.entries(salesPaymentTypeLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="number" value={draft.bonus} onChange={(event) => setField('bonus', toNumber(event.target.value))} />
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="number" value={draft.customerBonus} onChange={(event) => setField('customerBonus', toNumber(event.target.value))} />
-      </PlainCell>
-      <StickyCell right={stickyRight.debt}>{formatCurrency(debt)}</StickyCell>
-      <StickyCell right={stickyRight.finalDebt}>{formatCurrency(finalDebt)}</StickyCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.productionStage} onChange={(event) => setField('productionStage', event.target.value)}>
-          <option value="">—</option>
-          {Object.entries(salesProductionStageLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.deliveryStatus} onChange={(event) => setField('deliveryStatus', event.target.value)}>
-          {Object.entries(salesDeliveryStatusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="date" value={draft.deliveryDate} onChange={(event) => setField('deliveryDate', event.target.value)} />
-      </PlainCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.paymentStatus} onChange={(event) => setField('paymentStatus', event.target.value)}>
-          <option value="">—</option>
-          {Object.entries(salesPaymentStatusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2" value={draft.qaimaStatus} onChange={(event) => setField('qaimaStatus', event.target.value)}>
-          <option value="">—</option>
-          {Object.entries(salesQaimaLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" type="date" value={draft.qaimaDate} onChange={(event) => setField('qaimaDate', event.target.value)} />
-      </PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" value={draft.qaimaNumber} onChange={(event) => setField('qaimaNumber', event.target.value)} />
-      </PlainCell>
-      {(['paperCost', 'plateCost', 'printCost', 'specialCutCost', 'knifeCost', 'manualWorkCost', 'spiralCost', 'poniCost', 'otherCost', 'laminationCost'] as const).map((field) => (
-        <PlainCell key={field}>
-          <Input className="h-9 rounded-lg px-2" type="number" value={draft[field]} onChange={(event) => setField(field, toNumber(event.target.value))} />
-        </PlainCell>
+      {columns.map((column) => (
+        <td
+          key={column.key}
+          className={`border-b border-slate-200 px-2 py-1.5 text-xs align-top ${stickyCellClass(column.sticky)}`}
+          style={stickyCellStyle(column.sticky)}
+        >
+          {renderEditValue(column.key, draft, calculated, customers, managers, updateField, handleKeyDown)}
+        </td>
       ))}
-      <PlainCell>{formatCurrency(totalCost)}</PlainCell>
-      <StickyCell right={stickyRight.profit}>{formatCurrency(profit)}</StickyCell>
-      <PlainCell>{formatPercent(profitPercent)}</PlainCell>
-      <PlainCell>
-        <Input className="h-9 rounded-lg px-2" value={draft.notes} onChange={(event) => setField('notes', event.target.value)} />
-      </PlainCell>
-      <PlainCell>
+      <td className="border-b border-slate-200 px-2 py-1.5 text-xs">
         <div className="flex gap-2">
-          <Button className="h-9 rounded-lg px-3 text-xs" onClick={onSave} disabled={saving}>
-            {saving ? '...' : 'Yadda saxla'}
+          <Button className="h-8 rounded-lg px-3 text-xs" onClick={onSave} disabled={saving}>
+            {saving ? 'Saxlanılır...' : 'Yadda saxla'}
           </Button>
-          <Button className="h-9 rounded-lg px-3 text-xs" variant="secondary" onClick={onCancel}>
+          <Button className="h-8 rounded-lg px-3 text-xs" variant="secondary" onClick={onCancel}>
             Bağla
           </Button>
         </div>
-      </PlainCell>
+      </td>
     </tr>
   );
 }
 
-function SalesReadRow({
-  row,
-  onEdit,
-  stickyLeft,
-  stickyRight
-}: {
-  row: SalesEntryItem;
-  onEdit: () => void;
-  stickyLeft: typeof leftSticky;
-  stickyRight: typeof rightSticky;
-}) {
-  const statusTone =
-    row.deliveryStatus === SalesDeliveryStatus.HAZIR
-      ? 'bg-emerald-50 text-emerald-700'
-      : row.deliveryStatus === SalesDeliveryStatus.TEHVIL
-        ? 'bg-sky-50 text-sky-700'
-        : row.deliveryStatus === SalesDeliveryStatus.LEGV
-          ? 'bg-rose-50 text-rose-700'
-          : 'bg-amber-50 text-amber-700';
-
-  return (
-    <tr className="hover:bg-slate-50/70">
-      <StickyCell left={stickyLeft.date}>{formatDateOnly(row.date)}</StickyCell>
-      <StickyCell left={stickyLeft.customer}>{row.customer?.name ?? '—'}</StickyCell>
-      <PlainCell>{row.manager?.fullName ?? '—'}</PlainCell>
-      <PlainCell>{row.category ?? '—'}</PlainCell>
-      <StickyCell left={stickyLeft.product}>{row.productName}</StickyCell>
-      <PlainCell>{formatNumber(row.quantity, 0)}</PlainCell>
-      <PlainCell>{formatCurrency(row.saleUnitPrice)}</PlainCell>
-      <PlainCell>{formatCurrency(row.saleAmount)}</PlainCell>
-      <PlainCell>{formatCurrency(row.paymentAmount)}</PlainCell>
-      <PlainCell>{getSalesLabel(salesPaymentTypeLabels, row.paymentType)}</PlainCell>
-      <PlainCell>{formatCurrency(row.bonus)}</PlainCell>
-      <PlainCell>{formatCurrency(row.customerBonus)}</PlainCell>
-      <StickyCell right={stickyRight.debt} className={row.remainingDebt > 0 ? 'bg-amber-50 text-amber-700' : ''}>
-        {formatCurrency(row.remainingDebt)}
-      </StickyCell>
-      <StickyCell right={stickyRight.finalDebt} className={row.finalRemainingDebt > 0 ? 'bg-rose-50 text-rose-700' : ''}>
-        {formatCurrency(row.finalRemainingDebt)}
-      </StickyCell>
-      <PlainCell>{getSalesLabel(salesProductionStageLabels, row.productionStage)}</PlainCell>
-      <PlainCell>
-        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${statusTone}`}>{getSalesLabel(salesDeliveryStatusLabels, row.deliveryStatus)}</span>
-      </PlainCell>
-      <PlainCell>{formatDateOnly(row.deliveryDate)}</PlainCell>
-      <PlainCell>{getSalesLabel(salesPaymentStatusLabels, row.paymentStatus)}</PlainCell>
-      <PlainCell>{getSalesLabel(salesQaimaLabels, row.qaimaStatus)}</PlainCell>
-      <PlainCell>{formatDateOnly(row.qaimaDate)}</PlainCell>
-      <PlainCell>{row.qaimaNumber ?? '—'}</PlainCell>
-      <PlainCell>{formatCurrency(row.paperCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.plateCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.printCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.specialCutCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.knifeCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.manualWorkCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.spiralCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.poniCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.otherCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.laminationCost)}</PlainCell>
-      <PlainCell>{formatCurrency(row.totalCost)}</PlainCell>
-      <StickyCell right={stickyRight.profit} className={row.profit < 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}>
-        {formatCurrency(row.profit)}
-      </StickyCell>
-      <PlainCell>{formatPercent(row.profitPercent)}</PlainCell>
-      <PlainCell>{row.notes ?? '—'}</PlainCell>
-      <PlainCell>
-        <Button className="h-8 rounded-lg px-3 text-xs" variant="secondary" onClick={onEdit}>
-          Düzəliş
-        </Button>
-      </PlainCell>
-    </tr>
-  );
+function renderReadValue(key: ColumnKey, row: SalesEntryItem): ReactNode {
+  switch (key) {
+    case 'date':
+      return formatDateOnly(row.date);
+    case 'customer':
+      return row.customer?.name ?? '—';
+    case 'manager':
+      return row.manager?.fullName ?? '—';
+    case 'category':
+      return row.category ?? '—';
+    case 'productName':
+      return row.productName;
+    case 'quantity':
+      return formatNumber(row.quantity, 0);
+    case 'saleUnitPrice':
+      return formatCurrency(row.saleUnitPrice);
+    case 'saleAmount':
+      return formatCurrency(row.saleAmount);
+    case 'paymentAmount':
+      return formatCurrency(row.paymentAmount);
+    case 'paymentType':
+      return getSalesLabel(salesPaymentTypeLabels, row.paymentType);
+    case 'bonus':
+      return formatCurrency(row.bonus);
+    case 'customerBonus':
+      return formatCurrency(row.customerBonus);
+    case 'remainingDebt':
+      return formatCurrency(row.remainingDebt);
+    case 'finalRemainingDebt':
+      return formatCurrency(row.finalRemainingDebt);
+    case 'productionStage':
+      return getSalesLabel(salesProductionStageLabels, row.productionStage);
+    case 'deliveryStatus':
+      return getSalesLabel(salesDeliveryStatusLabels, row.deliveryStatus);
+    case 'deliveryDate':
+      return formatDateOnly(row.deliveryDate);
+    case 'paymentStatus':
+      return getSalesLabel(salesPaymentStatusLabels, row.paymentStatus);
+    case 'qaimaStatus':
+      return getSalesLabel(salesQaimaLabels, row.qaimaStatus);
+    case 'qaimaDate':
+      return formatDateOnly(row.qaimaDate);
+    case 'qaimaNumber':
+      return row.qaimaNumber ?? '—';
+    case 'paperCost':
+      return formatCurrency(row.paperCost);
+    case 'plateCost':
+      return formatCurrency(row.plateCost);
+    case 'printCost':
+      return formatCurrency(row.printCost);
+    case 'specialCutCost':
+      return formatCurrency(row.specialCutCost);
+    case 'knifeCost':
+      return formatCurrency(row.knifeCost);
+    case 'manualWorkCost':
+      return formatCurrency(row.manualWorkCost);
+    case 'spiralCost':
+      return formatCurrency(row.spiralCost);
+    case 'poniCost':
+      return formatCurrency(row.poniCost);
+    case 'otherCost':
+      return formatCurrency(row.otherCost);
+    case 'laminationCost':
+      return formatCurrency(row.laminationCost);
+    case 'totalCost':
+      return formatCurrency(row.totalCost);
+    case 'profit':
+      return formatCurrency(row.profit);
+    case 'profitPercent':
+      return formatPercent(row.profitPercent);
+    case 'notes':
+      return row.notes ?? '—';
+    default:
+      return '—';
+  }
 }
 
-function StickyCell({
-  left,
-  right,
-  children,
-  className
-}: {
-  left?: number;
-  right?: number;
-  children: ReactNode;
-  className?: string;
-}) {
-  const style: CSSProperties = {
-    ...(left != null ? { left } : {}),
-    ...(right != null ? { right } : {})
-  };
+function renderEditValue(
+  key: ColumnKey,
+  draft: SalesDraft,
+  calculated: ReturnType<typeof getDraftCalculated>,
+  customers: CustomerListItem[],
+  managers: UserSummary[],
+  updateField: <K extends keyof SalesDraft>(key: K, value: SalesDraft[K]) => void,
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
+) {
+  const commonInputProps = {
+    'data-sales-editor': 'true',
+    onKeyDown,
+    className: 'h-8 rounded-lg px-2 text-xs'
+  } as const;
 
-  return (
-    <td className={cellBase(style, className)} style={style}>
-      {children}
-    </td>
-  );
+  switch (key) {
+    case 'date':
+      return <Input {...commonInputProps} type="date" value={draft.date} onChange={(event) => updateField('date', event.target.value)} />;
+    case 'customer':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.customerId} onChange={(event) => updateField('customerId', event.target.value)}>
+          <option value="">Müştəri</option>
+          {customers.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}</option>
+          ))}
+        </select>
+      );
+    case 'manager':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.managerId} onChange={(event) => updateField('managerId', event.target.value)}>
+          <option value="">Menecer</option>
+          {managers.map((item) => (
+            <option key={item.id} value={item.id}>{item.fullName}</option>
+          ))}
+        </select>
+      );
+    case 'category':
+      return <Input {...commonInputProps} value={draft.category} onChange={(event) => updateField('category', event.target.value)} />;
+    case 'productName':
+      return <Input {...commonInputProps} value={draft.productName} onChange={(event) => updateField('productName', event.target.value)} />;
+    case 'quantity':
+      return <Input {...commonInputProps} type="number" value={draft.quantity} onChange={(event) => updateField('quantity', toNumber(event.target.value))} />;
+    case 'saleUnitPrice':
+      return formatCurrency(calculated.saleUnitPrice);
+    case 'saleAmount':
+      return <Input {...commonInputProps} type="number" value={draft.saleAmount} onChange={(event) => updateField('saleAmount', toNumber(event.target.value))} />;
+    case 'paymentAmount':
+      return <Input {...commonInputProps} type="number" value={draft.paymentAmount} onChange={(event) => updateField('paymentAmount', toNumber(event.target.value))} />;
+    case 'paymentType':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.paymentType} onChange={(event) => updateField('paymentType', event.target.value)}>
+          {Object.entries(salesPaymentTypeLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      );
+    case 'bonus':
+      return <Input {...commonInputProps} type="number" value={draft.bonus} onChange={(event) => updateField('bonus', toNumber(event.target.value))} />;
+    case 'customerBonus':
+      return <Input {...commonInputProps} type="number" value={draft.customerBonus} onChange={(event) => updateField('customerBonus', toNumber(event.target.value))} />;
+    case 'remainingDebt':
+      return formatCurrency(calculated.remainingDebt);
+    case 'finalRemainingDebt':
+      return formatCurrency(calculated.finalRemainingDebt);
+    case 'productionStage':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.productionStage} onChange={(event) => updateField('productionStage', event.target.value)}>
+          <option value="">—</option>
+          {Object.entries(salesProductionStageLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      );
+    case 'deliveryStatus':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.deliveryStatus} onChange={(event) => updateField('deliveryStatus', event.target.value)}>
+          {Object.entries(salesDeliveryStatusLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      );
+    case 'deliveryDate':
+      return <Input {...commonInputProps} type="date" value={draft.deliveryDate} onChange={(event) => updateField('deliveryDate', event.target.value)} />;
+    case 'paymentStatus':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.paymentStatus} onChange={(event) => updateField('paymentStatus', event.target.value)}>
+          <option value="">—</option>
+          {Object.entries(salesPaymentStatusLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      );
+    case 'qaimaStatus':
+      return (
+        <select data-sales-editor="true" onKeyDown={onKeyDown} className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs" value={draft.qaimaStatus} onChange={(event) => updateField('qaimaStatus', event.target.value)}>
+          <option value="">—</option>
+          {Object.entries(salesQaimaLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      );
+    case 'qaimaDate':
+      return <Input {...commonInputProps} type="date" value={draft.qaimaDate} onChange={(event) => updateField('qaimaDate', event.target.value)} />;
+    case 'qaimaNumber':
+      return <Input {...commonInputProps} value={draft.qaimaNumber} onChange={(event) => updateField('qaimaNumber', event.target.value)} />;
+    case 'paperCost':
+      return <Input {...commonInputProps} type="number" value={draft.paperCost} onChange={(event) => updateField('paperCost', toNumber(event.target.value))} />;
+    case 'plateCost':
+      return <Input {...commonInputProps} type="number" value={draft.plateCost} onChange={(event) => updateField('plateCost', toNumber(event.target.value))} />;
+    case 'printCost':
+      return <Input {...commonInputProps} type="number" value={draft.printCost} onChange={(event) => updateField('printCost', toNumber(event.target.value))} />;
+    case 'specialCutCost':
+      return <Input {...commonInputProps} type="number" value={draft.specialCutCost} onChange={(event) => updateField('specialCutCost', toNumber(event.target.value))} />;
+    case 'knifeCost':
+      return <Input {...commonInputProps} type="number" value={draft.knifeCost} onChange={(event) => updateField('knifeCost', toNumber(event.target.value))} />;
+    case 'manualWorkCost':
+      return <Input {...commonInputProps} type="number" value={draft.manualWorkCost} onChange={(event) => updateField('manualWorkCost', toNumber(event.target.value))} />;
+    case 'spiralCost':
+      return <Input {...commonInputProps} type="number" value={draft.spiralCost} onChange={(event) => updateField('spiralCost', toNumber(event.target.value))} />;
+    case 'poniCost':
+      return <Input {...commonInputProps} type="number" value={draft.poniCost} onChange={(event) => updateField('poniCost', toNumber(event.target.value))} />;
+    case 'otherCost':
+      return <Input {...commonInputProps} type="number" value={draft.otherCost} onChange={(event) => updateField('otherCost', toNumber(event.target.value))} />;
+    case 'laminationCost':
+      return <Input {...commonInputProps} type="number" value={draft.laminationCost} onChange={(event) => updateField('laminationCost', toNumber(event.target.value))} />;
+    case 'totalCost':
+      return formatCurrency(calculated.totalCost);
+    case 'profit':
+      return formatCurrency(calculated.profit);
+    case 'profitPercent':
+      return formatPercent(calculated.profitPercent);
+    case 'notes':
+      return <Input {...commonInputProps} value={draft.notes} onChange={(event) => updateField('notes', event.target.value)} />;
+    default:
+      return '—';
+  }
 }
 
-function PlainCell({ children }: { children: ReactNode }) {
-  return <td className={cellBase()}>{children}</td>;
+function getReadCellClass(key: ColumnKey, row: SalesEntryItem) {
+  if (key === 'remainingDebt' && Number(row.remainingDebt) > 0) {
+    return 'bg-amber-50 text-amber-700';
+  }
+  if (key === 'finalRemainingDebt' && Number(row.finalRemainingDebt) > 0) {
+    return 'bg-rose-50 text-rose-700';
+  }
+  if (key === 'profit' && Number(row.profit) < 0) {
+    return 'bg-rose-50 text-rose-700';
+  }
+  if (key === 'profit' && Number(row.profit) >= 0) {
+    return 'bg-emerald-50 text-emerald-700';
+  }
+  return '';
 }
 
-function SelectBox({
-  value,
-  onChange,
-  options,
-  placeholder
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder: string;
-}) {
+function SelectBox({ value, onChange, options, placeholder }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; placeholder: string }) {
   return (
     <div className="w-full lg:w-44">
       <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none">
