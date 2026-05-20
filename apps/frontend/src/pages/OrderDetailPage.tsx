@@ -357,116 +357,61 @@ export function OrderDetailPage() {
               <Input value={hesablama.category} onChange={(event) => setHesablama((current) => (current ? { ...current, category: event.target.value } : current))} />
             </Field>
             <Field label="Məhsul">
-              <Input
-                value={hesablama.productName}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, productName: event.target.value } : current))}
-              />
+              <Input value={hesablama.productName} onChange={(event) => setHesablama((current) => (current ? { ...current, productName: event.target.value } : current))} />
             </Field>
             <Field label="Say">
-              <Input
-                type="number"
-                value={hesablama.quantity}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, quantity: asNumber(event.target.value) } : current))}
-              />
+              <Input type="number" value={hesablama.quantity} onChange={(event) => setHesablama((current) => (current ? { ...current, quantity: asNumber(event.target.value) } : current))} />
             </Field>
             <Field label="Satış məbləği">
-              <Input
-                type="number"
-                value={hesablama.saleAmount}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, saleAmount: asNumber(event.target.value) } : current))}
-              />
+              <Input type="number" value={hesablama.saleAmount} onChange={(event) => setHesablama((current) => (current ? { ...current, saleAmount: asNumber(event.target.value) } : current))} />
             </Field>
             <Field label="Ödəniş">
-              <Input
-                type="number"
-                value={hesablama.paymentAmount}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, paymentAmount: asNumber(event.target.value) } : current))}
-              />
+              <Input type="number" value={hesablama.paymentAmount} onChange={(event) => setHesablama((current) => (current ? { ...current, paymentAmount: asNumber(event.target.value) } : current))} />
             </Field>
             <Field label="Bonus">
-              <Input
-                type="number"
-                value={hesablama.bonus}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, bonus: asNumber(event.target.value) } : current))}
-              />
+              <Input type="number" value={hesablama.bonus} onChange={(event) => setHesablama((current) => (current ? { ...current, bonus: asNumber(event.target.value) } : current))} />
             </Field>
             <Field label="Bonus müştəri">
-              <Input
-                type="number"
-                value={hesablama.customerBonus}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, customerBonus: asNumber(event.target.value) } : current))}
-              />
+              <Input type="number" value={hesablama.customerBonus} onChange={(event) => setHesablama((current) => (current ? { ...current, customerBonus: asNumber(event.target.value) } : current))} />
             </Field>
-            <Field label="Kağız">
-              <Input
-                type="number"
-                value={hesablama.paperCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, paperCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Forma">
-              <Input
-                type="number"
-                value={hesablama.plateCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, plateCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Çap">
-              <Input
-                type="number"
-                value={hesablama.printCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, printCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Xüsusi kəsim">
-              <Input
-                type="number"
-                value={hesablama.specialCutCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, specialCutCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Bıçaq">
-              <Input
-                type="number"
-                value={hesablama.knifeCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, knifeCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Əl işi">
-              <Input
-                type="number"
-                value={hesablama.manualWorkCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, manualWorkCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Spiral">
-              <Input
-                type="number"
-                value={hesablama.spiralCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, spiralCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Poni">
-              <Input
-                type="number"
-                value={hesablama.poniCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, poniCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Digər">
-              <Input
-                type="number"
-                value={hesablama.otherCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, otherCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
-            <Field label="Laminasiya">
-              <Input
-                type="number"
-                value={hesablama.laminationCost}
-                onChange={(event) => setHesablama((current) => (current ? { ...current, laminationCost: asNumber(event.target.value) } : current))}
-              />
-            </Field>
+            <div className="md:col-span-2 overflow-hidden rounded-2xl border border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Xərc sətri</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Məbləğ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ['paperCost', 'Kağız'],
+                    ['plateCost', 'Forma'],
+                    ['printCost', 'Çap'],
+                    ['specialCutCost', 'Xüsusi kəsim'],
+                    ['knifeCost', 'Bıçaq'],
+                    ['manualWorkCost', 'Əl işi'],
+                    ['spiralCost', 'Spiral'],
+                    ['poniCost', 'Poni'],
+                    ['otherCost', 'Digər'],
+                    ['laminationCost', 'Laminasiya']
+                  ].map(([field, label]) => (
+                    <tr key={field} className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-700">{label}</td>
+                      <td className="px-4 py-2">
+                        <Input
+                          type="number"
+                          className="h-9 rounded-lg px-2"
+                          value={hesablama[field as keyof HesablamaForm] as number}
+                          onChange={(event) =>
+                            setHesablama((current) => (current ? { ...current, [field]: asNumber(event.target.value) } : current))
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium text-slate-700">Qeyd</label>
               <textarea

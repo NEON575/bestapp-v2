@@ -2,20 +2,15 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
+import { calculatePaperPricePerSheet } from '../../common/business/paper-pricing';
 import { CreatePaperDto, PaperQueryDto, UpdatePaperDto } from './dto/papers.dto';
-
-function roundMoney(value: number, digits = 4) {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
-}
 
 @Injectable()
 export class PapersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   private pricePerSheet(packPrice: number, sheetsInPack: number) {
-    if (sheetsInPack <= 0) return 0;
-    return roundMoney(packPrice / sheetsInPack, 4);
+    return calculatePaperPricePerSheet(packPrice, sheetsInPack);
   }
 
   async findAll(query: PaperQueryDto) {
@@ -23,6 +18,8 @@ export class PapersService {
     const where: Prisma.PaperWhereInput = {
       deletedAt: null,
       ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...(query.gram ? { gram: query.gram } : {}),
+      ...(query.size ? { size: { contains: query.size, mode: 'insensitive' } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -49,6 +46,10 @@ export class PapersService {
     ]);
 
     return buildPaginatedResponse(data, total, page, limit);
+  }
+
+  quickCreate(dto: CreatePaperDto) {
+    return this.create(dto);
   }
 
   async findOne(id: string) {
@@ -119,4 +120,3 @@ export class PapersService {
     });
   }
 }
-

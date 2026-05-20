@@ -25,13 +25,20 @@ export const salariesClient = {
     return data;
   },
 
+  async quickCreate(dto: CreateSalaryEntryDto) {
+    const { data } = await api.post<SalaryEntryItem>('/salaries/quick-create', dto);
+    return data;
+  },
+
   async update(id: string, dto: UpdateSalaryEntryDto) {
     const { data } = await api.patch<SalaryEntryItem>(`/salaries/${id}`, dto);
     return data;
   },
 
-  async summary() {
-    const { data } = await api.get<SalaryTotalsSummary>('/salaries/summary');
+  async summary(query: SalaryEntryQueryDto = {}) {
+    const { data } = await api.get<SalaryTotalsSummary>('/salaries/summary', {
+      params: buildQueryParams(query)
+    });
     return data;
   },
 
@@ -50,4 +57,3 @@ export const salariesClient = {
     return data;
   }
 };
-

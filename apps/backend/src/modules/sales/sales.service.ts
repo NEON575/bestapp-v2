@@ -5,7 +5,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
 import { recalculateSalesEntry, aggregateCustomerDebt } from '../../common/business/sales-entry';
 import { mapOrderStatusToProductionStage, mapOrderStatusToSalesDeliveryStatus } from '../../common/business/sales-mapping';
-import { CreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
+import { buildSalesEntryWhere } from '../../common/business/sales-filters';
+import { CreateSalesEntryDto, QuickCreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -184,34 +185,7 @@ export class SalesService {
 
   async findAll(query: SalesEntryQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
-    const where: Prisma.SalesEntryWhereInput = {
-      deletedAt: null,
-      ...(query.search
-        ? {
-            OR: [
-              { productName: { contains: query.search, mode: 'insensitive' } },
-              { category: { contains: query.search, mode: 'insensitive' } },
-              { customer: { name: { contains: query.search, mode: 'insensitive' } } },
-              { manager: { fullName: { contains: query.search, mode: 'insensitive' } } },
-              { qaimaNumber: { contains: query.search, mode: 'insensitive' } }
-            ]
-          }
-        : {}),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.managerId ? { managerId: query.managerId } : {}),
-      ...(query.paymentType ? { paymentType: query.paymentType as SalesPaymentType } : {}),
-      ...(query.deliveryStatus ? { deliveryStatus: query.deliveryStatus as SalesDeliveryStatus } : {}),
-      ...(query.productionStage ? { productionStage: query.productionStage as any } : {}),
-      ...(query.hasDebt ? { finalRemainingDebt: { gt: 0 } } : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            date: {
-              gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
-              lte: query.dateTo ? new Date(query.dateTo) : undefined
-            }
-          }
-        : {})
-    };
+    const where = buildSalesEntryWhere(query);
 
     const orderBy = { [query.sortBy ?? 'date']: query.sortOrder ?? 'desc' } as Prisma.SalesEntryOrderByWithRelationInput;
 
@@ -272,6 +246,17 @@ export class SalesService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
+  }
+
+  async quickCreate(dto: QuickCreateSalesEntryDto) {
+    return this.create({
+      customerId: dto.customerId,
+      managerId: dto.managerId,
+      date: dto.date,
+      productName: dto.productName,
+      quantity: dto.quantity,
+      saleAmount: dto.saleAmount
+    });
   }
 
   async update(id: string, dto: UpdateSalesEntryDto) {
@@ -452,12 +437,40 @@ export class SalesService {
     };
   }
 
-  async customerDebts(customerId?: string) {
+  async summary(query: SalesEntryQueryDto) {
     const entries = await this.prisma.salesEntry.findMany({
-      where: {
-        deletedAt: null,
-        ...(customerId ? { customerId } : {})
-      },
+      where: buildSalesEntryWhere(query)
+    });
+
+    const totalSaleAmount = entries.reduce((sum, item) => sum + toNumber(item.saleAmount), 0);
+    const totalPaymentAmount = entries.reduce((sum, item) => sum + toNumber(item.paymentAmount), 0);
+    const totalBonus = entries.reduce((sum, item) => sum + toNumber(item.bonus), 0);
+    const totalCustomerBonus = entries.reduce((sum, item) => sum + toNumber(item.customerBonus), 0);
+    const totalRemainingDebt = entries.reduce((sum, item) => sum + toNumber(item.remainingDebt), 0);
+    const totalFinalRemainingDebt = entries.reduce((sum, item) => sum + toNumber(item.finalRemainingDebt), 0);
+    const totalCost = entries.reduce((sum, item) => sum + toNumber(item.totalCost), 0);
+    const totalProfit = entries.reduce((sum, item) => sum + toNumber(item.profit), 0);
+    const averageProfitPercent = entries.length
+      ? entries.reduce((sum, item) => sum + toNumber(item.profitPercent), 0) / entries.length
+      : 0;
+
+    return {
+      totalSaleAmount,
+      totalPaymentAmount,
+      totalBonus,
+      totalCustomerBonus,
+      totalRemainingDebt,
+      totalFinalRemainingDebt,
+      totalCost,
+      totalProfit,
+      averageProfitPercent: Math.round(averageProfitPercent * 100) / 100,
+      rows: entries.length
+    };
+  }
+
+  async customerDebts(query?: Partial<SalesEntryQueryDto>) {
+    const entries = await this.prisma.salesEntry.findMany({
+      where: buildSalesEntryWhere((query ?? {}) as SalesEntryQueryDto),
       include: {
         customer: true
       }
@@ -467,13 +480,16 @@ export class SalesService {
       entries.map((entry) => ({
         customerId: entry.customerId,
         customerName: entry.customer.name,
+        phone: entry.customer.phone,
         saleAmount: entry.saleAmount,
         paymentAmount: entry.paymentAmount,
         bonus: entry.bonus,
         customerBonus: entry.customerBonus,
         remainingDebt: entry.remainingDebt,
-        finalRemainingDebt: entry.finalRemainingDebt
+        finalRemainingDebt: entry.finalRemainingDebt,
+        lastSaleDate: entry.date
       }))
-    );
+    )
+      .sort((a, b) => Number(b.finalRemainingDebt) - Number(a.finalRemainingDebt));
   }
 }

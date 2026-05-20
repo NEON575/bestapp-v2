@@ -83,6 +83,10 @@ export class SalariesService {
     return buildPaginatedResponse(data, total, page, limit);
   }
 
+  async quickCreate(dto: CreateSalaryEntryDto) {
+    return this.create(dto);
+  }
+
   async create(dto: CreateSalaryEntryDto) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -163,9 +167,28 @@ export class SalariesService {
     });
   }
 
-  async summary() {
+  async summary(query: Partial<SalaryEntryQueryDto> = {}) {
     const entries = await this.prisma.salaryEntry.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { employee: { fullName: { contains: query.search, mode: 'insensitive' } } },
+                { comment: { contains: query.search, mode: 'insensitive' } }
+              ]
+            }
+          : {}),
+        ...(query.dateFrom || query.dateTo
+          ? {
+              date: {
+                gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+                lte: query.dateTo ? new Date(query.dateTo) : undefined
+              }
+            }
+          : {})
+      },
       include: { employee: true }
     });
 
@@ -189,4 +212,3 @@ export class SalariesService {
     };
   }
 }
-

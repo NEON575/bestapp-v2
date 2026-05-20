@@ -27,6 +27,12 @@ export class PapersController {
     return this.papersService.create(dto);
   }
 
+  @Post('quick-create')
+  @Roles('super_admin', 'owner', 'manager', 'warehouse')
+  quickCreate(@Body() dto: CreatePaperDto) {
+    return this.papersService.quickCreate(dto);
+  }
+
   @Patch(':id')
   @Roles('super_admin', 'owner', 'manager', 'warehouse')
   update(@Param('id') id: string, @Body() dto: UpdatePaperDto) {
@@ -39,4 +45,3 @@ export class PapersController {
     return this.papersService.remove(id);
   }
 }
-

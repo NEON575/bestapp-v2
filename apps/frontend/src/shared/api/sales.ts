@@ -3,8 +3,10 @@ import type {
   CustomerDebtSummaryItem,
   PaginatedResponse,
   SalesDashboardSummary,
+  SalesGridSummary,
   SalesEntryItem,
   SalesEntryQueryDto,
+  QuickCreateSalesEntryDto,
   UpdateSalesEntryDto
 } from '@bestapp/shared';
 import { api } from './http';
@@ -28,6 +30,11 @@ export const salesClient = {
     return data;
   },
 
+  async quickCreate(dto: QuickCreateSalesEntryDto) {
+    const { data } = await api.post<SalesEntryItem>('/sales/quick-create', dto);
+    return data;
+  },
+
   async update(id: string, dto: UpdateSalesEntryDto) {
     const { data } = await api.patch<SalesEntryItem>(`/sales/${id}`, dto);
     return data;
@@ -38,11 +45,17 @@ export const salesClient = {
     return data;
   },
 
-  async customerDebts(customerId?: string) {
+  async summary(query: SalesEntryQueryDto = {}) {
+    const { data } = await api.get<SalesGridSummary>('/sales/summary', {
+      params: buildQueryParams(query)
+    });
+    return data;
+  },
+
+  async customerDebts(query: SalesEntryQueryDto = {}) {
     const { data } = await api.get<CustomerDebtSummaryItem[]>('/sales/customer-debts', {
-      params: customerId ? { customerId } : undefined
+      params: buildQueryParams(query)
     });
     return data;
   }
 };
-

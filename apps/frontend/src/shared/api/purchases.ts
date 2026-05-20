@@ -26,13 +26,20 @@ export const purchasesClient = {
     return data;
   },
 
+  async quickCreate(dto: CreatePurchaseEntryDto) {
+    const { data } = await api.post<PurchaseEntryItem>('/purchases/quick-create', dto);
+    return data;
+  },
+
   async update(id: string, dto: UpdatePurchaseEntryDto) {
     const { data } = await api.patch<PurchaseEntryItem>(`/purchases/${id}`, dto);
     return data;
   },
 
-  async summary() {
-    const { data } = await api.get<PurchaseSummary>('/purchases/summary');
+  async summary(query: PurchaseEntryQueryDto = {}) {
+    const { data } = await api.get<PurchaseSummary>('/purchases/summary', {
+      params: buildQueryParams(query)
+    });
     return data;
   },
 
@@ -58,4 +65,3 @@ export const purchasesClient = {
     return data;
   }
 };
-

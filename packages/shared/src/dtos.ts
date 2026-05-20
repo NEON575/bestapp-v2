@@ -254,7 +254,11 @@ export interface SalesEntryQueryDto extends PaginationQueryDto {
   paymentType?: string;
   deliveryStatus?: string;
   productionStage?: string;
+  category?: string;
+  qaimaStatus?: string;
+  paymentStatus?: string;
   hasDebt?: boolean;
+  onlyUndelivered?: boolean;
 }
 
 export interface CreateSupplierDto {
@@ -323,4 +327,17 @@ export interface UpdateSalaryEntryDto extends Partial<CreateSalaryEntryDto> {}
 
 export interface SalaryEntryQueryDto extends PaginationQueryDto {
   employeeId?: string;
+}
+
+export interface PaperQueryDto extends PaginationQueryDto {
+  supplierId?: string;
+  gram?: number;
+  size?: string;
+}
+
+export interface ExcelImportPreviewSheetDto {
+  name: string;
+  rows: number;
+  columns: string[];
+  mappingErrors: string[];
 }

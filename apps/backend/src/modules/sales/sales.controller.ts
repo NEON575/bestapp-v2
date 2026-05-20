@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { SalesService } from './sales.service';
-import { CreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
+import { CreateSalesEntryDto, QuickCreateSalesEntryDto, SalesEntryQueryDto, UpdateSalesEntryDto } from './dto/sales.dto';
 
 @ApiTags('sales')
 @Controller('sales')
@@ -21,10 +21,16 @@ export class SalesController {
     return this.salesService.dashboard();
   }
 
+  @Get('summary')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  summary(@Query() query: SalesEntryQueryDto) {
+    return this.salesService.summary(query);
+  }
+
   @Get('customer-debts')
   @Roles('super_admin', 'owner', 'manager', 'accountant')
-  customerDebts(@Query('customerId') customerId?: string) {
-    return this.salesService.customerDebts(customerId);
+  customerDebts(@Query() query: SalesEntryQueryDto) {
+    return this.salesService.customerDebts(query);
   }
 
   @Get(':id')
@@ -39,6 +45,12 @@ export class SalesController {
     return this.salesService.create(dto);
   }
 
+  @Post('quick-create')
+  @Roles('super_admin', 'owner', 'manager')
+  quickCreate(@Body() dto: QuickCreateSalesEntryDto) {
+    return this.salesService.quickCreate(dto);
+  }
+
   @Patch(':id')
   @Roles('super_admin', 'owner', 'manager', 'accountant')
   update(@Param('id') id: string, @Body() dto: UpdateSalesEntryDto) {
@@ -51,4 +63,3 @@ export class SalesController {
     return this.salesService.remove(id);
   }
 }
-

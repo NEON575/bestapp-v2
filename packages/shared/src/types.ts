@@ -122,6 +122,19 @@ export interface PaperItem {
   supplier?: SupplierItem | null;
 }
 
+export interface ExcelImportPreviewSheet {
+  name: string;
+  rows: number;
+  columns: string[];
+  mappingErrors: string[];
+}
+
+export interface ExcelImportPreviewResult {
+  fileName: string;
+  sheets: ExcelImportPreviewSheet[];
+  workbookError?: string | null;
+}
+
 export interface SalesEntryItem {
   id: string;
   orderId?: string | null;
@@ -198,12 +211,14 @@ export interface SalaryEntryItem {
 export interface CustomerDebtSummaryItem {
   customerId: string;
   customerName: string;
+  phone?: string | null;
   saleAmount: number;
   paymentAmount: number;
   bonus: number;
   customerBonus: number;
   remainingDebt: number;
   finalRemainingDebt: number;
+  lastSaleDate?: string | null;
 }
 
 export interface SupplierDebtSummaryItem {
@@ -231,6 +246,19 @@ export interface SalesDashboardSummary {
   averageMarginPercent: number;
   entries: number;
   recentEntries: SalesEntryItem[];
+}
+
+export interface SalesGridSummary {
+  totalSaleAmount: number;
+  totalPaymentAmount: number;
+  totalBonus: number;
+  totalCustomerBonus: number;
+  totalRemainingDebt: number;
+  totalFinalRemainingDebt: number;
+  totalCost: number;
+  totalProfit: number;
+  averageProfitPercent: number;
+  rows: number;
 }
 
 export interface PurchaseSummary {

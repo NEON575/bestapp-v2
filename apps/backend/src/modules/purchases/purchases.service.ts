@@ -137,6 +137,10 @@ export class PurchasesService {
     return buildPaginatedResponse(data, total, page, limit);
   }
 
+  async quickCreate(dto: CreatePurchaseEntryDto) {
+    return this.create(dto);
+  }
+
   async create(dto: CreatePurchaseEntryDto) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -217,9 +221,30 @@ export class PurchasesService {
     });
   }
 
-  async summary() {
+  async summary(query: Partial<PurchaseEntryQueryDto> = {}) {
     const entries = await this.prisma.purchaseEntry.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        ...(query.search
+          ? {
+              OR: [
+                { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+                { comment: { contains: query.search, mode: 'insensitive' } }
+              ]
+            }
+          : {}),
+        ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+        ...(query.paymentType ? { paymentType: query.paymentType as SalesPaymentType } : {}),
+        ...(query.onlyDebtors ? { remainingDebt: { gt: 0 } } : {}),
+        ...(query.dateFrom || query.dateTo
+          ? {
+              date: {
+                gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+                lte: query.dateTo ? new Date(query.dateTo) : undefined
+              }
+            }
+          : {})
+      },
       include: { supplier: true }
     });
 
@@ -261,4 +286,3 @@ export class PurchasesService {
     );
   }
 }
-

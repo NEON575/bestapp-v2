@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DebtsModule } from './modules/debts/debts.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { ImportModule } from './modules/import/import.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PricingModule } from './modules/pricing/pricing.module';
@@ -46,6 +47,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     PricingModule,
     InventoryModule,
     FinanceModule,
+    ImportModule,
     DebtsModule,
     PurchasesModule,
     SalariesModule,

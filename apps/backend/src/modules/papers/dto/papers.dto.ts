@@ -8,6 +8,17 @@ export class PaperQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   supplierId?: string;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  gram?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  size?: string;
 }
 
 export class CreatePaperDto {
@@ -60,4 +71,3 @@ export class CreatePaperDto {
 }
 
 export class UpdatePaperDto extends PartialType(CreatePaperDto) {}
-

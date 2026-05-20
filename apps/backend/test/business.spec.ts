@@ -12,6 +12,7 @@ import { calculateFinanceSummary } from '../src/common/business/finance-summary'
 import { aggregateCustomerDebt, recalculateSalesEntry } from '../src/common/business/sales-entry';
 import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../src/common/business/purchase-entry';
 import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../src/common/business/salary-entry';
+import { calculatePaperPricePerSheet } from '../src/common/business/paper-pricing';
 import {
   resolveDebtStatus,
   resolveInvoiceStatus,
@@ -179,6 +180,35 @@ test('sales entry formulas match excel logic', () => {
   });
 });
 
+test('sales entry handles zero quantity and zero total cost safely', () => {
+  const result = recalculateSalesEntry({
+    quantity: 0,
+    saleAmount: 150,
+    paymentAmount: 50,
+    bonus: 0,
+    customerBonus: 10,
+    paperCost: 0,
+    plateCost: 0,
+    printCost: 0,
+    specialCutCost: 0,
+    knifeCost: 0,
+    manualWorkCost: 0,
+    spiralCost: 0,
+    poniCost: 0,
+    otherCost: 0,
+    laminationCost: 0
+  });
+
+  assert.deepEqual(result, {
+    saleUnitPrice: 0,
+    remainingDebt: 90,
+    finalRemainingDebt: 90,
+    totalCost: 0,
+    profit: 140,
+    profitPercent: 0
+  });
+});
+
 test('customer debt aggregation sums sales journal correctly', () => {
   const rows = aggregateCustomerDebt([
     {
@@ -207,12 +237,14 @@ test('customer debt aggregation sums sales journal correctly', () => {
   assert.deepEqual(rows[0], {
     customerId: 'c1',
     customerName: 'Alpha',
+    phone: undefined,
     saleAmount: 500,
     paymentAmount: 225,
     bonus: 10,
     customerBonus: 25,
     remainingDebt: 250,
-    finalRemainingDebt: 240
+    finalRemainingDebt: 240,
+    lastSaleDate: null
   });
 });
 
@@ -274,4 +306,10 @@ test('salary recalculation matches excel balance logic', () => {
     paymentAmount: 600,
     remainingDebt: 450
   });
+});
+
+test('paper price per sheet follows excel logic', () => {
+  assert.equal(calculatePaperPricePerSheet(42, 250), 0.168);
+  assert.equal(calculatePaperPricePerSheet(18, 100), 0.18);
+  assert.equal(calculatePaperPricePerSheet(10, 0), 0);
 });

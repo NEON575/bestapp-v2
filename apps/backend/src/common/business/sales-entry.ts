@@ -87,12 +87,14 @@ export function aggregateCustomerDebt<
     {
       customerId: string;
       customerName: string;
+      phone?: string | null;
       saleAmount: number;
       paymentAmount: number;
       bonus: number;
       customerBonus: number;
       remainingDebt: number;
       finalRemainingDebt: number;
+      lastSaleDate?: string | Date | null;
     }
   >();
 
@@ -102,12 +104,14 @@ export function aggregateCustomerDebt<
       {
         customerId: entry.customerId,
         customerName: entry.customerName,
+        phone: (entry as { phone?: string | null }).phone,
         saleAmount: 0,
         paymentAmount: 0,
         bonus: 0,
         customerBonus: 0,
         remainingDebt: 0,
-        finalRemainingDebt: 0
+        finalRemainingDebt: 0,
+        lastSaleDate: (entry as { lastSaleDate?: string | Date | null }).lastSaleDate ?? null
       };
 
     current.saleAmount += toNumber(entry.saleAmount);
@@ -116,6 +120,10 @@ export function aggregateCustomerDebt<
     current.customerBonus += toNumber(entry.customerBonus);
     current.remainingDebt += toNumber(entry.remainingDebt);
     current.finalRemainingDebt += toNumber(entry.finalRemainingDebt);
+    const nextDate = (entry as { lastSaleDate?: string | Date | null }).lastSaleDate;
+    if (nextDate && (!current.lastSaleDate || new Date(nextDate) > new Date(current.lastSaleDate))) {
+      current.lastSaleDate = nextDate;
+    }
     grouped.set(entry.customerId, current);
   }
 
@@ -126,6 +134,7 @@ export function aggregateCustomerDebt<
     bonus: roundMoney(item.bonus),
     customerBonus: roundMoney(item.customerBonus),
     remainingDebt: roundMoney(item.remainingDebt),
-    finalRemainingDebt: roundMoney(item.finalRemainingDebt)
+    finalRemainingDebt: roundMoney(item.finalRemainingDebt),
+    lastSaleDate: item.lastSaleDate ? new Date(item.lastSaleDate).toISOString() : null
   }));
 }

@@ -30,7 +30,8 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.5",
@@ -39,8 +40,8 @@
     "@types/node": "^24.0.10",
     "@types/passport-jwt": "^4.0.1",
     "prisma": "^6.8.2",
-    "tsx": "^4.20.3",
     "tsc-alias": "^1.8.16",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   },
   "prisma": {

@@ -1,24 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CustomerDebtSummaryItem, CustomerListItem } from '@bestapp/shared';
-import { Button } from '@bestapp/ui';
-import { customersClient } from '../shared/api/customers';
+import type { CustomerDebtSummaryItem, SalesEntryQueryDto } from '@bestapp/shared';
+import { Button, Input } from '@bestapp/ui';
 import { salesClient } from '../shared/api/sales';
-import {
-  DataTable,
-  EmptyState,
-  ErrorState,
-  FilterBar,
-  LoadingState,
-  PageHeader,
-  SearchInput,
-  StatCard
-} from '../shared/components';
-import { formatCurrency } from '../shared/lib/format';
+import { EmptyState, ErrorState, LoadingState, PageHeader } from '../shared/components';
+import { formatCurrency, formatDateOnly } from '../shared/lib/format';
 
 export function CustomerDebtsPage() {
   const [rows, setRows] = useState<CustomerDebtSummaryItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
-  const [customerId, setCustomerId] = useState('');
+  const [search, setSearch] = useState('');
   const [onlyDebtors, setOnlyDebtors] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,15 +16,14 @@ export function CustomerDebtsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [debts, customerList] = await Promise.all([
-        salesClient.customerDebts(customerId || undefined),
-        customersClient.list({ page: 1, limit: 100, search: '' })
-      ]);
-
-      setCustomers(customerList.data);
-      setRows(onlyDebtors ? debts.filter((item) => item.finalRemainingDebt > 0) : debts);
+      const query: SalesEntryQueryDto = {
+        search,
+        hasDebt: onlyDebtors
+      };
+      const data = await salesClient.customerDebts(query);
+      setRows(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Müştəri borcu yüklənmədi');
+      setError(e instanceof Error ? e.message : 'Müştəri borcları yüklənmədi');
     } finally {
       setLoading(false);
     }
@@ -43,15 +31,12 @@ export function CustomerDebtsPage() {
 
   useEffect(() => {
     void load();
-  }, [customerId, onlyDebtors]);
+  }, [search, onlyDebtors]);
 
-  const totalDebt = useMemo(
-    () => rows.reduce((sum, row) => sum + row.finalRemainingDebt, 0),
-    [rows]
-  );
+  const totalDebt = useMemo(() => rows.reduce((sum, item) => sum + Number(item.finalRemainingDebt ?? 0), 0), [rows]);
 
   if (loading) {
-    return <LoadingState rows={4} />;
+    return <LoadingState rows={5} />;
   }
 
   if (error) {
@@ -60,55 +45,53 @@ export function CustomerDebtsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Müştəri borcu"
-        description="Müştəri üzrə satış, ödəniş, bonus və cari qalıq borc."
-      />
+      <PageHeader title="Müştəri borcu" description="Satış jurnalından avtomatik hesablanan müştəri borcları." />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <StatCard label="Borclu müştərilər" value={`${rows.length}`} />
-        <StatCard label="Yekun borc" value={formatCurrency(totalDebt)} accent="amber" />
-      </div>
-
-      <FilterBar>
-        <div className="w-full lg:w-72">
-          <select
-            value={customerId}
-            onChange={(event) => setCustomerId(event.target.value)}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-          >
-            <option value="">Bütün müştərilər</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-              </option>
-            ))}
-          </select>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full lg:w-80">
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Müştəri və ya telefon üzrə axtarış" />
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={onlyDebtors} onChange={(event) => setOnlyDebtors(event.target.checked)} />
           Yalnız borclular
         </label>
-        <Button variant="secondary" onClick={() => void load()}>
-          Yenilə
-        </Button>
-      </FilterBar>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">Ümumi borc: <span className="font-semibold">{formatCurrency(totalDebt)}</span></div>
+      </div>
 
-      <DataTable
-        rowKey={(row) => row.customerId}
-        data={rows}
-        columns={[
-          { key: 'customer', header: 'Müştəri', render: (row) => row.customerName },
-          { key: 'sale', header: 'Satış', render: (row) => formatCurrency(row.saleAmount) },
-          { key: 'payment', header: 'Ödəniş', render: (row) => formatCurrency(row.paymentAmount) },
-          { key: 'bonus', header: 'Bonus', render: (row) => formatCurrency(row.bonus) },
-          { key: 'customerBonus', header: 'Bonus müştəri', render: (row) => formatCurrency(row.customerBonus) },
-          { key: 'debt', header: 'Qalıq', render: (row) => formatCurrency(row.remainingDebt) },
-          { key: 'final', header: 'Son qalıq', render: (row) => formatCurrency(row.finalRemainingDebt) }
-        ]}
-        emptyState={<EmptyState title="Borclu müştəri yoxdur" description="Filtrlərə uyğun borc qeydi tapılmadı." />}
-      />
+      {!rows.length ? (
+        <EmptyState title="Borclu müştəri yoxdur" description="Aktiv filtrə uyğun nəticə tapılmadı." />
+      ) : (
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  {['Müştəri', 'Telefon', 'Satış məbləği', 'Ödəniş', 'Bonus', 'Bonus Müştəri', 'Qalıq', 'Son qalıq', 'Son satış tarixi'].map((header) => (
+                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.customerId} className="border-b border-slate-100">
+                    <td className="px-4 py-3 font-medium text-slate-950">{row.customerName}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.phone ?? '—'}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.saleAmount)}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.paymentAmount)}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.bonus)}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.customerBonus)}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.remainingDebt)}</td>
+                    <td className={`px-4 py-3 font-semibold ${row.finalRemainingDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(row.finalRemainingDebt)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDateOnly(row.lastSaleDate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

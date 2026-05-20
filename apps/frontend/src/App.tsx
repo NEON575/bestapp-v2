@@ -20,6 +20,7 @@ import { CustomerDebtsPage } from './pages/CustomerDebtsPage';
 import { SupplierDebtsPage } from './pages/SupplierDebtsPage';
 import { SalariesPage } from './pages/SalariesPage';
 import { PapersPage } from './pages/PapersPage';
+import { ImportExcelPage } from './pages/ImportExcelPage';
 
 export function App() {
   return (
@@ -54,6 +55,7 @@ export function App() {
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="salaries" element={<SalariesPage />} />
         <Route path="papers" element={<PapersPage />} />
+        <Route path="import-excel" element={<ImportExcelPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 

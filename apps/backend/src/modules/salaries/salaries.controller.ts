@@ -23,8 +23,8 @@ export class SalariesController {
 
   @Get('summary')
   @Roles('super_admin', 'owner', 'accountant')
-  summary() {
-    return this.salariesService.summary();
+  summary(@Query() query: SalaryEntryQueryDto) {
+    return this.salariesService.summary(query);
   }
 
   @Get('employees')
@@ -51,6 +51,12 @@ export class SalariesController {
     return this.salariesService.create(dto);
   }
 
+  @Post('quick-create')
+  @Roles('super_admin', 'owner', 'accountant')
+  quickCreate(@Body() dto: CreateSalaryEntryDto) {
+    return this.salariesService.quickCreate(dto);
+  }
+
   @Patch(':id')
   @Roles('super_admin', 'owner', 'accountant')
   update(@Param('id') id: string, @Body() dto: UpdateSalaryEntryDto) {
@@ -63,4 +69,3 @@ export class SalariesController {
     return this.salariesService.remove(id);
   }
 }
-

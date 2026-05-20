@@ -23,8 +23,8 @@ export class PurchasesController {
 
   @Get('summary')
   @Roles('super_admin', 'owner', 'accountant', 'manager')
-  summary() {
-    return this.purchasesService.summary();
+  summary(@Query() query: PurchaseEntryQueryDto) {
+    return this.purchasesService.summary(query);
   }
 
   @Get('supplier-debts')
@@ -57,6 +57,12 @@ export class PurchasesController {
     return this.purchasesService.create(dto);
   }
 
+  @Post('quick-create')
+  @Roles('super_admin', 'owner', 'accountant', 'manager')
+  quickCreate(@Body() dto: CreatePurchaseEntryDto) {
+    return this.purchasesService.quickCreate(dto);
+  }
+
   @Patch(':id')
   @Roles('super_admin', 'owner', 'accountant', 'manager')
   update(@Param('id') id: string, @Body() dto: UpdatePurchaseEntryDto) {
@@ -69,4 +75,3 @@ export class PurchasesController {
     return this.purchasesService.remove(id);
   }
 }
-

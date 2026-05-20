@@ -42,10 +42,31 @@ export class SalesEntryQueryDto extends PaginationQueryDto {
   productionStage?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ example: 'yazilib' })
+  @IsOptional()
+  @IsString()
+  qaimaStatus?: string;
+
+  @ApiPropertyOptional({ example: 'odenilib' })
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
+
+  @ApiPropertyOptional()
   @Transform(({ value }) => toBoolean(value))
   @IsOptional()
   @IsBoolean()
   hasDebt?: boolean;
+
+  @ApiPropertyOptional()
+  @Transform(({ value }) => toBoolean(value))
+  @IsOptional()
+  @IsBoolean()
+  onlyUndelivered?: boolean;
 }
 
 export class CreateSalesEntryDto {
@@ -256,3 +277,32 @@ export class CreateSalesEntryDto {
 
 export class UpdateSalesEntryDto extends PartialType(CreateSalesEntryDto) {}
 
+export class QuickCreateSalesEntryDto {
+  @ApiProperty()
+  @IsString()
+  customerId!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  managerId?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @ApiProperty()
+  @IsString()
+  productName!: string;
+
+  @ApiProperty()
+  @Type(() => Number)
+  @IsNumber()
+  quantity!: number;
+
+  @ApiProperty()
+  @Type(() => Number)
+  @IsNumber()
+  saleAmount!: number;
+}
