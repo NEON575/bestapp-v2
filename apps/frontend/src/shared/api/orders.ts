@@ -62,9 +62,13 @@ export const ordersClient = {
     return data;
   },
 
+  async updateHesablama(id: string, dto: Record<string, unknown>) {
+    const { data } = await api.patch(`/orders/${id}/hesablama`, dto);
+    return data;
+  },
+
   async profitability(id: string) {
     const { data } = await api.get(`/orders/${id}/profitability`);
     return data;
   }
 };
-

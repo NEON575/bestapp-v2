@@ -6,6 +6,7 @@ import { RequestUser } from '../../common/types/request-user.interface';
 import { CreateOrderDto, UpdateOrderDto } from './dto/order.dto';
 import { OrderListQueryDto } from './dto/order-query.dto';
 import { OrdersService } from './orders.service';
+import { UpdateSalesEntryDto } from '../sales/dto/sales.dto';
 
 @ApiTags('orders')
 @Controller('orders')
@@ -76,5 +77,11 @@ export class OrdersController {
   @Roles('super_admin', 'owner', 'manager', 'accountant')
   profitability(@Param('id') id: string) {
     return this.ordersService.profitability(id);
+  }
+
+  @Patch(':id/hesablama')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  updateHesablama(@Param('id') id: string, @Body() dto: UpdateSalesEntryDto) {
+    return this.ordersService.updateHesablama(id, dto);
   }
 }

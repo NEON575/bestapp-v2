@@ -9,6 +9,9 @@ import { buildOrderListWhere } from '../src/common/business/order-filters';
 import { calculateDashboardSummary } from '../src/common/business/dashboard-summary';
 import { calculateInventorySummary } from '../src/common/business/inventory-summary';
 import { calculateFinanceSummary } from '../src/common/business/finance-summary';
+import { aggregateCustomerDebt, recalculateSalesEntry } from '../src/common/business/sales-entry';
+import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../src/common/business/purchase-entry';
+import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../src/common/business/salary-entry';
 import {
   resolveDebtStatus,
   resolveInvoiceStatus,
@@ -145,4 +148,130 @@ test('finance summary returns structured payload', () => {
   assert.equal(summary.totalInvoices, 10);
   assert.equal(summary.totalCashboxBalance, 600);
   assert.equal(summary.monthExpense, 140);
+});
+
+test('sales entry formulas match excel logic', () => {
+  const result = recalculateSalesEntry({
+    quantity: 20,
+    saleAmount: 500,
+    paymentAmount: 120,
+    bonus: 15,
+    customerBonus: 25,
+    paperCost: 100,
+    plateCost: 20,
+    printCost: 60,
+    specialCutCost: 10,
+    knifeCost: 5,
+    manualWorkCost: 15,
+    spiralCost: 8,
+    poniCost: 7,
+    otherCost: 12,
+    laminationCost: 18
+  });
+
+  assert.deepEqual(result, {
+    saleUnitPrice: 25,
+    remainingDebt: 355,
+    finalRemainingDebt: 340,
+    totalCost: 255,
+    profit: 205,
+    profitPercent: 80.39
+  });
+});
+
+test('customer debt aggregation sums sales journal correctly', () => {
+  const rows = aggregateCustomerDebt([
+    {
+      customerId: 'c1',
+      customerName: 'Alpha',
+      saleAmount: 400,
+      paymentAmount: 200,
+      bonus: 10,
+      customerBonus: 20,
+      remainingDebt: 180,
+      finalRemainingDebt: 170
+    },
+    {
+      customerId: 'c1',
+      customerName: 'Alpha',
+      saleAmount: 100,
+      paymentAmount: 25,
+      bonus: 0,
+      customerBonus: 5,
+      remainingDebt: 70,
+      finalRemainingDebt: 70
+    }
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], {
+    customerId: 'c1',
+    customerName: 'Alpha',
+    saleAmount: 500,
+    paymentAmount: 225,
+    bonus: 10,
+    customerBonus: 25,
+    remainingDebt: 250,
+    finalRemainingDebt: 240
+  });
+});
+
+test('purchase and supplier debt calculations are consistent', () => {
+  const purchase = recalculatePurchaseEntry(300, 120);
+  assert.deepEqual(purchase, {
+    amount: 300,
+    paymentAmount: 120,
+    remainingDebt: 180
+  });
+
+  const supplierDebt = aggregateSupplierDebt([
+    { supplierId: 's1', supplierName: 'Paper MMC', amount: 300, paymentAmount: 120, remainingDebt: 180 },
+    { supplierId: 's1', supplierName: 'Paper MMC', amount: 100, paymentAmount: 20, remainingDebt: 80 }
+  ]);
+
+  assert.deepEqual(supplierDebt[0], {
+    supplierId: 's1',
+    supplierName: 'Paper MMC',
+    purchaseAmount: 400,
+    paymentAmount: 140,
+    remainingDebt: 260
+  });
+});
+
+test('salary recalculation matches excel balance logic', () => {
+  const salary = recalculateSalaryEntry(700, 50, 500);
+  assert.deepEqual(salary, {
+    salaryAmount: 700,
+    bonusAmount: 50,
+    paymentAmount: 500,
+    remainingDebt: 250
+  });
+
+  const summary = aggregateSalaryByEmployee([
+    {
+      employeeId: 'e1',
+      employeeName: 'Aysel',
+      salaryAmount: 700,
+      bonusAmount: 50,
+      paymentAmount: 500,
+      remainingDebt: 250
+    },
+    {
+      employeeId: 'e1',
+      employeeName: 'Aysel',
+      salaryAmount: 300,
+      bonusAmount: 0,
+      paymentAmount: 100,
+      remainingDebt: 200
+    }
+  ]);
+
+  assert.deepEqual(summary[0], {
+    employeeId: 'e1',
+    employeeName: 'Aysel',
+    salaryAmount: 1000,
+    bonusAmount: 50,
+    paymentAmount: 600,
+    remainingDebt: 450
+  });
 });

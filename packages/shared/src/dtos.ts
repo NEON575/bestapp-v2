@@ -167,3 +167,160 @@ export interface CreateCashboxDto {
 }
 
 export interface UpdateCashboxDto extends Partial<CreateCashboxDto> {}
+
+export interface CreateSalesEntryDto {
+  orderId?: string;
+  customerId: string;
+  managerId?: string;
+  paperId?: string;
+  date?: string;
+  category?: string;
+  productName: string;
+  quantity: number;
+  saleAmount: number;
+  paymentAmount?: number;
+  paymentType?: string;
+  bonus?: number;
+  customerBonus?: number;
+  productionStage?: string;
+  deliveryStatus?: string;
+  deliveryDate?: string;
+  paymentStatus?: string;
+  qaimaStatus?: string;
+  qaimaDate?: string;
+  qaimaNumber?: string;
+  printColor?: string;
+  printType?: string;
+  paperCost?: number;
+  plateCost?: number;
+  printCost?: number;
+  specialCutCost?: number;
+  knifeCost?: number;
+  manualWorkCost?: number;
+  spiralCost?: number;
+  poniCost?: number;
+  otherCost?: number;
+  laminationCost?: number;
+  spiralType?: string;
+  spiralQuantity?: number;
+  spiralUnitCost?: number;
+  spiralTotalCost?: number;
+  invoiceStatusText?: string;
+  notes?: string;
+}
+
+export interface UpdateSalesEntryDto extends Partial<CreateSalesEntryDto> {}
+
+export interface UpdateOrderHesablamaDto {
+  paperId?: string;
+  category?: string;
+  productName?: string;
+  quantity?: number;
+  saleAmount?: number;
+  paymentAmount?: number;
+  paymentType?: string;
+  bonus?: number;
+  customerBonus?: number;
+  productionStage?: string;
+  deliveryStatus?: string;
+  deliveryDate?: string;
+  paymentStatus?: string;
+  qaimaStatus?: string;
+  qaimaDate?: string;
+  qaimaNumber?: string;
+  printColor?: string;
+  printType?: string;
+  paperCost?: number;
+  plateCost?: number;
+  printCost?: number;
+  specialCutCost?: number;
+  knifeCost?: number;
+  manualWorkCost?: number;
+  spiralCost?: number;
+  poniCost?: number;
+  otherCost?: number;
+  laminationCost?: number;
+  spiralType?: string;
+  spiralQuantity?: number;
+  spiralUnitCost?: number;
+  spiralTotalCost?: number;
+  invoiceStatusText?: string;
+  notes?: string;
+}
+
+export interface SalesEntryQueryDto extends PaginationQueryDto {
+  customerId?: string;
+  managerId?: string;
+  paymentType?: string;
+  deliveryStatus?: string;
+  productionStage?: string;
+  hasDebt?: boolean;
+}
+
+export interface CreateSupplierDto {
+  code?: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  notes?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateSupplierDto extends Partial<CreateSupplierDto> {}
+
+export interface CreatePaperDto {
+  supplierId?: string;
+  code: string;
+  name: string;
+  gram: number;
+  size: string;
+  packPrice: number;
+  sheetsInPack: number;
+  vatIncluded?: boolean;
+  unit?: string;
+  notes?: string;
+}
+
+export interface UpdatePaperDto extends Partial<CreatePaperDto> {}
+
+export interface CreatePurchaseEntryDto {
+  supplierId: string;
+  date?: string;
+  amount: number;
+  paymentAmount?: number;
+  paymentType?: string;
+  comment?: string;
+}
+
+export interface UpdatePurchaseEntryDto extends Partial<CreatePurchaseEntryDto> {}
+
+export interface PurchaseEntryQueryDto extends PaginationQueryDto {
+  supplierId?: string;
+  paymentType?: string;
+  onlyDebtors?: boolean;
+}
+
+export interface CreateEmployeeDto {
+  fullName: string;
+  phone?: string;
+  title?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateEmployeeDto extends Partial<CreateEmployeeDto> {}
+
+export interface CreateSalaryEntryDto {
+  employeeId: string;
+  date?: string;
+  salaryAmount: number;
+  bonusAmount?: number;
+  paymentAmount?: number;
+  comment?: string;
+}
+
+export interface UpdateSalaryEntryDto extends Partial<CreateSalaryEntryDto> {}
+
+export interface SalaryEntryQueryDto extends PaginationQueryDto {
+  employeeId?: string;
+}

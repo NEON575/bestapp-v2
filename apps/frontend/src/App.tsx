@@ -14,6 +14,12 @@ import { ProductionPage } from './pages/ProductionPage';
 import { DebtsPage } from './pages/DebtsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CustomerDetailPage } from './pages/CustomerDetailPage';
+import { SalesPage } from './pages/SalesPage';
+import { PurchasesPage } from './pages/PurchasesPage';
+import { CustomerDebtsPage } from './pages/CustomerDebtsPage';
+import { SupplierDebtsPage } from './pages/SupplierDebtsPage';
+import { SalariesPage } from './pages/SalariesPage';
+import { PapersPage } from './pages/PapersPage';
 
 export function App() {
   return (
@@ -36,12 +42,18 @@ export function App() {
           <Route path="new" element={<OrderCreatePage />} />
           <Route path=":id" element={<OrderDetailPage />} />
         </Route>
+        <Route path="sales" element={<SalesPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />
+        <Route path="production" element={<ProductionPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="finance" element={<FinancePage />} />
-        <Route path="production" element={<ProductionPage />} />
         <Route path="debts" element={<DebtsPage />} />
+        <Route path="customer-debts" element={<CustomerDebtsPage />} />
+        <Route path="supplier-debts" element={<SupplierDebtsPage />} />
+        <Route path="purchases" element={<PurchasesPage />} />
+        <Route path="salaries" element={<SalariesPage />} />
+        <Route path="papers" element={<PapersPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 

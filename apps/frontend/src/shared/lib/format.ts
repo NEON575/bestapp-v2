@@ -1,6 +1,6 @@
-export function formatCurrency(value?: number | null, currency = 'RUB') {
+export function formatCurrency(value?: number | null, currency = 'AZN') {
   const amount = value ?? 0;
-  return new Intl.NumberFormat('ru-RU', {
+  return new Intl.NumberFormat('az-Latn-AZ', {
     style: 'currency',
     currency,
     maximumFractionDigits: 2
@@ -9,7 +9,7 @@ export function formatCurrency(value?: number | null, currency = 'RUB') {
 
 export function formatNumber(value?: number | null, digits = 2) {
   const amount = value ?? 0;
-  return new Intl.NumberFormat('ru-RU', {
+  return new Intl.NumberFormat('az-Latn-AZ', {
     maximumFractionDigits: digits
   }).format(amount);
 }
@@ -28,7 +28,7 @@ export function formatDate(value?: string | Date | null, options?: Intl.DateTime
     return '—';
   }
 
-  return new Intl.DateTimeFormat('ru-RU', {
+  return new Intl.DateTimeFormat('az-Latn-AZ', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -58,4 +58,3 @@ export function initials(value?: string | null) {
     .join('')
     .toUpperCase();
 }
-

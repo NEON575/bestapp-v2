@@ -106,6 +106,56 @@ enum DebtStatus {
   closed
 }
 
+enum SalesPaymentType {
+  hesab
+  kart
+  negd
+  kassa
+}
+
+enum SalesDeliveryStatus {
+  sifaris
+  hazir
+  tehvil
+  legv
+}
+
+enum SalesProductionStage {
+  dizayn
+  forma
+  cap
+  laminasiya
+  kesim
+  el_isi
+  bitib
+  odenis
+  poni
+  ozel_kesim
+}
+
+enum QaimaStatus {
+  yazilib
+  yazilmayib
+  negd
+}
+
+enum SalesPaymentStatus {
+  odenilib
+  yazilib
+}
+
+enum PrintColorOption {
+  four_zero
+  four_four
+  four_one
+}
+
+enum PrintTypeOption {
+  svoy
+  cujoy
+  bir_uzlu
+}
+
 model User {
   id                String              @id @default(uuid())
   email             String              @unique
@@ -126,6 +176,7 @@ model User {
   paymentsReversed  Payment[]           @relation("PaymentReversedBy")
   cashboxTransactions CashboxTransaction[] @relation("CashboxTransactionCreatedBy")
   auditLogs         AuditLog[]
+  managedSalesEntries SalesEntry[]      @relation("SalesEntryManager")
 
   @@map("users")
 }
@@ -194,8 +245,43 @@ model Customer {
   deletedAt   DateTime?
   orders      Order[]
   receivables Receivable[]
+  salesEntries SalesEntry[]
 
   @@map("customers")
+}
+
+model Supplier {
+  id              String           @id @default(uuid())
+  code            String?          @unique
+  name            String
+  phone           String?
+  email           String?
+  address         String?
+  notes           String?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+  materials       Material[]
+  papers          Paper[]
+  purchaseEntries PurchaseEntry[]
+  payables        Payable[]
+
+  @@map("suppliers")
+}
+
+model Employee {
+  id            String        @id @default(uuid())
+  fullName      String
+  phone         String?
+  title         String?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  salaryEntries SalaryEntry[]
+
+  @@map("employees")
 }
 
 model NumberSequence {
@@ -249,6 +335,7 @@ model Order {
   stockReservations   StockReservation[]
   stockMovements      StockMovement[]
   paymentsIssued      Payment[]
+  salesEntry          SalesEntry?
 
   @@map("orders")
 }
@@ -294,9 +381,11 @@ model MaterialCategory {
 model Material {
   id              String          @id @default(uuid())
   categoryId      String?
+  supplierId      String?
   name            String
   sku             String?         @unique
   unit            String
+  isActive        Boolean         @default(true)
   minStockLevel   Decimal         @default(0) @db.Decimal(18, 4)
   stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
   reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
@@ -305,12 +394,137 @@ model Material {
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
   category        MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   stockLevels     StockLevel[]
   stockReservations StockReservation[]
   stockMovements  StockMovement[]
   orderItems      OrderItem[]
 
   @@map("materials")
+}
+
+model Paper {
+  id             String    @id @default(uuid())
+  supplierId     String?
+  code           String    @unique
+  name           String
+  gram           Decimal   @db.Decimal(10, 2)
+  size           String
+  packPrice      Decimal   @default(0) @db.Decimal(18, 2)
+  sheetsInPack   Int       @default(1)
+  pricePerSheet  Decimal   @default(0) @db.Decimal(18, 4)
+  vatIncluded    Boolean   @default(false)
+  unit           String    @default("sheet")
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  salesEntries   SalesEntry[]
+
+  @@map("papers")
+}
+
+model SalesEntry {
+  id                  String               @id @default(uuid())
+  orderId             String?              @unique
+  customerId          String
+  managerId           String?
+  paperId             String?
+  date                DateTime             @default(now())
+  category            String?
+  productName         String
+  quantity            Decimal              @default(0) @db.Decimal(18, 4)
+  saleUnitPrice       Decimal              @default(0) @db.Decimal(18, 2)
+  saleAmount          Decimal              @default(0) @db.Decimal(18, 2)
+  paymentAmount       Decimal              @default(0) @db.Decimal(18, 2)
+  paymentType         SalesPaymentType     @default(negd)
+  bonus               Decimal              @default(0) @db.Decimal(18, 2)
+  customerBonus       Decimal              @default(0) @db.Decimal(18, 2)
+  remainingDebt       Decimal              @default(0) @db.Decimal(18, 2)
+  finalRemainingDebt  Decimal              @default(0) @db.Decimal(18, 2)
+  productionStage     SalesProductionStage?
+  deliveryStatus      SalesDeliveryStatus  @default(sifaris)
+  deliveryDate        DateTime?
+  paymentStatus       SalesPaymentStatus?
+  qaimaStatus         QaimaStatus?
+  qaimaDate           DateTime?
+  qaimaNumber         String?
+  printColor          PrintColorOption?
+  printType           PrintTypeOption?
+  paperCost           Decimal              @default(0) @db.Decimal(18, 2)
+  plateCost           Decimal              @default(0) @db.Decimal(18, 2)
+  printCost           Decimal              @default(0) @db.Decimal(18, 2)
+  specialCutCost      Decimal              @default(0) @db.Decimal(18, 2)
+  knifeCost           Decimal              @default(0) @db.Decimal(18, 2)
+  manualWorkCost      Decimal              @default(0) @db.Decimal(18, 2)
+  spiralCost          Decimal              @default(0) @db.Decimal(18, 2)
+  poniCost            Decimal              @default(0) @db.Decimal(18, 2)
+  otherCost           Decimal              @default(0) @db.Decimal(18, 2)
+  laminationCost      Decimal              @default(0) @db.Decimal(18, 2)
+  totalCost           Decimal              @default(0) @db.Decimal(18, 2)
+  profit              Decimal              @default(0) @db.Decimal(18, 2)
+  profitPercent       Decimal              @default(0) @db.Decimal(8, 2)
+  spiralType          String?
+  spiralQuantity      Decimal?             @db.Decimal(18, 4)
+  spiralUnitCost      Decimal?             @db.Decimal(18, 2)
+  spiralTotalCost     Decimal?             @db.Decimal(18, 2)
+  invoiceStatusText   String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+
+  order               Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  manager             User?                @relation("SalesEntryManager", fields: [managerId], references: [id], onDelete: SetNull)
+  paper               Paper?               @relation(fields: [paperId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([customerId])
+  @@index([managerId])
+  @@map("sales_entries")
+}
+
+model PurchaseEntry {
+  id             String           @id @default(uuid())
+  supplierId     String
+  payableId      String?          @unique
+  date           DateTime         @default(now())
+  amount         Decimal          @db.Decimal(18, 2)
+  paymentAmount  Decimal          @default(0) @db.Decimal(18, 2)
+  remainingDebt  Decimal          @default(0) @db.Decimal(18, 2)
+  paymentType    SalesPaymentType @default(hesab)
+  comment        String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  supplier       Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  payable        Payable?         @relation(fields: [payableId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@map("purchase_entries")
+}
+
+model SalaryEntry {
+  id             String    @id @default(uuid())
+  employeeId     String
+  date           DateTime  @default(now())
+  salaryAmount   Decimal   @db.Decimal(18, 2)
+  bonusAmount    Decimal   @default(0) @db.Decimal(18, 2)
+  paymentAmount  Decimal   @default(0) @db.Decimal(18, 2)
+  remainingDebt  Decimal   @default(0) @db.Decimal(18, 2)
+  comment        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@map("salary_entries")
 }
 
 model Warehouse {
@@ -696,6 +910,8 @@ model Receivable {
 
 model Payable {
   id                 String     @id @default(uuid())
+  supplierId         String?
+  purchaseEntryId    String?    @unique
   counterpartyName   String
   purchaseReference  String?
   amount             Decimal    @db.Decimal(18, 2)
@@ -708,6 +924,8 @@ model Payable {
   updatedAt          DateTime   @updatedAt
   deletedAt          DateTime?
   allocations        PaymentAllocation[]
+  supplier           Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchaseEntry      PurchaseEntry?
 
   @@map("payables")
 }
@@ -716,7 +934,7 @@ model Cashbox {
   id             String               @id @default(uuid())
   code           String               @unique
   name           String
-  currencyCode   String               @default("USD")
+  currencyCode   String               @default("AZN")
   openingBalance  Decimal              @default(0) @db.Decimal(18, 2)
   currentBalance  Decimal              @default(0) @db.Decimal(18, 2)
   isActive       Boolean              @default(true)

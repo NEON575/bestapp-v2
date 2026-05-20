@@ -9,6 +9,8 @@ import { assertOrderStatusTransition } from '../../common/business/order-status'
 import { buildOrderListWhere } from '../../common/business/order-filters';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
 import { calculateOrderProfitability } from '../../common/business/profitability';
+import { SalesService } from '../sales/sales.service';
+import { UpdateSalesEntryDto } from '../sales/dto/sales.dto';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -24,7 +26,8 @@ export class OrdersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PricingService) private readonly pricingService: PricingService,
-    @Inject(AuditService) private readonly auditService: AuditService
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(SalesService) private readonly salesService: SalesService
   ) {}
 
   private async nextOrderNumber() {
@@ -60,7 +63,8 @@ export class OrdersService {
         stockMovements: true,
         invoices: true,
         paymentsIssued: true,
-        receivable: true
+        receivable: true,
+        salesEntry: { include: { customer: true, manager: true, order: true, paper: { include: { supplier: true } } } }
       }
     });
 
@@ -92,7 +96,8 @@ export class OrdersService {
           priceVersions: true,
           productionJobs: true,
           invoices: true,
-          receivable: true
+          receivable: true,
+          salesEntry: true
         }
       })
     ]);
@@ -117,7 +122,8 @@ export class OrdersService {
           stockMovements: true,
           invoices: true,
           paymentsIssued: true,
-          receivable: true
+          receivable: true,
+          salesEntry: { include: { customer: true, manager: true, order: true, paper: { include: { supplier: true } } } }
         }
       });
 
@@ -135,6 +141,7 @@ export class OrdersService {
       return {
         ...order,
         payments: order.paymentsIssued,
+        salesEntry: order.salesEntry,
         auditLogs,
         profitability
       };
@@ -211,6 +218,8 @@ export class OrdersService {
           }
         });
 
+        await this.salesService.ensureForOrder(tx, order.id);
+
         return order;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -255,6 +264,8 @@ export class OrdersService {
           });
         }
 
+        await this.salesService.ensureForOrder(tx, id);
+
         return updated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -287,20 +298,30 @@ export class OrdersService {
         afterData: updated
       });
 
+      await this.salesService.ensureForOrder(tx, id);
+
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   calculatePrice(id: string) {
     return this.prisma.$transaction(
-      (tx) => this.pricingService.calculateOrderPrice(id, tx),
+      async (tx) => {
+        const result = await this.pricingService.calculateOrderPrice(id, tx);
+        await this.salesService.ensureForOrder(tx, id);
+        return result;
+      },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
   }
 
   approve(id: string, approvedById?: string) {
     return this.prisma.$transaction(
-      (tx) => this.pricingService.approvePrice(id, approvedById, tx),
+      async (tx) => {
+        const result = await this.pricingService.approvePrice(id, approvedById, tx);
+        await this.salesService.ensureForOrder(tx, id);
+        return result;
+      },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
   }
@@ -356,6 +377,8 @@ export class OrdersService {
           }
         });
 
+        await this.salesService.ensureForOrder(tx, id);
+
         return job;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -406,6 +429,8 @@ export class OrdersService {
             nextStatus: OrderStatus.ready
           }
         });
+
+        await this.salesService.ensureForOrder(tx, id);
 
         return updated;
       },
@@ -459,6 +484,8 @@ export class OrdersService {
           afterData: updated
         });
 
+        await this.salesService.ensureForOrder(tx, id);
+
         return updated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -484,5 +511,9 @@ export class OrdersService {
       netProfit: roundMoney(totalAmount - costAmount),
       isProfitable: totalAmount >= costAmount
     };
+  }
+
+  updateHesablama(id: string, dto: UpdateSalesEntryDto) {
+    return this.salesService.updateOrderHesablama(id, dto);
   }
 }

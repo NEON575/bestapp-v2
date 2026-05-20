@@ -14,6 +14,10 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { ProductionModule } from './modules/production/production.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { SalesModule } from './modules/sales/sales.module';
+import { PurchasesModule } from './modules/purchases/purchases.module';
+import { SalariesModule } from './modules/salaries/salaries.module';
+import { PapersModule } from './modules/papers/papers.module';
 import { UsersModule } from './modules/users/users.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -38,10 +42,14 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     RolesModule,
     CustomersModule,
     OrdersModule,
+    SalesModule,
     PricingModule,
     InventoryModule,
     FinanceModule,
     DebtsModule,
+    PurchasesModule,
+    SalariesModule,
+    PapersModule,
     ProductionModule,
     AnalyticsModule,
     AuditModule

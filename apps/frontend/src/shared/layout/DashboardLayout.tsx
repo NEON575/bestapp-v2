@@ -4,15 +4,19 @@ import {
   BadgeDollarSign,
   Boxes,
   ChevronDown,
+  CircleDollarSign,
   Factory,
+  FileSpreadsheet,
   LayoutDashboard,
   LogOut,
   Menu,
   ReceiptText,
   Settings2,
   ShieldCheck,
-  ScrollText,
+  ShoppingCart,
+  SquareStack,
   Users2,
+  WalletCards,
   X
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -30,24 +34,30 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { to: '/', label: 'Панель', icon: LayoutDashboard, end: true },
-  { to: '/orders', label: 'Заказы', icon: ScrollText },
-  { to: '/customers', label: 'Клиенты', icon: Users2 },
-  { to: '/production', label: 'Производство', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
-  { to: '/inventory', label: 'Склад', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
-  { to: '/finance', label: 'Финансы', icon: ReceiptText, roles: ['super_admin', 'owner', 'accountant'] },
-  { to: '/debts', label: 'Долги', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
-  { to: '/settings', label: 'Настройки', icon: Settings2, roles: ['super_admin', 'owner'] }
+  { to: '/', label: 'Panel', icon: LayoutDashboard, end: true },
+  { to: '/orders', label: 'Sifariş', icon: FileSpreadsheet },
+  { to: '/sales', label: 'Satış', icon: ReceiptText },
+  { to: '/customers', label: 'Müştəri', icon: Users2 },
+  { to: '/production', label: 'İstehsal', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
+  { to: '/inventory', label: 'Anbar', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/papers', label: 'Kağız', icon: SquareStack, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/finance', label: 'Maliyyə', icon: CircleDollarSign, roles: ['super_admin', 'owner', 'accountant'] },
+  { to: '/customer-debts', label: 'Müştəri borcu', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/supplier-debts', label: 'Təchizatçı borcu', icon: WalletCards, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/purchases', label: 'Alış', icon: ShoppingCart, roles: ['super_admin', 'owner', 'manager', 'accountant', 'warehouse'] },
+  { to: '/salaries', label: 'Maaş', icon: ReceiptText, roles: ['super_admin', 'owner', 'accountant'] },
+  { to: '/debts', label: 'Borc mərkəzi', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/settings', label: 'Ayarlar', icon: Settings2, roles: ['super_admin', 'owner'] }
 ];
 
 const roleLabels: Record<string, string> = {
-  super_admin: 'Суперадмин',
-  owner: 'Владелец',
-  manager: 'Менеджер',
-  accountant: 'Бухгалтер',
-  warehouse: 'Склад',
-  production: 'Производство',
-  cashier: 'Касса'
+  super_admin: 'Super admin',
+  owner: 'Rəhbər',
+  manager: 'Menecer',
+  accountant: 'Mühasib',
+  warehouse: 'Anbar',
+  production: 'İstehsal',
+  cashier: 'Kassa'
 };
 
 export function DashboardLayout() {
@@ -58,7 +68,7 @@ export function DashboardLayout() {
 
   const userLabel = useMemo(() => {
     if (!session) {
-      return 'Пользователь';
+      return 'İstifadəçi';
     }
 
     return session.user.fullName || session.user.email;
@@ -79,14 +89,14 @@ export function DashboardLayout() {
       <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">BestApp</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">Панель типографии</h2>
-          <p className="mt-1 text-xs text-slate-500">Управление заказами, производством, складом и финансами</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">Çap evi idarəetməsi</h2>
+          <p className="mt-1 text-xs text-slate-500">Satış, istehsal, anbar və maliyyə axını bir paneldə</p>
         </div>
         <button
           type="button"
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
-          aria-label="Закрыть меню"
+          aria-label="Menyunu bağla"
         >
           <X className="h-5 w-5" />
         </button>
@@ -122,7 +132,7 @@ export function DashboardLayout() {
               {initials(session?.user.fullName ?? session?.user.email ?? 'BA')}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-950">{session?.user.fullName ?? 'Пользователь'}</p>
+              <p className="truncate text-sm font-semibold text-slate-950">{session?.user.fullName ?? 'İstifadəçi'}</p>
               <p className="truncate text-xs text-slate-500">{session?.user.email ?? '—'}</p>
             </div>
           </div>
@@ -154,7 +164,7 @@ export function DashboardLayout() {
               type="button"
               className="absolute inset-0 bg-slate-950/35"
               onClick={() => setMobileMenuOpen(false)}
-              aria-label="Закрыть оверлей"
+              aria-label="Menyunu bağla"
             />
             <aside className="absolute left-0 top-0 h-full w-[86vw] max-w-sm border-r border-slate-200 bg-white shadow-2xl">
               {sidebarContent}
@@ -170,19 +180,19 @@ export function DashboardLayout() {
                   type="button"
                   className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 lg:hidden"
                   onClick={() => setMobileMenuOpen(true)}
-                  aria-label="Открыть меню"
+                  aria-label="Menyunu aç"
                 >
                   <Menu className="h-5 w-5" />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">ERP / MIS типографии</p>
-                  <h1 className="truncate text-lg font-semibold text-slate-950">Управление производством и заказами</h1>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">ERP / MIS</p>
+                  <h1 className="truncate text-lg font-semibold text-slate-950">Çap evi əməliyyat paneli</h1>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <Button variant="secondary" className="hidden sm:inline-flex" onClick={() => navigate('/orders/new')}>
-                  Новый заказ
+                  Yeni sifariş
                 </Button>
 
                 <div className="relative">
@@ -196,7 +206,9 @@ export function DashboardLayout() {
                     </div>
                     <div className="hidden min-w-0 sm:block">
                       <div className="truncate text-sm font-semibold text-slate-950">{userLabel}</div>
-                      <div className="truncate text-xs text-slate-500">{session?.user.roles.slice(0, 2).map((role) => roleLabels[role] ?? role).join(' • ') ?? 'Роль не определена'}</div>
+                      <div className="truncate text-xs text-slate-500">
+                        {session?.user.roles.slice(0, 2).map((role) => roleLabels[role] ?? role).join(' • ') || 'Rol təyin olunmayıb'}
+                      </div>
                     </div>
                     <ChevronDown className="h-4 w-4 text-slate-400" />
                   </button>
@@ -221,7 +233,7 @@ export function DashboardLayout() {
                           onClick={() => navigate('/settings')}
                         >
                           <ShieldCheck className="h-4 w-4" />
-                          Настройки доступа
+                          Giriş və rol ayarları
                         </button>
                         <button
                           type="button"
@@ -229,7 +241,7 @@ export function DashboardLayout() {
                           onClick={handleLogout}
                         >
                           <LogOut className="h-4 w-4" />
-                          Выйти
+                          Çıxış
                         </button>
                       </div>
                     </div>

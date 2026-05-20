@@ -32,63 +32,63 @@ function titleCase(value: string) {
 }
 
 const orderStatusLabels: Record<string, string> = {
-  [OrderStatus.DRAFT]: 'Черновик',
-  [OrderStatus.CALCULATED]: 'Рассчитан',
-  [OrderStatus.APPROVED]: 'Утвержден',
-  [OrderStatus.IN_PRODUCTION]: 'В производстве',
-  [OrderStatus.READY]: 'Готов',
-  [OrderStatus.DELIVERED]: 'Выдан',
-  [OrderStatus.CANCELLED]: 'Отменен'
+  [OrderStatus.DRAFT]: 'Qaralama',
+  [OrderStatus.CALCULATED]: 'Hesablanıb',
+  [OrderStatus.APPROVED]: 'Təsdiqlənib',
+  [OrderStatus.IN_PRODUCTION]: 'İstehsalda',
+  [OrderStatus.READY]: 'Hazır',
+  [OrderStatus.DELIVERED]: 'Təhvil verilib',
+  [OrderStatus.CANCELLED]: 'Ləğv edilib'
 };
 
 const invoiceStatusLabels: Record<string, string> = {
-  [InvoiceStatus.DRAFT]: 'Черновик',
-  [InvoiceStatus.ISSUED]: 'Выставлен',
-  [InvoiceStatus.PARTIALLY_PAID]: 'Частично оплачен',
-  [InvoiceStatus.PAID]: 'Оплачен',
-  [InvoiceStatus.OVERDUE]: 'Просрочен',
-  [InvoiceStatus.CANCELLED]: 'Отменен'
+  [InvoiceStatus.DRAFT]: 'Qaralama',
+  [InvoiceStatus.ISSUED]: 'Yazılıb',
+  [InvoiceStatus.PARTIALLY_PAID]: 'Qismən ödənilib',
+  [InvoiceStatus.PAID]: 'Ödənilib',
+  [InvoiceStatus.OVERDUE]: 'Gecikib',
+  [InvoiceStatus.CANCELLED]: 'Ləğv edilib'
 };
 
 const paymentStatusLabels: Record<string, string> = {
-  [PaymentStatus.PENDING]: 'В ожидании',
-  [PaymentStatus.COMPLETED]: 'Оплачен',
-  [PaymentStatus.FAILED]: 'Ошибка',
-  [PaymentStatus.REVERSED]: 'Возвращен'
+  [PaymentStatus.PENDING]: 'Gözləyir',
+  [PaymentStatus.COMPLETED]: 'Ödənilib',
+  [PaymentStatus.FAILED]: 'Xəta',
+  [PaymentStatus.REVERSED]: 'Geri qaytarılıb'
 };
 
 const productionStatusLabels: Record<string, string> = {
-  [ProductionOperationStatus.PENDING]: 'В очереди',
-  [ProductionOperationStatus.READY]: 'Готов',
-  [ProductionOperationStatus.IN_PROGRESS]: 'В работе',
-  [ProductionOperationStatus.PAUSED]: 'Пауза',
-  [ProductionOperationStatus.COMPLETED]: 'Завершен',
-  [ProductionOperationStatus.FAILED]: 'Ошибка',
-  [ProductionOperationStatus.CANCELLED]: 'Отменен'
+  [ProductionOperationStatus.PENDING]: 'Növbədə',
+  [ProductionOperationStatus.READY]: 'Hazır',
+  [ProductionOperationStatus.IN_PROGRESS]: 'İşdə',
+  [ProductionOperationStatus.PAUSED]: 'Dayandırılıb',
+  [ProductionOperationStatus.COMPLETED]: 'Bitib',
+  [ProductionOperationStatus.FAILED]: 'Xəta',
+  [ProductionOperationStatus.CANCELLED]: 'Ləğv edilib'
 };
 
 const movementTypeLabels: Record<string, string> = {
-  [StockMovementType.PURCHASE_IN]: 'Поступление',
-  [StockMovementType.RESERVE]: 'Резерв',
-  [StockMovementType.WRITE_OFF]: 'Списание',
-  [StockMovementType.RETURN]: 'Возврат',
-  [StockMovementType.ADJUSTMENT]: 'Корректировка',
-  [StockMovementType.WASTE]: 'Потери'
+  [StockMovementType.PURCHASE_IN]: 'Mədaxil',
+  [StockMovementType.RESERVE]: 'Rezerv',
+  [StockMovementType.WRITE_OFF]: 'Silinmə',
+  [StockMovementType.RETURN]: 'Qaytarma',
+  [StockMovementType.ADJUSTMENT]: 'Düzəliş',
+  [StockMovementType.WASTE]: 'Tullantı'
 };
 
 const reservationStatusLabels: Record<string, string> = {
-  [StockReservationStatus.OPEN]: 'Открыт',
-  [StockReservationStatus.RESERVED]: 'Зарезервирован',
-  [StockReservationStatus.RELEASED]: 'Освобожден',
-  [StockReservationStatus.CONSUMED]: 'Списан',
-  [StockReservationStatus.CANCELLED]: 'Отменен'
+  [StockReservationStatus.OPEN]: 'Açıq',
+  [StockReservationStatus.RESERVED]: 'Rezerv edilib',
+  [StockReservationStatus.RELEASED]: 'Azad edilib',
+  [StockReservationStatus.CONSUMED]: 'İstifadə edilib',
+  [StockReservationStatus.CANCELLED]: 'Ləğv edilib'
 };
 
 const debtStatusLabels: Record<string, string> = {
-  [DebtStatus.OPEN]: 'Открыт',
-  [DebtStatus.PARTIAL]: 'Частично',
-  [DebtStatus.OVERDUE]: 'Просрочен',
-  [DebtStatus.CLOSED]: 'Закрыт'
+  [DebtStatus.OPEN]: 'Açıq',
+  [DebtStatus.PARTIAL]: 'Qismən',
+  [DebtStatus.OVERDUE]: 'Gecikib',
+  [DebtStatus.CLOSED]: 'Bağlanıb'
 };
 
 export function getToneForOrderStatus(status?: string | null): Tone {
@@ -216,4 +216,3 @@ export function getStatusLabel(kind: 'order' | 'invoice' | 'payment' | 'producti
 export function toneClass(tone: Tone) {
   return toneClasses[tone];
 }
-

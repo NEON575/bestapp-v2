@@ -106,3 +106,53 @@ export enum CostLineType {
   OVERHEAD = 'overhead',
   WASTE = 'waste'
 }
+
+export enum SalesPaymentType {
+  HESAB = 'hesab',
+  KART = 'kart',
+  NEGD = 'negd',
+  KASSA = 'kassa'
+}
+
+export enum SalesDeliveryStatus {
+  SIFARIS = 'sifaris',
+  HAZIR = 'hazir',
+  TEHVIL = 'tehvil',
+  LEGV = 'legv'
+}
+
+export enum SalesProductionStage {
+  DIZAYN = 'dizayn',
+  FORMA = 'forma',
+  CAP = 'cap',
+  LAMINASIYA = 'laminasiya',
+  KESIM = 'kesim',
+  EL_ISI = 'el_isi',
+  BITIB = 'bitib',
+  ODENIS = 'odenis',
+  PONI = 'poni',
+  OZEL_KESIM = 'ozel_kesim'
+}
+
+export enum QaimaStatus {
+  YAZILIB = 'yazilib',
+  YAZILMAYIB = 'yazilmayib',
+  NEGD = 'negd'
+}
+
+export enum SalesPaymentStatus {
+  ODENILIB = 'odenilib',
+  YAZILIB = 'yazilib'
+}
+
+export enum PrintColorOption {
+  FOUR_ZERO = 'four_zero',
+  FOUR_FOUR = 'four_four',
+  FOUR_ONE = 'four_one'
+}
+
+export enum PrintTypeOption {
+  SVOY = 'svoy',
+  CUJOY = 'cujoy',
+  BIR_UZLU = 'bir_uzlu'
+}

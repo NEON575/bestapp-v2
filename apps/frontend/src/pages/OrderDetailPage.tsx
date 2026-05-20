@@ -1,25 +1,13 @@
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { OrderDetail } from '@bestapp/shared';
-import { Button, Card } from '@bestapp/ui';
+import type { OrderDetail, UpdateOrderHesablamaDto } from '@bestapp/shared';
+import { Button, Card, Input } from '@bestapp/ui';
 import { ordersClient } from '../shared/api/orders';
-import {
-  ConfirmDialog,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  StatusBadge
-} from '../shared/components';
+import { ConfirmDialog, DataTable, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 import { formatCurrency, formatDateOnly, formatPercent } from '../shared/lib/format';
-import {
-  getNextOrderWorkflowAction,
-  getOrderWorkflowActionLabel,
-  isOrderCancelable,
-  type OrderWorkflowAction
-} from '../shared/lib/order';
+import { getNextOrderWorkflowAction, getOrderWorkflowActionLabel, isOrderCancelable, type OrderWorkflowAction } from '../shared/lib/order';
 
 type ConfirmState =
   | {
@@ -30,19 +18,71 @@ type ConfirmState =
     }
   | null;
 
+type HesablamaForm = {
+  category: string;
+  productName: string;
+  quantity: number;
+  saleAmount: number;
+  paymentAmount: number;
+  bonus: number;
+  customerBonus: number;
+  paperCost: number;
+  plateCost: number;
+  printCost: number;
+  specialCutCost: number;
+  knifeCost: number;
+  manualWorkCost: number;
+  spiralCost: number;
+  poniCost: number;
+  otherCost: number;
+  laminationCost: number;
+  notes: string;
+};
+
+function createHesablamaForm(order: OrderDetail): HesablamaForm {
+  const sales = order.salesEntry;
+
+  return {
+    category: sales?.category ?? '',
+    productName: sales?.productName ?? order.items[0]?.name ?? order.number,
+    quantity: Number(sales?.quantity ?? order.items.reduce((sum, item) => sum + Number(item.quantity), 0) ?? 0),
+    saleAmount: Number(sales?.saleAmount ?? order.totalAmount ?? 0),
+    paymentAmount: Number(sales?.paymentAmount ?? order.paidAmount ?? 0),
+    bonus: Number(sales?.bonus ?? 0),
+    customerBonus: Number(sales?.customerBonus ?? 0),
+    paperCost: Number(sales?.paperCost ?? 0),
+    plateCost: Number(sales?.plateCost ?? 0),
+    printCost: Number(sales?.printCost ?? 0),
+    specialCutCost: Number(sales?.specialCutCost ?? 0),
+    knifeCost: Number(sales?.knifeCost ?? 0),
+    manualWorkCost: Number(sales?.manualWorkCost ?? 0),
+    spiralCost: Number(sales?.spiralCost ?? 0),
+    poniCost: Number(sales?.poniCost ?? 0),
+    otherCost: Number(sales?.otherCost ?? 0),
+    laminationCost: Number(sales?.laminationCost ?? 0),
+    notes: sales?.notes ?? ''
+  };
+}
+
+function asNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [hesablama, setHesablama] = useState<HesablamaForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<OrderWorkflowAction | 'cancel' | null>(null);
+  const [actionLoading, setActionLoading] = useState<OrderWorkflowAction | 'cancel' | 'hesablama' | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
 
   const load = async () => {
     if (!id) {
-      setError('Неверный идентификатор заказа');
+      setError('Sifariş identifikatoru yanlışdır');
       setLoading(false);
       return;
     }
@@ -53,8 +93,9 @@ export function OrderDetailPage() {
     try {
       const data = await ordersClient.get(id);
       setOrder(data);
+      setHesablama(createHesablamaForm(data));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить заказ');
+      setError(e instanceof Error ? e.message : 'Sifariş məlumatı yüklənmədi');
     } finally {
       setLoading(false);
     }
@@ -66,23 +107,54 @@ export function OrderDetailPage() {
 
   const nextAction = useMemo(() => getNextOrderWorkflowAction(order?.status), [order?.status]);
   const profitability = useMemo(() => order?.profitability, [order]);
+  const calculatedPreview = useMemo(() => {
+    if (!hesablama) {
+      return null;
+    }
+
+    const totalCost =
+      hesablama.paperCost +
+      hesablama.plateCost +
+      hesablama.printCost +
+      hesablama.specialCutCost +
+      hesablama.knifeCost +
+      hesablama.manualWorkCost +
+      hesablama.spiralCost +
+      hesablama.poniCost +
+      hesablama.otherCost +
+      hesablama.laminationCost;
+    const profit = hesablama.saleAmount - hesablama.bonus - hesablama.customerBonus - totalCost;
+    const profitPercent = totalCost > 0 ? (profit / totalCost) * 100 : 0;
+    const remainingDebt = hesablama.saleAmount - hesablama.paymentAmount - hesablama.customerBonus;
+    const finalRemainingDebt = remainingDebt - hesablama.bonus;
+    const saleUnitPrice = hesablama.quantity > 0 ? hesablama.saleAmount / hesablama.quantity : 0;
+
+    return {
+      totalCost,
+      profit,
+      profitPercent,
+      remainingDebt,
+      finalRemainingDebt,
+      saleUnitPrice
+    };
+  }, [hesablama]);
 
   const promptAction = (action: 'approve' | 'startProduction' | 'deliver') => {
     const meta = {
       approve: {
-        title: 'Утвердить заказ',
-        description: 'После утверждения заказ можно будет передать в производство.',
-        confirmLabel: 'Утвердить'
+        title: 'Sifarişi təsdiqlə',
+        description: 'Təsdiqdən sonra sifariş istehsal mərhələsinə keçməyə hazır olacaq.',
+        confirmLabel: 'Təsdiqlə'
       },
       startProduction: {
-        title: 'Запустить производство',
-        description: 'Будут созданы производственные задания и складские резервы.',
-        confirmLabel: 'Запустить'
+        title: 'İstehsala başla',
+        description: 'İstehsal tapşırıqları və anbar rezervləri bu mərhələdən sonra aktivləşəcək.',
+        confirmLabel: 'Başlat'
       },
       deliver: {
-        title: 'Выдать заказ',
-        description: 'Заказ перейдет в статус "Выдан" и станет завершенным.',
-        confirmLabel: 'Выдать'
+        title: 'Sifarişi təhvil ver',
+        description: 'Sifariş yekun təhvil statusuna keçəcək və satış jurnalı da yenilənəcək.',
+        confirmLabel: 'Təhvil ver'
       }
     }[action];
 
@@ -94,10 +166,10 @@ export function OrderDetailPage() {
     setActionLoading(action);
     try {
       await ordersClient[action](id);
-      toast.success('Действие выполнено', getOrderWorkflowActionLabel(action));
+      toast.success('Əməliyyat yerinə yetirildi', getOrderWorkflowActionLabel(action));
       await load();
     } catch (e) {
-      toast.error('Не удалось выполнить действие', e instanceof Error ? e.message : 'Повторите попытку позже');
+      toast.error('Əməliyyat icra olunmadı', e instanceof Error ? e.message : 'Bir az sonra yenidən yoxlayın');
     } finally {
       setActionLoading(null);
     }
@@ -108,10 +180,48 @@ export function OrderDetailPage() {
     setActionLoading('cancel');
     try {
       await ordersClient.remove(id);
-      toast.warning('Заказ отменен', 'Заказ был удален из рабочего потока');
+      toast.warning('Sifariş ləğv edildi', 'Qeyd iş axınından çıxarıldı');
       navigate('/orders');
     } catch (e) {
-      toast.error('Не удалось отменить заказ', e instanceof Error ? e.message : 'Повторите попытку позже');
+      toast.error('Sifarişi ləğv etmək alınmadı', e instanceof Error ? e.message : 'Bir az sonra yenidən yoxlayın');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const saveHesablama = async () => {
+    if (!id || !hesablama) {
+      return;
+    }
+
+    setActionLoading('hesablama');
+    try {
+      const payload: UpdateOrderHesablamaDto = {
+        category: hesablama.category || undefined,
+        productName: hesablama.productName,
+        quantity: hesablama.quantity,
+        saleAmount: hesablama.saleAmount,
+        paymentAmount: hesablama.paymentAmount,
+        bonus: hesablama.bonus,
+        customerBonus: hesablama.customerBonus,
+        paperCost: hesablama.paperCost,
+        plateCost: hesablama.plateCost,
+        printCost: hesablama.printCost,
+        specialCutCost: hesablama.specialCutCost,
+        knifeCost: hesablama.knifeCost,
+        manualWorkCost: hesablama.manualWorkCost,
+        spiralCost: hesablama.spiralCost,
+        poniCost: hesablama.poniCost,
+        otherCost: hesablama.otherCost,
+        laminationCost: hesablama.laminationCost,
+        notes: hesablama.notes || undefined
+      };
+
+      await ordersClient.updateHesablama(id, payload);
+      toast.success('Hesablama yeniləndi', 'Xərc və xeyir göstəriciləri yenidən hesablandı');
+      await load();
+    } catch (e) {
+      toast.error('Hesablama saxlanmadı', e instanceof Error ? e.message : 'Bir az sonra yenidən yoxlayın');
     } finally {
       setActionLoading(null);
     }
@@ -125,8 +235,8 @@ export function OrderDetailPage() {
     return <ErrorState description={error} onRetry={() => void load()} />;
   }
 
-  if (!order) {
-    return <EmptyState title="Заказ не найден" actionLabel="К списку заказов" onAction={() => navigate('/orders')} />;
+  if (!order || !hesablama) {
+    return <EmptyState title="Sifariş tapılmadı" actionLabel="Sifariş siyahısına qayıt" onAction={() => navigate('/orders')} />;
   }
 
   const canCancel = isOrderCancelable(order.status);
@@ -134,12 +244,12 @@ export function OrderDetailPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title={`Заказ ${order.number}`}
-        description="Полная карточка заказа, расчет, производство, склад, оплаты и история изменений."
+        title={`Sifariş ${order.number}`}
+        description="Tam kart: sifariş, hesablanma, istehsal, anbar, qaimə, ödəniş və dəyişiklik tarixi."
         actions={
           <>
             <Button variant="secondary" onClick={() => navigate('/orders')}>
-              К списку
+              Siyahıya qayıt
             </Button>
             {nextAction ? (
               <Button
@@ -150,7 +260,7 @@ export function OrderDetailPage() {
                 }
                 disabled={actionLoading === nextAction}
               >
-                {actionLoading === nextAction ? 'Выполняется...' : getOrderWorkflowActionLabel(nextAction)}
+                {actionLoading === nextAction ? 'İcra olunur...' : getOrderWorkflowActionLabel(nextAction)}
               </Button>
             ) : null}
             {canCancel ? (
@@ -159,14 +269,14 @@ export function OrderDetailPage() {
                 onClick={() =>
                   setConfirmState({
                     action: 'cancel',
-                    title: 'Отменить заказ',
-                    description: 'Заказ будет удален из рабочего потока и дальнейшие производственные действия станут недоступны.',
-                    confirmLabel: 'Отменить заказ'
+                    title: 'Sifarişi ləğv et',
+                    description: 'Bu əməliyyatdan sonra sifariş aktiv iş axınından çıxacaq.',
+                    confirmLabel: 'Ləğv et'
                   })
                 }
                 disabled={actionLoading === 'cancel'}
               >
-                {actionLoading === 'cancel' ? 'Выполняется...' : 'Отменить заказ'}
+                {actionLoading === 'cancel' ? 'İcra olunur...' : 'Ləğv et'}
               </Button>
             ) : null}
           </>
@@ -178,97 +288,210 @@ export function OrderDetailPage() {
           <div className="flex flex-wrap items-center gap-3">
             <StatusBadge kind="order" status={order.status} />
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              {order.customer?.name ?? 'Клиент'}
+              {order.customer?.name ?? 'Müştəri'}
             </span>
-            <span className="text-sm text-slate-500">Менеджер: {order.manager?.fullName ?? '—'}</span>
+            <span className="text-sm text-slate-500">Menecer: {order.manager?.fullName ?? '—'}</span>
           </div>
 
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Info label="Дедлайн" value={formatDateOnly(order.deadlineAt)} />
-            <Info label="Создан" value={formatDateOnly(order.createdAt)} />
-            <Info label="Комментарий" value={order.comment ?? '—'} />
-            <Info label="Долг клиента" value={formatCurrency(order.customerDebtAmount)} />
+            <Info label="Son tarix" value={formatDateOnly(order.deadlineAt)} />
+            <Info label="Yaradılıb" value={formatDateOnly(order.createdAt)} />
+            <Info label="Qeyd" value={order.comment ?? '—'} />
+            <Info label="Müştəri borcu" value={formatCurrency(order.customerDebtAmount)} />
           </dl>
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Выручка</div>
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Satış</div>
           <div className="mt-2 text-2xl font-semibold text-slate-950">{formatCurrency(order.totalAmount)}</div>
-          <div className="mt-1 text-sm text-slate-500">Оплачено: {formatCurrency(order.paidAmount)}</div>
+          <div className="mt-1 text-sm text-slate-500">Ödənilib: {formatCurrency(order.paidAmount)}</div>
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Себестоимость</div>
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Ümumi xərc</div>
           <div className="mt-2 text-2xl font-semibold text-slate-950">{formatCurrency(order.costAmount)}</div>
-          <div className="mt-1 text-sm text-slate-500">Прибыль: {formatCurrency(order.profitAmount)}</div>
+          <div className="mt-1 text-sm text-slate-500">Xeyir: {formatCurrency(order.profitAmount)}</div>
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Маржа</div>
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Xeyir faizi</div>
           <div className="mt-2 text-2xl font-semibold text-slate-950">{formatPercent(order.marginPercent)}</div>
-          <div className="mt-1 text-sm text-slate-500">{profitability?.isProfitable ? 'Заказ прибыльный' : 'Заказ убыточный'}</div>
+          <div className="mt-1 text-sm text-slate-500">{profitability?.isProfitable ? 'Qazanclıdır' : 'Mənfi marjadadır'}</div>
         </Card>
       </div>
 
       <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">Позиции заказа</h2>
+        <h2 className="text-lg font-semibold text-slate-950">Sifariş mövqeləri</h2>
         <div className="mt-4">
           <DataTable
             rowKey={(row) => row.id}
             data={order.items}
             columns={[
-              { key: 'name', header: 'Позиция', render: (row) => row.name },
-              { key: 'type', header: 'Тип', render: (row) => row.productType },
-              { key: 'size', header: 'Размер', render: (row) => `${row.width} × ${row.height}` },
-              { key: 'quantity', header: 'Количество', render: (row) => row.quantity },
-              { key: 'color', header: 'Цветность', render: (row) => row.colorMode },
-              { key: 'material', header: 'Материал', render: (row) => row.materialId ?? '—' },
-              { key: 'price', header: 'Цена', render: (row) => formatCurrency(row.totalPrice) }
+              { key: 'name', header: 'Məhsul', render: (row) => row.name },
+              { key: 'type', header: 'Növ', render: (row) => row.productType },
+              { key: 'size', header: 'Ölçü', render: (row) => `${row.width} × ${row.height}` },
+              { key: 'quantity', header: 'Say', render: (row) => row.quantity },
+              { key: 'color', header: 'Rəng', render: (row) => row.colorMode },
+              { key: 'material', header: 'Material', render: (row) => row.materialId ?? '—' },
+              { key: 'price', header: 'Məbləğ', render: (row) => formatCurrency(row.totalPrice) }
             ]}
-            emptyState={<EmptyState title="Нет позиций" description="В заказе пока нет товарных строк." />}
+            emptyState={<EmptyState title="Mövqe yoxdur" description="Bu sifariş üçün hələ məhsul sətri əlavə edilməyib." />}
           />
         </div>
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Калькуляция</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Metric label="Материалы" value={formatCurrency(order.costCalculation?.materialCost)} />
-            <Metric label="Печать" value={formatCurrency(order.costCalculation?.printingCost)} />
-            <Metric label="Предпечатка" value={formatCurrency(order.costCalculation?.prepressCost)} />
-            <Metric label="Послепечатка" value={formatCurrency(order.costCalculation?.postpressCost)} />
-            <Metric label="Труд" value={formatCurrency(order.costCalculation?.laborCost)} />
-            <Metric label="Накладные" value={formatCurrency(order.costCalculation?.overheadCost)} />
-            <Metric label="Waste %" value={formatPercent(order.costCalculation?.wastePercent)} />
-            <Metric label="Profit %" value={formatPercent(order.costCalculation?.profitPercent)} />
-            <Metric label="Рекоменд. цена" value={formatCurrency(order.costCalculation?.recommendedPrice)} className="sm:col-span-2" />
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Hesablama</h2>
+              <p className="mt-1 text-sm text-slate-500">Excel-dəki xərc sətrlərinə uyğun əl ilə düzəliş edilə bilən bölmə.</p>
+            </div>
+            <Button onClick={() => void saveHesablama()} disabled={actionLoading === 'hesablama'}>
+              {actionLoading === 'hesablama' ? 'Saxlanır...' : 'Hesablamanı saxla'}
+            </Button>
           </div>
 
-          {order.costCalculation?.lines?.length ? (
-            <div className="mt-5 space-y-2">
-              {order.costCalculation.lines.map((line) => (
-                <div key={line.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-950">{line.name ?? line.type}</div>
-                      <div className="text-xs text-slate-500">
-                        {line.quantity ?? 0} × {formatCurrency(line.unitCost)}
-                      </div>
-                    </div>
-                    <div className="font-semibold text-slate-950">{formatCurrency(line.amount)}</div>
-                  </div>
-                </div>
-              ))}
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <Field label="Kateqoriya">
+              <Input value={hesablama.category} onChange={(event) => setHesablama((current) => (current ? { ...current, category: event.target.value } : current))} />
+            </Field>
+            <Field label="Məhsul">
+              <Input
+                value={hesablama.productName}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, productName: event.target.value } : current))}
+              />
+            </Field>
+            <Field label="Say">
+              <Input
+                type="number"
+                value={hesablama.quantity}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, quantity: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Satış məbləği">
+              <Input
+                type="number"
+                value={hesablama.saleAmount}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, saleAmount: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Ödəniş">
+              <Input
+                type="number"
+                value={hesablama.paymentAmount}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, paymentAmount: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Bonus">
+              <Input
+                type="number"
+                value={hesablama.bonus}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, bonus: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Bonus müştəri">
+              <Input
+                type="number"
+                value={hesablama.customerBonus}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, customerBonus: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Kağız">
+              <Input
+                type="number"
+                value={hesablama.paperCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, paperCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Forma">
+              <Input
+                type="number"
+                value={hesablama.plateCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, plateCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Çap">
+              <Input
+                type="number"
+                value={hesablama.printCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, printCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Xüsusi kəsim">
+              <Input
+                type="number"
+                value={hesablama.specialCutCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, specialCutCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Bıçaq">
+              <Input
+                type="number"
+                value={hesablama.knifeCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, knifeCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Əl işi">
+              <Input
+                type="number"
+                value={hesablama.manualWorkCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, manualWorkCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Spiral">
+              <Input
+                type="number"
+                value={hesablama.spiralCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, spiralCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Poni">
+              <Input
+                type="number"
+                value={hesablama.poniCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, poniCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Digər">
+              <Input
+                type="number"
+                value={hesablama.otherCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, otherCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <Field label="Laminasiya">
+              <Input
+                type="number"
+                value={hesablama.laminationCost}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, laminationCost: asNumber(event.target.value) } : current))}
+              />
+            </Field>
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Qeyd</label>
+              <textarea
+                value={hesablama.notes}
+                onChange={(event) => setHesablama((current) => (current ? { ...current, notes: event.target.value } : current))}
+                className="min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none"
+              />
             </div>
-          ) : null}
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Metric label="Satış qiyməti" value={formatCurrency(calculatedPreview?.saleUnitPrice)} />
+            <Metric label="Qalıq" value={formatCurrency(calculatedPreview?.remainingDebt)} />
+            <Metric label="Son qalıq" value={formatCurrency(calculatedPreview?.finalRemainingDebt)} />
+            <Metric label="Ümumi xərc" value={formatCurrency(calculatedPreview?.totalCost)} />
+            <Metric label="Xeyir" value={formatCurrency(calculatedPreview?.profit)} />
+            <Metric label="Xeyir faiz" value={formatPercent(calculatedPreview?.profitPercent)} />
+          </div>
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Производство и склад</h2>
+          <h2 className="text-lg font-semibold text-slate-950">İstehsal və anbar</h2>
 
           <div className="mt-4 space-y-4">
-            <SectionTitle title="Производственные задания" />
+            <SectionTitle title="İstehsal tapşırıqları" />
             {order.productionJobs.length ? (
               order.productionJobs.map((job) => (
                 <div key={job.id} className="rounded-2xl border border-slate-200 px-4 py-3">
@@ -276,7 +499,7 @@ export function OrderDetailPage() {
                     <div>
                       <div className="font-semibold text-slate-950">{job.number}</div>
                       <div className="text-xs text-slate-500">
-                        {job.route?.name ?? 'Без маршрута'} · {formatDateOnly(job.deadlineAt)}
+                        {job.route?.name ?? 'Marşrut yoxdur'} • {formatDateOnly(job.deadlineAt)}
                       </div>
                     </div>
                     <StatusBadge kind="production" status={job.status} />
@@ -284,16 +507,16 @@ export function OrderDetailPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="Производство не создано" description="Сначала нужно утвердить и запустить заказ." />
+              <EmptyState title="İstehsal yaradılmayıb" description="Əvvəlcə sifariş təsdiqlənməli və istehsala göndərilməlidir." />
             )}
 
-            <SectionTitle title="Резервы" />
+            <SectionTitle title="Rezervlər" />
             {order.stockReservations.length ? (
               order.stockReservations.map((reservation) => (
                 <div key={reservation.id} className="rounded-2xl border border-slate-200 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold text-slate-950">{reservation.material?.name ?? 'Материал'}</div>
+                      <div className="font-semibold text-slate-950">{reservation.material?.name ?? 'Material'}</div>
                       <div className="text-xs text-slate-500">
                         {reservation.quantity} {reservation.material?.unit ?? ''}
                       </div>
@@ -303,10 +526,10 @@ export function OrderDetailPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="Резервов нет" description="Материалы будут зарезервированы на этапе производства." />
+              <EmptyState title="Rezerv yoxdur" description="Material rezervləri istehsal axınında burada görünəcək." />
             )}
 
-            <SectionTitle title="Движения материалов" />
+            <SectionTitle title="Anbar hərəkətləri" />
             {order.stockMovements.length ? (
               <div className="space-y-2">
                 {order.stockMovements.map((movement) => (
@@ -315,7 +538,7 @@ export function OrderDetailPage() {
                       <div>
                         <div className="font-semibold text-slate-950">{movement.material?.name ?? movement.type}</div>
                         <div className="text-xs text-slate-500">
-                          {movement.quantity} · {movement.warehouse?.name ?? '—'}
+                          {movement.quantity} • {movement.warehouse?.name ?? '—'}
                         </div>
                       </div>
                       <StatusBadge kind="movement" status={movement.type} />
@@ -324,7 +547,7 @@ export function OrderDetailPage() {
                 ))}
               </div>
             ) : (
-              <EmptyState title="Движений пока нет" description="Списание появится после запуска производства." />
+              <EmptyState title="Hərəkət yoxdur" description="Silmə, qaytarma və rezerv hərəkətləri burada görünəcək." />
             )}
           </div>
         </Card>
@@ -332,9 +555,9 @@ export function OrderDetailPage() {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Счета и оплаты</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Qaimə və ödənişlər</h2>
           <div className="mt-4 space-y-4">
-            <SectionTitle title="Счета" />
+            <SectionTitle title="Qaimələr" />
             {order.invoices.length ? (
               order.invoices.map((invoice) => (
                 <div key={invoice.id} className="rounded-2xl border border-slate-200 px-4 py-3">
@@ -354,10 +577,10 @@ export function OrderDetailPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="Счета не созданы" description="Счет появится после оформления финансовой части." />
+              <EmptyState title="Qaimə yoxdur" description="Maliyyə hissəsində qaimə yaradıldıqdan sonra burada görünəcək." />
             )}
 
-            <SectionTitle title="Оплаты" />
+            <SectionTitle title="Ödənişlər" />
             {order.payments.length ? (
               order.payments.map((payment) => (
                 <div key={payment.id} className="rounded-2xl border border-slate-200 px-4 py-3">
@@ -369,27 +592,27 @@ export function OrderDetailPage() {
                     <StatusBadge kind="payment" status={payment.status} />
                   </div>
                   <div className="mt-2 text-sm text-slate-600">
-                    {formatCurrency(payment.amount)} · {payment.method}
+                    {formatCurrency(payment.amount)} • {payment.method}
                   </div>
                 </div>
               ))
             ) : (
-              <EmptyState title="Оплат нет" description="После оплаты они отобразятся здесь." />
+              <EmptyState title="Ödəniş yoxdur" description="Sifarişə bağlı ödənişlər burada görünəcək." />
             )}
           </div>
         </Card>
 
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Прибыльность</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Xeyirlilik və tarixçə</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Metric label="Чистая прибыль" value={formatCurrency(order.profitability.netProfit)} />
-            <Metric label="Маржа" value={formatPercent(order.profitability.marginPercent)} />
-            <Metric label="Долг" value={formatCurrency(order.profitability.customerDebtAmount)} />
-            <Metric label="Прибыльный" value={order.profitability.isProfitable ? 'Да' : 'Нет'} className="sm:col-span-2" />
+            <Metric label="Xalis xeyir" value={formatCurrency(order.profitability.netProfit)} />
+            <Metric label="Marja" value={formatPercent(order.profitability.marginPercent)} />
+            <Metric label="Borclu qalıq" value={formatCurrency(order.profitability.customerDebtAmount)} />
+            <Metric label="Status" value={order.profitability.isProfitable ? 'Qazanclı' : 'Riskli'} className="sm:col-span-2" />
           </div>
 
           <div className="mt-5">
-            <SectionTitle title="История изменений" />
+            <SectionTitle title="Dəyişiklik tarixi" />
             <div className="mt-3 space-y-2">
               {order.auditLogs.length ? (
                 order.auditLogs.map((log) => (
@@ -404,7 +627,7 @@ export function OrderDetailPage() {
                   </div>
                 ))
               ) : (
-                <EmptyState title="Логов нет" description="История изменений появится после действий пользователей." />
+                <EmptyState title="Tarixçə yoxdur" description="Audit qeydləri əməliyyat aparıldıqca burada görünəcək." />
               )}
             </div>
           </div>
@@ -416,6 +639,7 @@ export function OrderDetailPage() {
         title={confirmState?.title ?? ''}
         description={confirmState?.description}
         confirmLabel={confirmState?.confirmLabel}
+        cancelLabel="Bağla"
         onCancel={() => setConfirmState(null)}
         onConfirm={() => {
           const action = confirmState?.action;
@@ -453,4 +677,13 @@ function Metric({ label, value, className }: { label: string; value: string; cla
 
 function SectionTitle({ title }: { title: string }) {
   return <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{title}</div>;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+      {children}
+    </div>
+  );
 }

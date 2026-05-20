@@ -12,11 +12,7 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
   const { isAuthenticated, isHydrated, session } = useAuth();
 
   if (!isHydrated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500">
-        Загружаем рабочее пространство...
-      </div>
-    );
+    return <div className="flex min-h-screen items-center justify-center text-slate-500">İş sahəsi yüklənir...</div>;
   }
 
   if (!isAuthenticated) {
@@ -27,9 +23,9 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-center">
         <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="text-2xl font-semibold text-slate-950">Нет доступа</h1>
+          <h1 className="text-2xl font-semibold text-slate-950">Giriş icazəsi yoxdur</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            У вашей роли нет прав для открытия этого раздела. Обратитесь к администратору, если доступ должен быть выдан.
+            Bu bölməni açmaq üçün cari rol kifayət etmir. Lazımdırsa, sistem administratoru ilə əlaqə saxlayın.
           </p>
         </div>
       </div>
@@ -38,4 +34,3 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
 
   return <>{children}</>;
 }
-

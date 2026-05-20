@@ -27,6 +27,7 @@ import {
   resolveDebtStatus,
   resolveInvoiceStatus
 } from '../../common/business/finance-rules';
+import { recalculateSalesEntry } from '../../common/business/sales-entry';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -82,6 +83,43 @@ export class FinanceService {
         status: resolveDebtStatus(paidAmount, totalAmount, invoice.dueAt)
       }
     });
+
+    const salesEntry = await tx.salesEntry.findUnique({
+      where: { orderId: invoice.orderId }
+    });
+
+    if (salesEntry) {
+      const calculated = recalculateSalesEntry({
+        quantity: salesEntry.quantity,
+        saleAmount: salesEntry.saleAmount,
+        paymentAmount: paidAmount,
+        bonus: salesEntry.bonus,
+        customerBonus: salesEntry.customerBonus,
+        paperCost: salesEntry.paperCost,
+        plateCost: salesEntry.plateCost,
+        printCost: salesEntry.printCost,
+        specialCutCost: salesEntry.specialCutCost,
+        knifeCost: salesEntry.knifeCost,
+        manualWorkCost: salesEntry.manualWorkCost,
+        spiralCost: salesEntry.spiralCost,
+        poniCost: salesEntry.poniCost,
+        otherCost: salesEntry.otherCost,
+        laminationCost: salesEntry.laminationCost
+      });
+
+      await tx.salesEntry.update({
+        where: { id: salesEntry.id },
+        data: {
+          saleUnitPrice: calculated.saleUnitPrice,
+          paymentAmount: paidAmount,
+          remainingDebt: calculated.remainingDebt,
+          finalRemainingDebt: calculated.finalRemainingDebt,
+          totalCost: calculated.totalCost,
+          profit: calculated.profit,
+          profitPercent: calculated.profitPercent
+        }
+      });
+    }
   }
 
   async findAllInvoices(query: PaginationQueryDto) {
@@ -369,13 +407,51 @@ export class FinanceService {
 
           const order = await tx.order.findUnique({ where: { id: dto.orderId } });
           if (order) {
+            const nextPaid = toNumber(order.paidAmount) + dto.amount;
             await tx.order.update({
               where: { id: order.id },
               data: {
-                paidAmount: toNumber(order.paidAmount) + dto.amount,
-                customerDebtAmount: Math.max(toNumber(order.totalAmount) - (toNumber(order.paidAmount) + dto.amount), 0)
+                paidAmount: nextPaid,
+                customerDebtAmount: Math.max(toNumber(order.totalAmount) - nextPaid, 0)
               }
             });
+
+            const salesEntry = await tx.salesEntry.findUnique({
+              where: { orderId: order.id }
+            });
+
+            if (salesEntry) {
+              const calculated = recalculateSalesEntry({
+                quantity: salesEntry.quantity,
+                saleAmount: salesEntry.saleAmount,
+                paymentAmount: nextPaid,
+                bonus: salesEntry.bonus,
+                customerBonus: salesEntry.customerBonus,
+                paperCost: salesEntry.paperCost,
+                plateCost: salesEntry.plateCost,
+                printCost: salesEntry.printCost,
+                specialCutCost: salesEntry.specialCutCost,
+                knifeCost: salesEntry.knifeCost,
+                manualWorkCost: salesEntry.manualWorkCost,
+                spiralCost: salesEntry.spiralCost,
+                poniCost: salesEntry.poniCost,
+                otherCost: salesEntry.otherCost,
+                laminationCost: salesEntry.laminationCost
+              });
+
+              await tx.salesEntry.update({
+                where: { id: salesEntry.id },
+                data: {
+                  saleUnitPrice: calculated.saleUnitPrice,
+                  paymentAmount: nextPaid,
+                  remainingDebt: calculated.remainingDebt,
+                  finalRemainingDebt: calculated.finalRemainingDebt,
+                  totalCost: calculated.totalCost,
+                  profit: calculated.profit,
+                  profitPercent: calculated.profitPercent
+                }
+              });
+            }
           }
         }
 
@@ -572,16 +648,54 @@ export class FinanceService {
         }
 
         if (payment.orderId && !payment.invoiceId && payment.order) {
+          const nextPaid = Math.max(toNumber(payment.order.paidAmount) - paidAmount, 0);
           await tx.order.update({
             where: { id: payment.orderId },
             data: {
-              paidAmount: Math.max(toNumber(payment.order.paidAmount) - paidAmount, 0),
+              paidAmount: nextPaid,
               customerDebtAmount: Math.max(
-                toNumber(payment.order.totalAmount) - Math.max(toNumber(payment.order.paidAmount) - paidAmount, 0),
+                toNumber(payment.order.totalAmount) - nextPaid,
                 0
               )
             }
           });
+
+          const salesEntry = await tx.salesEntry.findUnique({
+            where: { orderId: payment.orderId }
+          });
+
+          if (salesEntry) {
+            const calculated = recalculateSalesEntry({
+              quantity: salesEntry.quantity,
+              saleAmount: salesEntry.saleAmount,
+              paymentAmount: nextPaid,
+              bonus: salesEntry.bonus,
+              customerBonus: salesEntry.customerBonus,
+              paperCost: salesEntry.paperCost,
+              plateCost: salesEntry.plateCost,
+              printCost: salesEntry.printCost,
+              specialCutCost: salesEntry.specialCutCost,
+              knifeCost: salesEntry.knifeCost,
+              manualWorkCost: salesEntry.manualWorkCost,
+              spiralCost: salesEntry.spiralCost,
+              poniCost: salesEntry.poniCost,
+              otherCost: salesEntry.otherCost,
+              laminationCost: salesEntry.laminationCost
+            });
+
+            await tx.salesEntry.update({
+              where: { id: salesEntry.id },
+              data: {
+                saleUnitPrice: calculated.saleUnitPrice,
+                paymentAmount: nextPaid,
+                remainingDebt: calculated.remainingDebt,
+                finalRemainingDebt: calculated.finalRemainingDebt,
+                totalCost: calculated.totalCost,
+                profit: calculated.profit,
+                profitPercent: calculated.profitPercent
+              }
+            });
+          }
         }
 
         if (payment.method === PaymentMethod.cash && payment.cashboxId && payment.cashbox) {
@@ -687,7 +801,7 @@ export class FinanceService {
         skip,
         take,
         orderBy: { createdAt: 'desc' },
-        include: { allocations: true }
+        include: { allocations: true, supplier: true, purchaseEntry: true }
       })
     ]);
 
@@ -706,7 +820,7 @@ export class FinanceService {
       data: {
         code: dto.code,
         name: dto.name,
-        currencyCode: dto.currencyCode ?? 'USD',
+        currencyCode: dto.currencyCode ?? 'AZN',
         openingBalance: dto.openingBalance ?? 0,
         currentBalance: dto.openingBalance ?? 0
       }

@@ -88,6 +88,166 @@ export interface OrderListItem {
   manager?: UserSummary | null;
 }
 
+export interface SupplierItem {
+  id: string;
+  code?: string | null;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+}
+
+export interface EmployeeItem {
+  id: string;
+  fullName: string;
+  phone?: string | null;
+  title?: string | null;
+  isActive: boolean;
+}
+
+export interface PaperItem {
+  id: string;
+  code: string;
+  name: string;
+  gram: number;
+  size: string;
+  packPrice: number;
+  sheetsInPack: number;
+  pricePerSheet: number;
+  vatIncluded: boolean;
+  unit: string;
+  notes?: string | null;
+  supplier?: SupplierItem | null;
+}
+
+export interface SalesEntryItem {
+  id: string;
+  orderId?: string | null;
+  date: string;
+  customerId: string;
+  managerId?: string | null;
+  category?: string | null;
+  productName: string;
+  quantity: number;
+  saleUnitPrice: number;
+  saleAmount: number;
+  paymentAmount: number;
+  paymentType: string;
+  bonus: number;
+  customerBonus: number;
+  remainingDebt: number;
+  finalRemainingDebt: number;
+  productionStage?: string | null;
+  deliveryStatus: string;
+  deliveryDate?: string | null;
+  paymentStatus?: string | null;
+  qaimaStatus?: string | null;
+  qaimaDate?: string | null;
+  qaimaNumber?: string | null;
+  printColor?: string | null;
+  printType?: string | null;
+  paperCost: number;
+  plateCost: number;
+  printCost: number;
+  specialCutCost: number;
+  knifeCost: number;
+  manualWorkCost: number;
+  spiralCost: number;
+  poniCost: number;
+  otherCost: number;
+  laminationCost: number;
+  totalCost: number;
+  profit: number;
+  profitPercent: number;
+  spiralType?: string | null;
+  spiralQuantity?: number | null;
+  spiralUnitCost?: number | null;
+  spiralTotalCost?: number | null;
+  invoiceStatusText?: string | null;
+  notes?: string | null;
+  customer?: CustomerSummary | null;
+  manager?: UserSummary | null;
+  order?: OrderListItem | null;
+  paper?: PaperItem | null;
+}
+
+export interface PurchaseEntryItem {
+  id: string;
+  date: string;
+  amount: number;
+  paymentAmount: number;
+  remainingDebt: number;
+  paymentType: string;
+  comment?: string | null;
+  supplier?: SupplierItem | null;
+}
+
+export interface SalaryEntryItem {
+  id: string;
+  date: string;
+  salaryAmount: number;
+  bonusAmount: number;
+  paymentAmount: number;
+  remainingDebt: number;
+  comment?: string | null;
+  employee?: EmployeeItem | null;
+}
+
+export interface CustomerDebtSummaryItem {
+  customerId: string;
+  customerName: string;
+  saleAmount: number;
+  paymentAmount: number;
+  bonus: number;
+  customerBonus: number;
+  remainingDebt: number;
+  finalRemainingDebt: number;
+}
+
+export interface SupplierDebtSummaryItem {
+  supplierId: string;
+  supplierName: string;
+  purchaseAmount: number;
+  paymentAmount: number;
+  remainingDebt: number;
+}
+
+export interface SalarySummaryItem {
+  employeeId: string;
+  employeeName: string;
+  salaryAmount: number;
+  bonusAmount: number;
+  paymentAmount: number;
+  remainingDebt: number;
+}
+
+export interface SalesDashboardSummary {
+  totalSalesAmount: number;
+  totalPayments: number;
+  totalDebt: number;
+  totalProfit: number;
+  averageMarginPercent: number;
+  entries: number;
+  recentEntries: SalesEntryItem[];
+}
+
+export interface PurchaseSummary {
+  totalPurchaseAmount: number;
+  totalPaymentAmount: number;
+  totalSupplierDebt: number;
+  supplierTotals: SupplierDebtSummaryItem[];
+}
+
+export interface SalaryTotalsSummary {
+  totalSalaryAmount: number;
+  totalBonusAmount: number;
+  totalPaymentAmount: number;
+  totalRemainingDebt: number;
+  employees: SalarySummaryItem[];
+}
+
 export interface OrderItemDetail {
   id: string;
   name: string;
@@ -290,6 +450,7 @@ export interface OrderDetail {
   id: string;
   number: string;
   status: string;
+  comment?: string | null;
   totalAmount: number;
   paidAmount: number;
   costAmount: number;
@@ -299,7 +460,7 @@ export interface OrderDetail {
   deadlineAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  customer: CustomerSummary | Record<string, unknown>;
+  customer?: CustomerSummary | null;
   manager?: UserSummary | null;
   items: OrderItemDetail[];
   costCalculation?: CostCalculationItem | null;
@@ -311,6 +472,7 @@ export interface OrderDetail {
   invoices: InvoiceItem[];
   payments: PaymentItem[];
   receivable?: DebtItem | null;
+  salesEntry?: SalesEntryItem | null;
   profitability: {
     netProfit: number;
     marginPercent: number;

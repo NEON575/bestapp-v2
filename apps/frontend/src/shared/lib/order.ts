@@ -3,13 +3,13 @@ import { OrderStatus } from '@bestapp/shared';
 export type OrderWorkflowAction = 'calculatePrice' | 'approve' | 'startProduction' | 'markReady' | 'deliver';
 
 const orderStatusLabels: Record<string, string> = {
-  [OrderStatus.DRAFT]: 'Черновик',
-  [OrderStatus.CALCULATED]: 'Рассчитан',
-  [OrderStatus.APPROVED]: 'Утвержден',
-  [OrderStatus.IN_PRODUCTION]: 'В производстве',
-  [OrderStatus.READY]: 'Готов',
-  [OrderStatus.DELIVERED]: 'Выдан',
-  [OrderStatus.CANCELLED]: 'Отменен'
+  [OrderStatus.DRAFT]: 'Qaralama',
+  [OrderStatus.CALCULATED]: 'Hesablanıb',
+  [OrderStatus.APPROVED]: 'Təsdiqlənib',
+  [OrderStatus.IN_PRODUCTION]: 'İstehsalda',
+  [OrderStatus.READY]: 'Hazır',
+  [OrderStatus.DELIVERED]: 'Təhvil verilib',
+  [OrderStatus.CANCELLED]: 'Ləğv edilib'
 };
 
 const workflowByStatus: Record<string, OrderWorkflowAction | null> = {
@@ -23,11 +23,11 @@ const workflowByStatus: Record<string, OrderWorkflowAction | null> = {
 };
 
 const workflowLabels: Record<OrderWorkflowAction, string> = {
-  calculatePrice: 'Рассчитать цену',
-  approve: 'Утвердить',
-  startProduction: 'Запустить производство',
-  markReady: 'Пометить готовым',
-  deliver: 'Выдать'
+  calculatePrice: 'Qiyməti hesabla',
+  approve: 'Təsdiqlə',
+  startProduction: 'İstehsala göndər',
+  markReady: 'Hazır et',
+  deliver: 'Təhvil ver'
 };
 
 export function getOrderStatusLabel(status?: string | null) {
@@ -48,4 +48,3 @@ export function isOrderCancelable(status?: string | null) {
   const normalized = (status ?? '').toLowerCase();
   return normalized !== OrderStatus.DELIVERED && normalized !== OrderStatus.CANCELLED;
 }
-

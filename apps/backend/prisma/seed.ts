@@ -159,6 +159,27 @@ async function main() {
     )
   );
 
+  const supplierRows = await Promise.all(
+    [
+      { code: 'STAMP', name: 'StampPressMMC' },
+      { code: 'HALAL', name: 'HalalMMC' },
+      { code: 'SBS', name: 'SBSMMC' },
+      { code: 'TREND', name: 'TrendCTPMMC' }
+    ].map((supplier) =>
+      prisma.supplier.upsert({
+        where: { code: supplier.code },
+        update: {
+          name: supplier.name,
+          isActive: true
+        },
+        create: {
+          ...supplier,
+          isActive: true
+        }
+      })
+    )
+  );
+
   const warehouseRows = await Promise.all(
     [
       { code: 'main', name: 'Main Warehouse', description: 'Primary stock location' },
@@ -190,7 +211,8 @@ async function main() {
         costPrice: 0.35,
         minStockLevel: 1000,
         stockQuantity: 10000,
-        categoryId: paperCategory?.id
+        categoryId: paperCategory?.id,
+        supplierId: supplierRows[0]?.id
       },
       {
         sku: 'INK-CMYK',
@@ -199,7 +221,8 @@ async function main() {
         costPrice: 85,
         minStockLevel: 20,
         stockQuantity: 120,
-        categoryId: inkCategory?.id
+        categoryId: inkCategory?.id,
+        supplierId: supplierRows[2]?.id
       },
       {
         sku: 'LAM-FILM',
@@ -208,7 +231,8 @@ async function main() {
         costPrice: 12.5,
         minStockLevel: 30,
         stockQuantity: 200,
-        categoryId: consumablesCategory?.id
+        categoryId: consumablesCategory?.id,
+        supplierId: supplierRows[1]?.id
       }
     ].map((material) =>
       prisma.material.upsert({
@@ -219,7 +243,8 @@ async function main() {
           costPrice: material.costPrice,
           minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,
-          categoryId: material.categoryId
+          categoryId: material.categoryId,
+          supplierId: material.supplierId
         },
         create: {
           sku: material.sku,
@@ -229,10 +254,73 @@ async function main() {
           minStockLevel: material.minStockLevel,
           stockQuantity: material.stockQuantity,
           reservedQuantity: 0,
-          categoryId: material.categoryId
+          categoryId: material.categoryId,
+          supplierId: material.supplierId
         }
       })
     )
+  );
+
+  await Promise.all(
+    [
+      {
+        code: 'KAGIZ-A4-300',
+        name: 'A4 Mat Kagiz',
+        gram: 300,
+        size: 'A4',
+        packPrice: 18,
+        sheetsInPack: 100,
+        pricePerSheet: 0.18,
+        vatIncluded: true,
+        unit: 'sheet',
+        supplierId: supplierRows[0]?.id
+      },
+      {
+        code: 'KAGIZ-SRA3-170',
+        name: 'SRA3 Gloss Kagiz',
+        gram: 170,
+        size: 'SRA3',
+        packPrice: 42,
+        sheetsInPack: 250,
+        pricePerSheet: 0.168,
+        vatIncluded: false,
+        unit: 'sheet',
+        supplierId: supplierRows[1]?.id
+      }
+    ].map((paper) =>
+      prisma.paper.upsert({
+        where: { code: paper.code },
+        update: paper,
+        create: paper
+      })
+    )
+  );
+
+  await Promise.all(
+    [
+      { fullName: 'Aysel Mammadova', title: 'Menecer' },
+      { fullName: 'Rashad Aliyev', title: 'Cap operatoru' }
+    ].map(async (employee) => {
+      const existing = await prisma.employee.findFirst({ where: { fullName: employee.fullName } });
+
+      if (existing) {
+        return prisma.employee.update({
+          where: { id: existing.id },
+          data: {
+            title: employee.title,
+            isActive: true
+          }
+        });
+      }
+
+      return prisma.employee.create({
+        data: {
+          fullName: employee.fullName,
+          title: employee.title,
+          isActive: true
+        }
+      });
+    })
   );
 
   await Promise.all(
@@ -353,6 +441,25 @@ async function main() {
   });
 
   const passwordHash = await bcrypt.hash('Admin123!', 10);
+
+  await prisma.cashbox.upsert({
+    where: { code: 'MAIN-AZN' },
+    update: {
+      name: 'Əsas kassa',
+      currencyCode: 'AZN',
+      openingBalance: 0,
+      currentBalance: 0,
+      isActive: true
+    },
+    create: {
+      code: 'MAIN-AZN',
+      name: 'Əsas kassa',
+      currencyCode: 'AZN',
+      openingBalance: 0,
+      currentBalance: 0,
+      isActive: true
+    }
+  });
   const admin = await prisma.user.upsert({
     where: { email: 'admin@bestapp.local' },
     update: {
