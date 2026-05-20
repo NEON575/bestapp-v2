@@ -5,6 +5,8 @@ export interface CreateCustomerDto {
   email?: string;
   address?: string;
   notes?: string;
+  inquiryNote?: string;
+  isActive?: boolean;
 }
 
 export interface UpdateCustomerDto extends Partial<CreateCustomerDto> {}
@@ -32,17 +34,19 @@ export interface OrderListQueryDto extends PaginationQueryDto {
 
 export interface CreateOrderItemDto {
   name: string;
-  productType: string;
-  width: number;
-  height: number;
+  productType?: string;
+  formatText?: string;
+  printColorText?: string;
+  width?: number;
+  height?: number;
   quantity: number;
-  colorMode: string;
+  colorMode?: string;
   materialId?: string;
   finishingOptions?: string;
   unitCost?: number;
   totalCost?: number;
-  unitPrice: number;
-  totalPrice: number;
+  unitPrice?: number;
+  totalPrice?: number;
   comment?: string;
 }
 
@@ -51,6 +55,7 @@ export interface CreateOrderDto {
   customerId: string;
   managerId?: string;
   status?: string;
+  date?: string;
   deadlineAt?: string;
   comment?: string;
   items?: CreateOrderItemDto[];
@@ -70,6 +75,8 @@ export interface CreateMaterialDto {
   quantityInPack?: number;
   unitCost?: number;
   vatIncluded?: boolean;
+  metadata?: Record<string, unknown>;
+  isActive?: boolean;
   minStockLevel?: number;
   stockQuantity?: number;
   reservedQuantity?: number;
@@ -86,6 +93,21 @@ export interface MaterialQueryDto extends PaginationQueryDto {
   size?: string;
   lowStockOnly?: boolean;
 }
+
+export interface CreateMaterialCategoryDto {
+  code: string;
+  name: string;
+  codePrefix?: string;
+  description?: string;
+  dynamicFields?: Array<{
+    key: string;
+    label: string;
+    type: 'text' | 'number' | 'select';
+    options?: Array<{ label: string; value: string }>;
+  }>;
+}
+
+export interface UpdateMaterialCategoryDto extends Partial<CreateMaterialCategoryDto> {}
 
 export interface CreateInvoiceDto {
   orderId: string;
@@ -334,6 +356,8 @@ export interface CreateEmployeeDto {
   fullName: string;
   phone?: string;
   title?: string;
+  roleKey?: string;
+  notes?: string;
   isActive?: boolean;
 }
 
@@ -365,4 +389,21 @@ export interface ExcelImportPreviewSheetDto {
   rows: number;
   columns: string[];
   mappingErrors: string[];
+}
+
+export interface UpdateCompanySettingsDto {
+  companyName?: string;
+  legalName?: string;
+  taxId?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bankName?: string;
+  bankAccount?: string;
+  iban?: string;
+  bankCode?: string;
+  correspondentAccount?: string;
+  swift?: string;
+  logoUrl?: string;
+  notes?: string;
 }

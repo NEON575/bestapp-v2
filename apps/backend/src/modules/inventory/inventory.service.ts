@@ -6,10 +6,12 @@ import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
 import { calculateInventorySummary } from '../../common/business/inventory-summary';
 import {
+  CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
   MaterialQueryDto,
   ReserveStockDto,
+  UpdateMaterialCategoryDto,
   UpdateMaterialDto,
   WriteOffStockDto
 } from './dto/inventory.dto';
@@ -18,6 +20,11 @@ import {
   ReservationAlreadyConsumedException
 } from '../../common/business/exceptions';
 import { getMovementBalanceDelta } from '../../common/business/inventory-balance';
+import {
+  generateMaterialCode,
+  sanitizeMaterialMetadata,
+  type MaterialDynamicFieldConfig
+} from '../../common/business/material-catalog';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -88,6 +95,65 @@ export class InventoryService {
     }
 
     return warehouse;
+  }
+
+  private async ensureCategory(id: string, tx?: Prisma.TransactionClient) {
+    const category = await this.db(tx).materialCategory.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!category) {
+      throw new NotFoundException('Material category not found');
+    }
+
+    return category;
+  }
+
+  private mapDynamicFields(input: Prisma.JsonValue | null | undefined): MaterialDynamicFieldConfig[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return (input as Prisma.JsonArray)
+      .filter((field) => typeof field === 'object' && field != null && !Array.isArray(field))
+      .map((field) => ({
+        key: String((field as Prisma.JsonObject).key ?? ''),
+        label: String((field as Prisma.JsonObject).label ?? (field as Prisma.JsonObject).key ?? ''),
+        type: (((field as Prisma.JsonObject).type === 'number' || (field as Prisma.JsonObject).type === 'select'
+          ? (field as Prisma.JsonObject).type
+          : 'text') as MaterialDynamicFieldConfig['type']),
+        options: Array.isArray((field as Prisma.JsonObject).options)
+          ? ((field as Prisma.JsonObject).options as Prisma.JsonArray)
+              .filter((option) => typeof option === 'object' && option != null && !Array.isArray(option))
+              .map((option) => ({
+                label: String((option as Prisma.JsonObject).label ?? (option as Prisma.JsonObject).value ?? ''),
+                value: String((option as Prisma.JsonObject).value ?? (option as Prisma.JsonObject).label ?? '')
+              }))
+          : undefined
+      }))
+      .filter((field) => field.key);
+  }
+
+  private async resolveMaterialCode(categoryId?: string, tx?: Prisma.TransactionClient) {
+    if (!categoryId) {
+      return null;
+    }
+
+    const category = await this.ensureCategory(categoryId, tx);
+    const prefix = category.codePrefix?.trim() || category.code.slice(0, 3).toUpperCase();
+    const sequence = await this.db(tx).numberSequence.upsert({
+      where: { key: `material:${category.id}` },
+      update: { currentValue: { increment: 1 } },
+      create: {
+        key: `material:${category.id}`,
+        prefix,
+        currentValue: 1,
+        step: 1,
+        padding: 4
+      }
+    });
+
+    return generateMaterialCode(sequence.prefix || prefix, sequence.currentValue, sequence.padding);
   }
 
   private async syncStockLevel(materialId: string, warehouseId: string, tx?: Prisma.TransactionClient) {
@@ -265,8 +331,10 @@ export class InventoryService {
     vatIncluded?: boolean | null;
     minStockLevel: Prisma.Decimal | number | string;
     costPrice?: Prisma.Decimal | number | string | null;
+    metadata?: Prisma.JsonValue | null;
+    isActive?: boolean | null;
     notes?: string | null;
-    category?: { id: string; code: string; name: string; description: string | null } | null;
+    category?: { id: string; code: string; name: string; codePrefix?: string | null; dynamicFields?: Prisma.JsonValue | null; description: string | null } | null;
     supplier?: { id: string; code: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; isActive: boolean } | null;
     stockLevels?: Array<{ onHand: Prisma.Decimal | number | string; reserved: Prisma.Decimal | number | string; available: Prisma.Decimal | number | string }>;
   }) {
@@ -287,13 +355,21 @@ export class InventoryService {
       quantityInPack: material.quantityInPack ?? 1,
       unitCost,
       vatIncluded: Boolean(material.vatIncluded),
+      metadata: (material.metadata as Record<string, unknown> | null | undefined) ?? null,
+      isActive: material.isActive ?? true,
       minStockLevel: toNumber(material.minStockLevel),
       onHand,
       reserved,
       available,
       costPrice: toNumber(material.costPrice ?? material.unitCost),
       notes: material.notes ?? null,
-      category: material.category ?? null,
+      category: material.category
+        ? {
+            ...material.category,
+            codePrefix: material.category.codePrefix ?? undefined,
+            dynamicFields: this.mapDynamicFields(material.category.dynamicFields)
+          }
+        : null,
       supplier: material.supplier ?? null
     };
   }
@@ -368,33 +444,41 @@ export class InventoryService {
   }
 
   async createMaterial(dto: CreateMaterialDto) {
-    const quantityInPack = dto.quantityInPack ? Math.max(1, Math.round(dto.quantityInPack)) : 1;
-    const unitCost = resolveMaterialUnitCost({
-      unitCost: dto.unitCost,
-      costPrice: dto.costPrice,
-      packPrice: dto.packPrice,
-      quantityInPack
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const quantityInPack = dto.quantityInPack ? Math.max(1, Math.round(dto.quantityInPack)) : 1;
+      const unitCost = resolveMaterialUnitCost({
+        unitCost: dto.unitCost,
+        costPrice: dto.costPrice,
+        packPrice: dto.packPrice,
+        quantityInPack
+      });
+      const category = dto.categoryId ? await this.ensureCategory(dto.categoryId, tx) : null;
+      const dynamicFields = this.mapDynamicFields(category?.dynamicFields);
+      const metadata = sanitizeMaterialMetadata(dynamicFields, dto.metadata) as Prisma.InputJsonValue;
+      const sku = dto.sku?.trim() || (await this.resolveMaterialCode(dto.categoryId, tx));
 
-    return this.prisma.material.create({
-      data: {
-        categoryId: dto.categoryId,
-        supplierId: dto.supplierId,
-        name: dto.name,
-        sku: dto.sku,
-        unit: dto.unit,
-        gram: dto.gram,
-        size: dto.size,
-        packPrice: dto.packPrice ?? 0,
-        quantityInPack,
-        unitCost,
-        vatIncluded: dto.vatIncluded ?? false,
-        minStockLevel: dto.minStockLevel ?? 0,
-        stockQuantity: dto.stockQuantity ?? 0,
-        reservedQuantity: dto.reservedQuantity ?? 0,
-        costPrice: dto.costPrice ?? unitCost,
-        notes: dto.notes
-      }
+      return tx.material.create({
+        data: {
+          categoryId: dto.categoryId,
+          supplierId: dto.supplierId,
+          name: dto.name,
+          sku,
+          unit: dto.unit,
+          gram: dto.gram,
+          size: dto.size,
+          packPrice: dto.packPrice ?? 0,
+          quantityInPack,
+          unitCost,
+          vatIncluded: dto.vatIncluded ?? false,
+          metadata,
+          isActive: dto.isActive ?? true,
+          minStockLevel: dto.minStockLevel ?? 0,
+          stockQuantity: dto.stockQuantity ?? 0,
+          reservedQuantity: dto.reservedQuantity ?? 0,
+          costPrice: dto.costPrice ?? unitCost,
+          notes: dto.notes
+        }
+      });
     });
   }
 
@@ -410,26 +494,38 @@ export class InventoryService {
       quantityInPack: nextQuantityInPack
     });
 
-    return this.prisma.material.update({
-      where: { id },
-      data: {
-        categoryId: dto.categoryId,
-        supplierId: dto.supplierId,
-        name: dto.name,
-        sku: dto.sku,
-        unit: dto.unit,
-        gram: dto.gram,
-        size: dto.size,
-        packPrice: dto.packPrice,
-        quantityInPack: dto.quantityInPack != null ? quantityInPack : undefined,
-        unitCost,
-        vatIncluded: dto.vatIncluded,
-        minStockLevel: dto.minStockLevel,
-        stockQuantity: dto.stockQuantity,
-        reservedQuantity: dto.reservedQuantity,
-        costPrice: dto.costPrice ?? unitCost,
-        notes: dto.notes
-      }
+    return this.prisma.$transaction(async (tx) => {
+      const categoryId = dto.categoryId ?? existing.categoryId ?? undefined;
+      const category = categoryId ? await this.ensureCategory(categoryId, tx) : null;
+      const dynamicFields = this.mapDynamicFields(category?.dynamicFields);
+      const existingMetadata = ((existing as { metadata?: Prisma.JsonValue | null }).metadata ?? null) as Record<string, unknown> | null;
+      const metadata = (dto.metadata
+        ? sanitizeMaterialMetadata(dynamicFields, { ...(existingMetadata ?? {}), ...dto.metadata })
+        : sanitizeMaterialMetadata(dynamicFields, existingMetadata ?? {})) as Prisma.InputJsonValue;
+
+      return tx.material.update({
+        where: { id },
+        data: {
+          categoryId: dto.categoryId,
+          supplierId: dto.supplierId,
+          name: dto.name,
+          sku: dto.sku,
+          unit: dto.unit,
+          gram: dto.gram,
+          size: dto.size,
+          packPrice: dto.packPrice,
+          quantityInPack: dto.quantityInPack != null ? quantityInPack : undefined,
+          unitCost,
+          vatIncluded: dto.vatIncluded,
+          metadata,
+          isActive: dto.isActive,
+          minStockLevel: dto.minStockLevel,
+          stockQuantity: dto.stockQuantity,
+          reservedQuantity: dto.reservedQuantity,
+          costPrice: dto.costPrice ?? unitCost,
+          notes: dto.notes
+        }
+      });
     });
   }
 
@@ -670,9 +766,37 @@ export class InventoryService {
     });
   }
 
-  createCategory(data: { code: string; name: string; description?: string }) {
+  createCategory(data: CreateMaterialCategoryDto) {
     return this.prisma.materialCategory.create({
-      data
+      data: {
+        code: data.code,
+        name: data.name,
+        codePrefix: data.codePrefix ?? data.code.slice(0, 3).toUpperCase(),
+        description: data.description,
+        dynamicFields: (data.dynamicFields ?? []) as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  updateCategory(id: string, data: UpdateMaterialCategoryDto) {
+    return this.prisma.materialCategory.update({
+      where: { id },
+      data: {
+        code: data.code,
+        name: data.name,
+        codePrefix: data.codePrefix,
+        description: data.description,
+        dynamicFields: data.dynamicFields as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  removeCategory(id: string) {
+    return this.prisma.materialCategory.update({
+      where: { id },
+      data: {
+        deletedAt: new Date()
+      }
     });
   }
 
@@ -680,7 +804,12 @@ export class InventoryService {
     return this.prisma.materialCategory.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: 'desc' }
-    });
+    }).then((rows) =>
+      rows.map((row) => ({
+        ...row,
+        dynamicFields: this.mapDynamicFields(row.dynamicFields)
+      }))
+    );
   }
 
   async summary() {

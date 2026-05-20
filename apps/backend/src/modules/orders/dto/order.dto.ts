@@ -32,25 +32,39 @@ export class CreateOrderItemDto {
   @IsString()
   name!: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
-  productType!: string;
+  productType?: string;
 
-  @ApiProperty()
-  @IsNumber()
-  width!: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  formatText?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  printColorText?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsNumber()
-  height!: number;
+  width?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  height?: number;
 
   @ApiProperty()
   @IsNumber()
   quantity!: number;
 
-  @ApiProperty({ enum: OrderItemColorModeDto })
+  @ApiProperty({ enum: OrderItemColorModeDto, required: false })
+  @IsOptional()
   @IsEnum(OrderItemColorModeDto)
-  colorMode!: OrderItemColorModeDto;
+  colorMode?: OrderItemColorModeDto;
 
   @ApiProperty()
   @IsOptional()
@@ -72,13 +86,15 @@ export class CreateOrderItemDto {
   @IsNumber()
   totalCost?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsNumber()
-  unitPrice!: number;
+  unitPrice?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsNumber()
-  totalPrice!: number;
+  totalPrice?: number;
 
   @ApiProperty()
   @IsOptional()
@@ -105,6 +121,11 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(OrderStatusDto)
   status?: OrderStatusDto;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 
   @ApiProperty()
   @IsOptional()

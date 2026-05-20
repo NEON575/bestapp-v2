@@ -240,6 +240,8 @@ model Customer {
   email       String?
   address     String?
   notes       String?
+  inquiryNote String?
+  isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -275,6 +277,8 @@ model Employee {
   fullName      String
   phone         String?
   title         String?
+  roleKey       String?
+  notes         String?
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -295,6 +299,29 @@ model NumberSequence {
   updatedAt     DateTime @updatedAt
 
   @@map("number_sequences")
+}
+
+model CompanySetting {
+  id                   String   @id @default(uuid())
+  code                 String   @unique @default("main")
+  companyName          String?
+  legalName            String?
+  taxId                String?
+  phone                String?
+  email                String?
+  address              String?
+  bankName             String?
+  bankAccount          String?
+  iban                 String?
+  bankCode             String?
+  correspondentAccount String?
+  swift                String?
+  logoUrl              String?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("company_settings")
 }
 
 model Order {
@@ -346,6 +373,8 @@ model OrderItem {
   materialId       String?
   name             String
   productType      String
+  formatText       String?
+  printColorText   String?
   width            Decimal              @db.Decimal(18, 2)
   height           Decimal              @db.Decimal(18, 2)
   quantity         Decimal              @db.Decimal(18, 4)
@@ -369,6 +398,8 @@ model MaterialCategory {
   id          String     @id @default(uuid())
   code        String     @unique
   name        String
+  codePrefix  String     @default("MAT")
+  dynamicFields Json?
   description String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -391,6 +422,7 @@ model Material {
   quantityInPack  Int             @default(1)
   unitCost        Decimal         @default(0) @db.Decimal(18, 4)
   vatIncluded     Boolean         @default(false)
+  metadata        Json?
   isActive        Boolean         @default(true)
   minStockLevel   Decimal         @default(0) @db.Decimal(18, 4)
   stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)

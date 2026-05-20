@@ -15,6 +15,11 @@ import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../src/common/b
 import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../src/common/business/salary-entry';
 import { calculatePaperPricePerSheet } from '../src/common/business/paper-pricing';
 import {
+  generateMaterialCode,
+  sanitizeMaterialMetadata
+} from '../src/common/business/material-catalog';
+import { normalizeCreateOrderItem } from '../src/common/business/order-items';
+import {
   resolveDebtStatus,
   resolveInvoiceStatus,
   assertNoOverpayment
@@ -313,6 +318,54 @@ test('paper price per sheet follows excel logic', () => {
   assert.equal(calculatePaperPricePerSheet(42, 250), 0.168);
   assert.equal(calculatePaperPricePerSheet(18, 100), 0.18);
   assert.equal(calculatePaperPricePerSheet(10, 0), 0);
+});
+
+test('material code generation uses category prefix', () => {
+  assert.equal(generateMaterialCode('KAG', 1), 'KAG-0001');
+  assert.equal(generateMaterialCode('lam', 24), 'LAM-0024');
+});
+
+test('material dynamic metadata validation keeps allowed values', () => {
+  const metadata = sanitizeMaterialMetadata(
+    [
+      { key: 'gram', label: 'Qram', type: 'number' },
+      {
+        key: 'type',
+        label: 'Tip',
+        type: 'select',
+        options: [
+          { label: 'Parlaq', value: 'parlaq' },
+          { label: 'Mat', value: 'mat' }
+        ]
+      }
+    ],
+    {
+      gram: '300',
+      type: 'mat',
+      ignored: 'x'
+    }
+  );
+
+  assert.deepEqual(metadata, {
+    gram: 300,
+    type: 'mat'
+  });
+});
+
+test('order create works without productType and material', () => {
+  const item = normalizeCreateOrderItem({
+    name: 'Vizit kartı',
+    quantity: 1000,
+    formatText: '90x50',
+    printColorText: '4+4'
+  } as any);
+
+  assert.equal(item.productType, 'print_job');
+  assert.equal(item.materialId, null);
+  assert.equal(item.unitPrice, 0);
+  assert.equal(item.totalPrice, 0);
+  assert.equal(item.formatText, '90x50');
+  assert.equal(item.printColorText, '4+4');
 });
 
 test('sales summary totals keep filtered excel scenarios consistent', () => {

@@ -1,12 +1,15 @@
 import type {
+  CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
   InventoryMaterialItem,
   InventoryMovementItem,
   InventorySummary,
   MaterialQueryDto,
+  PaginationQuery,
   PaginatedResponse,
   ReserveStockDto,
+  UpdateMaterialCategoryDto,
   UpdateMaterialDto,
   WriteOffStockDto,
   WarehouseItem,
@@ -87,6 +90,21 @@ export const inventoryClient = {
 
   async categories() {
     const { data } = await api.get<MaterialCategoryItem[]>('/inventory/categories');
+    return data;
+  },
+
+  async createCategory(dto: CreateMaterialCategoryDto) {
+    const { data } = await api.post<MaterialCategoryItem>('/inventory/categories', dto);
+    return data;
+  },
+
+  async updateCategory(id: string, dto: UpdateMaterialCategoryDto) {
+    const { data } = await api.patch<MaterialCategoryItem>(`/inventory/categories/${id}`, dto);
+    return data;
+  },
+
+  async removeCategory(id: string) {
+    const { data } = await api.delete(`/inventory/categories/${id}`);
     return data;
   }
 };

@@ -1,74 +1,81 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CreateCustomerDto, CreateOrderDto, CreateOrderItemDto, CustomerListItem, InventoryMaterialItem } from '@bestapp/shared';
-import { OrderItemColorMode } from '@bestapp/shared';
+import type { CreateCustomerDto, CreateOrderDto, CustomerListItem, UserSummary } from '@bestapp/shared';
 import { Button, Card, Input } from '@bestapp/ui';
 import { customersClient } from '../shared/api/customers';
-import { inventoryClient } from '../shared/api/inventory';
 import { ordersClient } from '../shared/api/orders';
-import { EmptyState, ErrorState, LoadingState, Modal, PageHeader } from '../shared/components';
+import { usersClient } from '../shared/api/users';
+import { ErrorState, LoadingState, Modal, PageHeader } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
-import { formatCurrency } from '../shared/lib/format';
 
-const emptyItem = (): CreateOrderItemDto => ({
-  name: '',
-  productType: '',
-  width: 0,
-  height: 0,
-  quantity: 1,
-  colorMode: OrderItemColorMode.CMYK,
-  materialId: '',
-  finishingOptions: '',
-  unitPrice: 0,
-  totalPrice: 0,
-  unitCost: 0,
-  totalCost: 0,
-  comment: ''
-});
+const printColorOptions = ['1+0', '2+0', '4+0', '1+1', '2+2', '4+4', 'digər'];
 
-const emptyCustomer = (): CreateCustomerDto => ({
-  name: '',
-  companyName: '',
-  phone: '',
-  email: '',
-  address: '',
-  notes: ''
-});
+function createEmptyCustomer(): CreateCustomerDto {
+  return {
+    name: '',
+    companyName: '',
+    phone: '',
+    email: '',
+    notes: '',
+    inquiryNote: '',
+    isActive: true
+  };
+}
+
+function createInitialForm(): CreateOrderDto {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    customerId: '',
+    managerId: '',
+    status: 'draft',
+    date: today,
+    deadlineAt: today,
+    comment: '',
+    items: [
+      {
+        name: '',
+        quantity: 1,
+        formatText: '',
+        printColorText: '4+0',
+        comment: ''
+      }
+    ]
+  };
+}
 
 export function OrderCreatePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
-  const [materials, setMaterials] = useState<InventoryMaterialItem[]>([]);
+  const [managers, setManagers] = useState<UserSummary[]>([]);
+  const [form, setForm] = useState<CreateOrderDto>(createInitialForm());
+  const [customerForm, setCustomerForm] = useState<CreateCustomerDto>(createEmptyCustomer());
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerSaving, setCustomerSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [customerForm, setCustomerForm] = useState<CreateCustomerDto>(emptyCustomer());
-  const [form, setForm] = useState<CreateOrderDto>({
-    customerId: '',
-    managerId: '',
-    status: 'draft',
-    deadlineAt: '',
-    comment: '',
-    items: [emptyItem()]
-  });
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setError(null);
+
       try {
-        const [customersResponse, materialsResponse] = await Promise.all([
-          customersClient.list({ page: 1, limit: 100 }),
-          inventoryClient.materials({ page: 1, limit: 100 })
+        const [customersResponse, managersResponse] = await Promise.all([
+          customersClient.list({ page: 1, limit: 200 }),
+          usersClient.listManagers()
         ]);
+
         setCustomers(customersResponse.data);
-        setMaterials(materialsResponse.data);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Не удалось загрузить форму заказа');
+        setManagers(managersResponse);
+        setForm((current) => ({
+          ...current,
+          managerId: current.managerId || managersResponse[0]?.id || ''
+        }));
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Sifariş forması yüklənmədi');
       } finally {
         setLoading(false);
       }
@@ -77,73 +84,28 @@ export function OrderCreatePage() {
     void load();
   }, []);
 
-  const orderTotals = useMemo(() => {
-    const items = form.items ?? [];
-    const totalPrice = items.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0);
-    const totalCost = items.reduce((sum, item) => sum + Number(item.totalCost ?? 0), 0);
-    return {
-      totalPrice,
-      totalCost,
-      profit: totalPrice - totalCost
-    };
-  }, [form.items]);
-
-  const updateItem = (index: number, patch: Partial<CreateOrderItemDto>) => {
+  const updateItem = (patch: Partial<NonNullable<CreateOrderDto['items']>[number]>) => {
     setForm((current) => ({
       ...current,
-      items: (current.items ?? []).map((item, currentIndex) => {
-        if (currentIndex !== index) return item;
-        const next = { ...item, ...patch };
-        const quantity = Number(next.quantity ?? 0);
-        const unitPrice = Number(next.unitPrice ?? 0);
-        const unitCost = Number(next.unitCost ?? 0);
-        return {
-          ...next,
-          quantity,
-          unitPrice,
-          unitCost,
-          totalPrice: quantity * unitPrice,
-          totalCost: quantity * unitCost
-        };
-      })
-    }));
-  };
-
-  const addItem = () => {
-    setForm((current) => ({
-      ...current,
-      items: [...(current.items ?? []), emptyItem()]
-    }));
-  };
-
-  const removeItem = (index: number) => {
-    setForm((current) => ({
-      ...current,
-      items: (current.items ?? []).filter((_, currentIndex) => currentIndex !== index)
+      items: [
+        {
+          ...current.items?.[0],
+          ...patch
+        }
+      ]
     }));
   };
 
   const validate = () => {
+    const item = form.items?.[0];
     const nextErrors: Record<string, string> = {};
-    if (!form.customerId) {
-      nextErrors.customerId = 'Выберите клиента';
-    }
-    if (!form.deadlineAt) {
-      nextErrors.deadlineAt = 'Укажите дедлайн';
-    }
 
-    (form.items ?? []).forEach((item, index) => {
-      if (!item.name) nextErrors[`items.${index}.name`] = 'Укажите название позиции';
-      if (!item.productType) nextErrors[`items.${index}.productType`] = 'Укажите тип продукта';
-      if (!item.quantity || item.quantity <= 0) nextErrors[`items.${index}.quantity`] = 'Количество должно быть больше 0';
-      if (!item.unitPrice && item.unitPrice !== 0) nextErrors[`items.${index}.unitPrice`] = 'Укажите цену';
-      if (!item.width || item.width <= 0) nextErrors[`items.${index}.width`] = 'Укажите ширину';
-      if (!item.height || item.height <= 0) nextErrors[`items.${index}.height`] = 'Укажите высоту';
-    });
-
-    if (!(form.items?.length ?? 0)) {
-      nextErrors.items = 'Добавьте хотя бы одну позицию';
-    }
+    if (!form.customerId) nextErrors.customerId = 'Müştəri seçin';
+    if (!form.managerId) nextErrors.managerId = 'Menecer seçin';
+    if (!form.date) nextErrors.date = 'Tarix seçin';
+    if (!form.deadlineAt) nextErrors.deadlineAt = 'Təhvil tarixi seçin';
+    if (!item?.name?.trim()) nextErrors.productName = 'Məhsulun adını yazın';
+    if (!item?.quantity || Number(item.quantity) <= 0) nextErrors.quantity = 'Say 0-dan böyük olmalıdır';
 
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -152,7 +114,12 @@ export function OrderCreatePage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!validate()) {
-      toast.warning('Проверьте форму заказа', 'Заполните обязательные поля перед сохранением.');
+      toast.warning('Forma natamamdır', 'Vacib sahələri doldurun.');
+      return;
+    }
+
+    const item = form.items?.[0];
+    if (!item) {
       return;
     }
 
@@ -161,25 +128,30 @@ export function OrderCreatePage() {
 
     try {
       const payload: CreateOrderDto = {
-        ...form,
-        items: (form.items ?? []).map((item) => ({
-          ...item,
-          width: Number(item.width),
-          height: Number(item.height),
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          totalPrice: Number(item.totalPrice),
-          unitCost: Number(item.unitCost ?? 0),
-          totalCost: Number(item.totalCost ?? 0)
-        }))
+        customerId: form.customerId,
+        managerId: form.managerId,
+        status: 'draft',
+        date: form.date,
+        deadlineAt: form.deadlineAt,
+        comment: form.comment,
+        items: [
+          {
+            name: item.name,
+            quantity: Number(item.quantity),
+            formatText: item.formatText || '',
+            printColorText: item.printColorText || '4+0',
+            comment: item.comment || ''
+          }
+        ]
       };
+
       const created = await ordersClient.create(payload);
-      toast.success('Заказ создан', `Документ ${created.number} готов к дальнейшей работе.`);
+      toast.success('Sifariş yaradıldı', created.number);
       navigate(`/orders/${created.id}`);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось создать заказ';
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'Sifariş yaradılmadı';
       setError(message);
-      toast.error('Не удалось создать заказ', message);
+      toast.error('Sifariş yaradılmadı', message);
     } finally {
       setSaving(false);
     }
@@ -187,17 +159,21 @@ export function OrderCreatePage() {
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!customerForm.name.trim()) {
+      toast.warning('Müştəri adı vacibdir');
+      return;
+    }
+
     setCustomerSaving(true);
     try {
       const created = await customersClient.create(customerForm);
       setCustomers((current) => [created, ...current]);
       setForm((current) => ({ ...current, customerId: created.id }));
-      setCustomerForm(emptyCustomer());
+      setCustomerForm(createEmptyCustomer());
       setShowCustomerModal(false);
-      toast.success('Клиент создан', created.name);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось создать клиента';
-      toast.error('Не удалось создать клиента', message);
+      toast.success('Müştəri yaradıldı', created.name);
+    } catch (createError) {
+      toast.error('Müştəri yaradılmadı', createError instanceof Error ? createError.message : 'Xəta baş verdi');
     } finally {
       setCustomerSaving(false);
     }
@@ -208,21 +184,23 @@ export function OrderCreatePage() {
   }
 
   if (error && !customers.length) {
-    return <ErrorState description={error} onRetry={() => navigate('/orders/new')} />;
+    return <ErrorState description={error} onRetry={() => window.location.reload()} />;
   }
+
+  const item = form.items?.[0];
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <PageHeader
-        title="Новый заказ"
-        description="Расширяемая форма создания заказа с клиентом, позициями и автоматическим расчетом сумм."
+        title="Sifariş yarat"
+        description="İşin qəbulunu sadə formada qeyd edin. Qiymət və maya dəyəri sonradan Satış və Hesablama bölməsində işlənəcək."
         actions={
           <>
-            <Button variant="secondary" type="button" onClick={() => navigate('/orders')}>
-              Отмена
+            <Button type="button" variant="secondary" onClick={() => navigate('/orders')}>
+              Geri
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Создаем...' : 'Создать заказ'}
+              {saving ? 'Yaradılır...' : 'Sifarişi yarat'}
             </Button>
           </>
         }
@@ -231,37 +209,55 @@ export function OrderCreatePage() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
       <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Клиент" error={formErrors.customerId}>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="Müştəri" error={formErrors.customerId}>
             <div className="flex gap-2">
               <select
                 value={form.customerId}
                 onChange={(event) => setForm((current) => ({ ...current, customerId: event.target.value }))}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-                required
               >
-                <option value="">Выберите клиента</option>
+                <option value="">Müştəri seçin</option>
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.name}
+                    {customer.name}{customer.companyName ? ` - ${customer.companyName}` : ''}
                   </option>
                 ))}
               </select>
               <Button type="button" variant="secondary" onClick={() => setShowCustomerModal(true)}>
-                Быстрый клиент
+                Tez müştəri yarat
               </Button>
             </div>
           </Field>
 
-          <Field label="Менеджер ID">
-            <Input
-              value={form.managerId ?? ''}
+          <Field label="Menecer" error={formErrors.managerId}>
+            <select
+              value={form.managerId}
               onChange={(event) => setForm((current) => ({ ...current, managerId: event.target.value }))}
-              placeholder="ID менеджера"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+            >
+              <option value="">Menecer seçin</option>
+              {managers.map((manager) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.fullName}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Status">
+            <Input value="Sifariş" readOnly />
+          </Field>
+
+          <Field label="Tarix" error={formErrors.date}>
+            <Input
+              type="date"
+              value={form.date ?? ''}
+              onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
             />
           </Field>
 
-          <Field label="Дедлайн" error={formErrors.deadlineAt}>
+          <Field label="Təhvil tarixi" error={formErrors.deadlineAt}>
             <Input
               type="date"
               value={form.deadlineAt ?? ''}
@@ -269,150 +265,84 @@ export function OrderCreatePage() {
             />
           </Field>
 
-          <Field label="Комментарий">
+          <Field label="Çap rəngi">
+            <select
+              value={item?.printColorText ?? '4+0'}
+              onChange={(event) => updateItem({ printColorText: event.target.value })}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+            >
+              {printColorOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Məhsulun adı" error={formErrors.productName} className="xl:col-span-2">
+            <Input value={item?.name ?? ''} onChange={(event) => updateItem({ name: event.target.value })} placeholder="Məsələn: Vizit kartı" />
+          </Field>
+
+          <Field label="Say" error={formErrors.quantity}>
             <Input
+              type="number"
+              min={1}
+              value={item?.quantity ?? 1}
+              onChange={(event) => updateItem({ quantity: Number(event.target.value) })}
+            />
+          </Field>
+
+          <Field label="Ölçü / format">
+            <Input
+              value={item?.formatText ?? ''}
+              onChange={(event) => updateItem({ formatText: event.target.value })}
+              placeholder="A4, A5, 90x50, 30x40"
+            />
+          </Field>
+
+          <Field label="Qeyd" className="xl:col-span-3">
+            <textarea
               value={form.comment ?? ''}
               onChange={(event) => setForm((current) => ({ ...current, comment: event.target.value }))}
-              placeholder="Комментарий к заказу"
+              className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-slate-400"
+              placeholder="Sifarişlə bağlı qısa qeyd"
             />
           </Field>
         </div>
       </Card>
 
-      <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">Позиции заказа</h2>
-            <p className="text-sm text-slate-500">Можно добавить несколько строк, а суммы считаются автоматически.</p>
-          </div>
-          <Button type="button" variant="secondary" onClick={addItem}>
-            Добавить позицию
-          </Button>
-        </div>
-
-        {formErrors.items ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{formErrors.items}</div>
-        ) : null}
-
-        <div className="mt-4 space-y-4">
-          {(form.items ?? []).map((item, index) => (
-            <div key={index} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="font-semibold text-slate-950">Позиция #{index + 1}</div>
-                <Button type="button" variant="ghost" onClick={() => removeItem(index)} disabled={(form.items ?? []).length === 1}>
-                  Удалить
-                </Button>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <Field label="Название продукта" error={formErrors[`items.${index}.name`]}>
-                  <Input value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} />
-                </Field>
-                <Field label="Тип продукта" error={formErrors[`items.${index}.productType`]}>
-                  <Input value={item.productType} onChange={(event) => updateItem(index, { productType: event.target.value })} />
-                </Field>
-                <Field label="Материал">
-                  <select
-                    value={item.materialId ?? ''}
-                    onChange={(event) => updateItem(index, { materialId: event.target.value })}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-                  >
-                    <option value="">Без материала</option>
-                    {materials.map((material) => (
-                      <option key={material.id} value={material.id}>
-                        {material.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Ширина" error={formErrors[`items.${index}.width`]}>
-                  <Input type="number" value={item.width} onChange={(event) => updateItem(index, { width: Number(event.target.value) })} />
-                </Field>
-                <Field label="Высота" error={formErrors[`items.${index}.height`]}>
-                  <Input type="number" value={item.height} onChange={(event) => updateItem(index, { height: Number(event.target.value) })} />
-                </Field>
-                <Field label="Количество" error={formErrors[`items.${index}.quantity`]}>
-                  <Input type="number" value={item.quantity} onChange={(event) => updateItem(index, { quantity: Number(event.target.value) })} />
-                </Field>
-                <Field label="Цветность">
-                  <select
-                    value={item.colorMode}
-                    onChange={(event) => updateItem(index, { colorMode: event.target.value as CreateOrderItemDto['colorMode'] })}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-                  >
-                    {Object.values(OrderItemColorMode).map((mode) => (
-                      <option key={mode} value={mode}>
-                        {getColorModeLabel(mode)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Постобработка">
-                  <Input value={item.finishingOptions ?? ''} onChange={(event) => updateItem(index, { finishingOptions: event.target.value })} />
-                </Field>
-                <Field label="Цена за единицу" error={formErrors[`items.${index}.unitPrice`]}>
-                  <Input type="number" value={item.unitPrice} onChange={(event) => updateItem(index, { unitPrice: Number(event.target.value) })} />
-                </Field>
-                <Field label="Себестоимость за единицу">
-                  <Input type="number" value={item.unitCost ?? 0} onChange={(event) => updateItem(index, { unitCost: Number(event.target.value) })} />
-                </Field>
-                <Field label="Комментарий">
-                  <Input value={item.comment ?? ''} onChange={(event) => updateItem(index, { comment: event.target.value })} />
-                </Field>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Сумма строки: <span className="font-semibold text-slate-950">{formatCurrency(item.totalPrice)}</span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Себестоимость строки: <span className="font-semibold text-slate-950">{formatCurrency(item.totalCost)}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Summary label="Сумма заказа" value={formatCurrency(orderTotals.totalPrice)} />
-          <Summary label="Себестоимость" value={formatCurrency(orderTotals.totalCost)} />
-          <Summary label="Прибыль" value={formatCurrency(orderTotals.profit)} />
-        </div>
-      </Card>
-
       <Modal
         open={showCustomerModal}
-        title="Быстрый клиент"
-        description="Создайте клиента без выхода из формы заказа."
+        title="Tez müştəri yarat"
+        description="Sifarişdən çıxmadan yeni müştəri əlavə edin."
         onClose={() => setShowCustomerModal(false)}
       >
         <form className="grid gap-4 md:grid-cols-2" onSubmit={createCustomer}>
-          <Field label="Имя">
+          <Field label="Ad">
             <Input value={customerForm.name} onChange={(event) => setCustomerForm((current) => ({ ...current, name: event.target.value }))} required />
           </Field>
-          <Field label="Компания">
+          <Field label="Şirkət adı">
             <Input value={customerForm.companyName ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, companyName: event.target.value }))} />
           </Field>
-          <Field label="Телефон">
+          <Field label="Telefon">
             <Input value={customerForm.phone ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))} />
           </Field>
-          <Field label="Электронная почта">
+          <Field label="Email">
             <Input value={customerForm.email ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, email: event.target.value }))} />
           </Field>
-          <Field label="Адрес" className="md:col-span-2">
-            <Input value={customerForm.address ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, address: event.target.value }))} />
-          </Field>
-          <Field label="Заметки" className="md:col-span-2">
+          <Field label="Qeyd" className="md:col-span-2">
             <Input value={customerForm.notes ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, notes: event.target.value }))} />
           </Field>
+          <Field label="Sorğu / müraciət qeydi" className="md:col-span-2">
+            <Input value={customerForm.inquiryNote ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, inquiryNote: event.target.value }))} />
+          </Field>
+
           <div className="md:col-span-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setShowCustomerModal(false)}>
-              Отмена
+              Bağla
             </Button>
             <Button type="submit" disabled={customerSaving}>
-              {customerSaving ? 'Создаем...' : 'Создать клиента'}
+              {customerSaving ? 'Yaradılır...' : 'Müştərini yarat'}
             </Button>
           </div>
         </form>
@@ -439,28 +369,4 @@ function Field({
       {error ? <span className="text-xs font-medium text-rose-600">{error}</span> : null}
     </label>
   );
-}
-
-function Summary({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
-      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-slate-950">{value}</div>
-    </div>
-  );
-}
-
-function getColorModeLabel(mode: OrderItemColorMode) {
-  switch (mode) {
-    case OrderItemColorMode.CMYK:
-      return 'CMYK';
-    case OrderItemColorMode.RGB:
-      return 'RGB';
-    case OrderItemColorMode.SPOT:
-      return 'Pantone / Spot';
-    case OrderItemColorMode.GRAYSCALE:
-      return 'Градации серого';
-    default:
-      return mode;
-  }
 }

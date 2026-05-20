@@ -3,10 +3,12 @@ import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import {
+  CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
   MaterialQueryDto,
   ReserveStockDto,
+  UpdateMaterialCategoryDto,
   UpdateMaterialDto,
   WriteOffStockDto
 } from './dto/inventory.dto';
@@ -55,8 +57,20 @@ export class InventoryController {
 
   @Post('categories')
   @Roles('super_admin', 'owner', 'warehouse')
-  createCategory(@Body() dto: { code: string; name: string; description?: string }) {
+  createCategory(@Body() dto: CreateMaterialCategoryDto) {
     return this.inventoryService.createCategory(dto);
+  }
+
+  @Patch('categories/:id')
+  @Roles('super_admin', 'owner', 'warehouse')
+  updateCategory(@Param('id') id: string, @Body() dto: UpdateMaterialCategoryDto) {
+    return this.inventoryService.updateCategory(id, dto);
+  }
+
+  @Delete('categories/:id')
+  @Roles('super_admin', 'owner')
+  removeCategory(@Param('id') id: string) {
+    return this.inventoryService.removeCategory(id);
   }
 
   @Get('warehouses')

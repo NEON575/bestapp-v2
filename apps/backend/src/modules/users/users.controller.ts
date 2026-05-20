@@ -15,6 +15,12 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('managers')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  findManagers() {
+    return this.usersService.findManagers();
+  }
+
   @Get(':id')
   @Roles('super_admin', 'owner')
   findOne(@Param('id') id: string) {

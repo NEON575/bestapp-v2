@@ -32,6 +32,8 @@ export class SalariesService {
         fullName: dto.fullName,
         phone: dto.phone,
         title: dto.title,
+        roleKey: dto.roleKey,
+        notes: dto.notes,
         isActive: dto.isActive ?? true
       }
     });
@@ -40,7 +42,14 @@ export class SalariesService {
   updateEmployee(id: string, dto: UpdateEmployeeDto) {
     return this.prisma.employee.update({
       where: { id },
-      data: dto
+      data: {
+        fullName: dto.fullName,
+        phone: dto.phone,
+        title: dto.title,
+        roleKey: dto.roleKey,
+        notes: dto.notes,
+        isActive: dto.isActive
+      }
     });
   }
 

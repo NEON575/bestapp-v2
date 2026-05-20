@@ -11,6 +11,7 @@ import { buildPaginatedResponse, normalizePagination } from '../../common/query/
 import { calculateOrderProfitability } from '../../common/business/profitability';
 import { SalesService } from '../sales/sales.service';
 import { UpdateSalesEntryDto } from '../sales/dto/sales.dto';
+import { normalizeCreateOrderItem } from '../../common/business/order-items';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -169,9 +170,8 @@ export class OrdersService {
         }
 
         const items = dto.items ?? [];
-        const totalAmount = roundMoney(
-          items.reduce((sum, item) => sum + toNumber(item.totalPrice || item.unitPrice * item.quantity), 0)
-        );
+        const normalizedItems = items.map((item) => normalizeCreateOrderItem(item as any));
+        const totalAmount = roundMoney(normalizedItems.reduce((sum, item) => sum + toNumber(item.totalPrice), 0));
 
         const order = await tx.order.create({
           data: {
@@ -179,14 +179,17 @@ export class OrdersService {
             customerId: dto.customerId,
             managerId: dto.managerId,
             status: (dto.status as OrderStatus) ?? OrderStatus.draft,
+            createdAt: dto.date ? new Date(dto.date) : undefined,
             deadlineAt: dto.deadlineAt ? new Date(dto.deadlineAt) : null,
             comment: dto.comment,
             totalAmount,
-            items: items.length
+            items: normalizedItems.length
               ? {
-                  create: items.map((item) => ({
+                  create: normalizedItems.map((item) => ({
                     name: item.name,
                     productType: item.productType,
+                    formatText: item.formatText,
+                    printColorText: item.printColorText,
                     width: item.width,
                     height: item.height,
                     quantity: item.quantity,

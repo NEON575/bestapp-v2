@@ -1,6 +1,6 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/query/pagination.dto';
 
 export enum StockMovementTypeDto {
@@ -42,7 +42,7 @@ export class MaterialQueryDto extends PaginationQueryDto {
 }
 
 export class CreateMaterialDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   categoryId?: string;
@@ -51,7 +51,7 @@ export class CreateMaterialDto {
   @IsString()
   name!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   sku?: string;
@@ -90,6 +90,16 @@ export class CreateMaterialDto {
   @IsBoolean()
   vatIncluded?: boolean;
 
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
   @ApiProperty({ required: false, example: 10 })
   @IsOptional()
   @IsNumber()
@@ -122,6 +132,33 @@ export class CreateMaterialDto {
 }
 
 export class UpdateMaterialDto extends PartialType(CreateMaterialDto) {}
+
+export class CreateMaterialCategoryDto {
+  @ApiProperty()
+  @IsString()
+  code!: string;
+
+  @ApiProperty()
+  @IsString()
+  name!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  codePrefix?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ type: 'array', example: [{ key: 'gram', label: 'Qram', type: 'number' }] })
+  @IsOptional()
+  @IsArray()
+  dynamicFields?: Array<Record<string, unknown>>;
+}
+
+export class UpdateMaterialCategoryDto extends PartialType(CreateMaterialCategoryDto) {}
 
 export class CreateStockMovementDto {
   @ApiProperty()

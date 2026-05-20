@@ -19,6 +19,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SalariesModule } from './modules/salaries/salaries.module';
 import { PapersModule } from './modules/papers/papers.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -40,6 +41,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     PrismaModule,
     AuthModule,
     UsersModule,
+    SettingsModule,
     RolesModule,
     CustomersModule,
     OrdersModule,

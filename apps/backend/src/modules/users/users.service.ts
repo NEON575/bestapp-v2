@@ -30,6 +30,37 @@ export class UsersService {
     });
   }
 
+  async findManagers() {
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        roles: {
+          some: {
+            role: {
+              key: { in: ['super_admin', 'owner', 'manager'] }
+            }
+          }
+        }
+      },
+      orderBy: { fullName: 'asc' },
+      include: {
+        roles: {
+          include: { role: true }
+        }
+      }
+    });
+
+    return users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      phone: user.phone,
+      isActive: user.isActive,
+      roles: user.roles.map((entry) => entry.role.key)
+    }));
+  }
+
   async create(dto: CreateUserDto) {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     return this.prisma.user.create({

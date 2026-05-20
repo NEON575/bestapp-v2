@@ -59,6 +59,8 @@ export interface UserSummary {
   email: string;
   fullName: string;
   phone?: string | null;
+  isActive?: boolean;
+  roles?: string[];
 }
 
 export interface CustomerListItem {
@@ -69,6 +71,8 @@ export interface CustomerListItem {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
+  inquiryNote?: string | null;
+  isActive?: boolean;
   totalOrders?: number;
   totalAmount?: number;
   createdAt?: string;
@@ -104,6 +108,8 @@ export interface EmployeeItem {
   fullName: string;
   phone?: string | null;
   title?: string | null;
+  roleKey?: string | null;
+  notes?: string | null;
   isActive: boolean;
 }
 
@@ -288,6 +294,8 @@ export interface OrderItemDetail {
   id: string;
   name: string;
   productType: string;
+  formatText?: string | null;
+  printColorText?: string | null;
   width: number;
   height: number;
   quantity: number;
@@ -404,6 +412,8 @@ export interface InventoryMaterialItem {
   quantityInPack?: number;
   unitCost?: number;
   vatIncluded?: boolean;
+  metadata?: Record<string, unknown> | null;
+  isActive?: boolean;
   minStockLevel: number;
   onHand?: number;
   reserved?: number;
@@ -418,7 +428,21 @@ export interface MaterialCategoryItem {
   id: string;
   code: string;
   name: string;
+  codePrefix?: string;
+  dynamicFields?: MaterialDynamicField[];
   description?: string | null;
+}
+
+export interface MaterialDynamicFieldOption {
+  label: string;
+  value: string;
+}
+
+export interface MaterialDynamicField {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'select';
+  options?: MaterialDynamicFieldOption[];
 }
 
 export interface WarehouseItem {
@@ -593,6 +617,31 @@ export interface FinanceSummary {
   todayExpense: number;
   monthIncome: number;
   monthExpense: number;
+}
+
+export interface CompanySettings {
+  id?: string;
+  companyName?: string | null;
+  legalName?: string | null;
+  taxId?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  iban?: string | null;
+  bankCode?: string | null;
+  correspondentAccount?: string | null;
+  swift?: string | null;
+  logoUrl?: string | null;
+  notes?: string | null;
+}
+
+export interface SettingsReferenceOptions {
+  paymentTypes: string[];
+  orderStatuses: string[];
+  qaimaStatuses: string[];
+  productionStages: string[];
 }
 
 export interface ProductionBoard {

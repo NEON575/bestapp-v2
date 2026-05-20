@@ -31,6 +31,16 @@ export class CreateEmployeeDto {
   @IsString()
   title?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  roleKey?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
   @ApiPropertyOptional({ default: true })
   @Transform(({ value }) => toBoolean(value))
   @IsOptional()
@@ -74,4 +84,3 @@ export class CreateSalaryEntryDto {
 }
 
 export class UpdateSalaryEntryDto extends PartialType(CreateSalaryEntryDto) {}
-
