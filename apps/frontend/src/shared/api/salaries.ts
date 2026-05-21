@@ -55,5 +55,10 @@ export const salariesClient = {
   async updateEmployee(id: string, dto: UpdateEmployeeDto) {
     const { data } = await api.patch<EmployeeItem>(`/salaries/employees/${id}`, dto);
     return data;
+  },
+
+  async removeEmployee(id: string) {
+    const { data } = await api.delete<EmployeeItem>(`/salaries/employees/${id}`);
+    return data;
   }
 };

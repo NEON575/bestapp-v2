@@ -20,6 +20,13 @@ import {
 } from '../src/common/business/material-catalog';
 import { normalizeCreateOrderItem } from '../src/common/business/order-items';
 import {
+  buildEmployeePlaceholderEmail,
+  employeeAppearsInManagers,
+  mapEmployeeRoleToUserRoles
+} from '../src/common/business/employee-user';
+import { normalizeAppLanguage, mergeAppPreferences } from '../src/common/business/app-preferences';
+import { resolveApprovedById } from '../src/common/business/pricing-approval';
+import {
   resolveDebtStatus,
   resolveInvoiceStatus,
   assertNoOverpayment
@@ -366,6 +373,34 @@ test('order create works without productType and material', () => {
   assert.equal(item.totalPrice, 0);
   assert.equal(item.formatText, '90x50');
   assert.equal(item.printColorText, '4+4');
+});
+
+test('employees created in settings map to manager-capable users correctly', () => {
+  assert.deepEqual(mapEmployeeRoleToUserRoles('manager'), ['manager']);
+  assert.deepEqual(mapEmployeeRoleToUserRoles('owner'), ['owner']);
+  assert.deepEqual(mapEmployeeRoleToUserRoles('other'), []);
+  assert.equal(employeeAppearsInManagers('manager'), true);
+  assert.equal(employeeAppearsInManagers('owner'), true);
+  assert.equal(employeeAppearsInManagers('production'), false);
+  assert.equal(buildEmployeePlaceholderEmail('Aysel Məmmədova', '12345678-aaaa-bbbb-cccc-dddddddddddd').endsWith('@bestapp.local'), true);
+});
+
+test('approve order keeps approvedById only for real users', () => {
+  assert.equal(resolveApprovedById({ requestedUserId: 'u1', existingUserId: 'u1' }), 'u1');
+  assert.equal(resolveApprovedById({ requestedUserId: 'u1', existingUserId: 'u2' }), null);
+  assert.equal(resolveApprovedById({ requestedUserId: 'u1', existingUserId: null }), null);
+});
+
+test('language settings normalize and persist valid ui language', () => {
+  assert.equal(normalizeAppLanguage(undefined), 'az');
+  assert.equal(normalizeAppLanguage('ru'), 'ru');
+  assert.deepEqual(mergeAppPreferences({ theme: 'light' }, { language: 'ru' }), {
+    theme: 'light',
+    language: 'ru'
+  });
+  assert.deepEqual(mergeAppPreferences({ language: 'ru' }, { language: 'invalid' }), {
+    language: 'az'
+  });
 });
 
 test('sales summary totals keep filtered excel scenarios consistent', () => {

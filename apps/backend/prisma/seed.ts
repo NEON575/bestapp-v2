@@ -329,8 +329,8 @@ async function main() {
 
   await Promise.all(
     [
-      { fullName: 'Aysel Mammadova', title: 'Menecer' },
-      { fullName: 'Rashad Aliyev', title: 'Cap operatoru' }
+      { fullName: 'Aysel Mammadova', title: 'Menecer', roleKey: 'manager' },
+      { fullName: 'Rashad Aliyev', title: 'Cap operatoru', roleKey: 'production' }
     ].map(async (employee) => {
       const existing = await prisma.employee.findFirst({ where: { fullName: employee.fullName } });
 
@@ -339,6 +339,7 @@ async function main() {
           where: { id: existing.id },
           data: {
             title: employee.title,
+            roleKey: employee.roleKey,
             isActive: true
           }
         });
@@ -348,6 +349,7 @@ async function main() {
         data: {
           fullName: employee.fullName,
           title: employee.title,
+          roleKey: employee.roleKey,
           isActive: true
         }
       });
@@ -471,6 +473,20 @@ async function main() {
     }
   });
 
+  await prisma.appSetting.upsert({
+    where: { key: 'ui.preferences' },
+    update: {
+      valueJson: { language: 'az' },
+      isActive: true,
+      deletedAt: null
+    },
+    create: {
+      key: 'ui.preferences',
+      valueJson: { language: 'az' },
+      isActive: true
+    }
+  });
+
   const passwordHash = await bcrypt.hash('Admin123!', 10);
 
   await prisma.cashbox.upsert({
@@ -506,6 +522,58 @@ async function main() {
     }
   });
 
+  const managerRole = roleRows.find((role) => role.key === 'manager');
+  const productionRole = roleRows.find((role) => role.key === 'production');
+
+  const seededEmployees = await prisma.employee.findMany({
+    where: {
+      fullName: { in: ['Aysel Mammadova', 'Rashad Aliyev'] }
+    }
+  });
+
+  for (const employee of seededEmployees) {
+    const roleId = employee.roleKey === 'manager' ? managerRole?.id : employee.roleKey === 'production' ? productionRole?.id : undefined;
+    if (!roleId) continue;
+
+    const email = `${employee.fullName.toLowerCase().replace(/\s+/g, '.')}.${employee.id.slice(0, 8)}@bestapp.local`;
+    const employeePasswordHash = await bcrypt.hash(`Emp-${employee.id.slice(0, 8)}!`, 10);
+    const employeeUser = await prisma.user.upsert({
+      where: { email },
+      update: {
+        fullName: employee.fullName,
+        phone: employee.phone,
+        isActive: employee.isActive,
+        deletedAt: null
+      },
+      create: {
+        email,
+        fullName: employee.fullName,
+        phone: employee.phone,
+        isActive: employee.isActive,
+        passwordHash: employeePasswordHash
+      }
+    });
+
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: { userId: employeeUser.id }
+    });
+
+    await prisma.userRole.upsert({
+      where: {
+        userId_roleId: {
+          userId: employeeUser.id,
+          roleId
+        }
+      },
+      update: {},
+      create: {
+        userId: employeeUser.id,
+        roleId
+      }
+    });
+  }
+
   if (superAdmin) {
     await prisma.userRole.upsert({
       where: {
@@ -524,10 +592,10 @@ async function main() {
 
   const demoCustomers = await Promise.all(
     [
-      { name: 'ABC Print', companyName: 'ABC MMC', phone: '+994501110001', notes: 'seed:customer:abc' },
-      { name: 'Baku Store', companyName: 'Baku Store LLC', phone: '+994501110002', notes: 'seed:customer:baku-store' },
-      { name: 'Green Media', companyName: 'Green Media', phone: '+994501110003', notes: 'seed:customer:green-media' },
-      { name: 'Office Line', companyName: 'Office Line', phone: '+994501110004', notes: 'seed:customer:office-line' }
+      { name: 'ABC Print', companyName: 'ABC MMC', phone: '+994501110001', taxId: '1301234501', notes: 'seed:customer:abc' },
+      { name: 'Baku Store', companyName: 'Baku Store LLC', phone: '+994501110002', taxId: '1401234502', notes: 'seed:customer:baku-store' },
+      { name: 'Green Media', companyName: 'Green Media', phone: '+994501110003', taxId: '1501234503', notes: 'seed:customer:green-media' },
+      { name: 'Office Line', companyName: 'Office Line', phone: '+994501110004', taxId: '1601234504', notes: 'seed:customer:office-line' }
     ].map(async (customer) => {
       const existing = await prisma.customer.findFirst({
         where: { notes: customer.notes }

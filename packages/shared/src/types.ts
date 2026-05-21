@@ -69,6 +69,7 @@ export interface CustomerListItem {
   companyName?: string | null;
   phone?: string | null;
   email?: string | null;
+  taxId?: string | null;
   address?: string | null;
   notes?: string | null;
   inquiryNote?: string | null;
@@ -105,6 +106,7 @@ export interface SupplierItem {
 
 export interface EmployeeItem {
   id: string;
+  userId?: string | null;
   fullName: string;
   phone?: string | null;
   title?: string | null;
@@ -431,6 +433,7 @@ export interface MaterialCategoryItem {
   codePrefix?: string;
   dynamicFields?: MaterialDynamicField[];
   description?: string | null;
+  isActive?: boolean;
 }
 
 export interface MaterialDynamicFieldOption {
@@ -642,6 +645,26 @@ export interface SettingsReferenceOptions {
   orderStatuses: string[];
   qaimaStatuses: string[];
   productionStages: string[];
+}
+
+export interface AppPreferences {
+  language: 'az' | 'ru';
+}
+
+export interface SystemOptionItem {
+  id: string;
+  groupKey: string;
+  value: string;
+  labelAz: string;
+  labelRu: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface SettingsReferenceGroup {
+  key: string;
+  label: string;
+  items: SystemOptionItem[];
 }
 
 export interface ProductionBoard {

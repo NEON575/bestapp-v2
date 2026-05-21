@@ -27,7 +27,8 @@ export class CustomersService {
               { name: { contains: query.search, mode: 'insensitive' } },
               { companyName: { contains: query.search, mode: 'insensitive' } },
               { email: { contains: query.search, mode: 'insensitive' } },
-              { phone: { contains: query.search, mode: 'insensitive' } }
+              { phone: { contains: query.search, mode: 'insensitive' } },
+              { taxId: { contains: query.search, mode: 'insensitive' } }
             ]
           }
         : {})

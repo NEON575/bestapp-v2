@@ -10,8 +10,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  ScanSearch,
   ReceiptText,
+  ScanSearch,
   Settings2,
   ShieldCheck,
   ShoppingCart,
@@ -23,33 +23,34 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@bestapp/ui';
 import { useAuth } from '../auth/auth-context';
+import { useLanguage } from '../i18n/language-context';
 import { canAccess } from '../lib/access';
 import { initials } from '../lib/format';
 
 type NavItem = {
   to: string;
-  label: string;
+  labelKey: string;
   icon: LucideIcon;
   end?: boolean;
   roles?: string[];
 };
 
 const navItems: NavItem[] = [
-  { to: '/', label: 'Panel', icon: LayoutDashboard, end: true },
-  { to: '/orders', label: 'Sifariş', icon: FileSpreadsheet },
-  { to: '/sales', label: 'Satış', icon: ReceiptText },
-  { to: '/customers', label: 'Müştəri', icon: Users2 },
-  { to: '/production', label: 'İstehsal', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
-  { to: '/inventory', label: 'Anbar', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
-  { to: '/materials', label: 'Materiallar', icon: SquareStack, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
-  { to: '/import-excel', label: 'Import Excel', icon: ScanSearch, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
-  { to: '/finance', label: 'Maliyyə', icon: CircleDollarSign, roles: ['super_admin', 'owner', 'accountant'] },
-  { to: '/customer-debts', label: 'Müştəri borcu', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
-  { to: '/supplier-debts', label: 'Təchizatçı borcu', icon: WalletCards, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
-  { to: '/purchases', label: 'Alış', icon: ShoppingCart, roles: ['super_admin', 'owner', 'manager', 'accountant', 'warehouse'] },
-  { to: '/salaries', label: 'Maaş', icon: ReceiptText, roles: ['super_admin', 'owner', 'accountant'] },
-  { to: '/debts', label: 'Borc mərkəzi', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
-  { to: '/settings', label: 'Ayarlar', icon: Settings2, roles: ['super_admin', 'owner'] }
+  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true },
+  { to: '/orders', labelKey: 'nav.orders', icon: FileSpreadsheet },
+  { to: '/sales', labelKey: 'nav.sales', icon: ReceiptText },
+  { to: '/customers', labelKey: 'nav.customers', icon: Users2 },
+  { to: '/production', labelKey: 'nav.production', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
+  { to: '/inventory', labelKey: 'nav.inventory', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/materials', labelKey: 'nav.materials', icon: SquareStack, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },
+  { to: '/import-excel', labelKey: 'nav.import', icon: ScanSearch, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/finance', labelKey: 'nav.finance', icon: CircleDollarSign, roles: ['super_admin', 'owner', 'accountant'] },
+  { to: '/customer-debts', labelKey: 'nav.customerDebts', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/supplier-debts', labelKey: 'nav.supplierDebts', icon: WalletCards, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/purchases', labelKey: 'nav.purchases', icon: ShoppingCart, roles: ['super_admin', 'owner', 'manager', 'accountant', 'warehouse'] },
+  { to: '/salaries', labelKey: 'nav.salaries', icon: ReceiptText, roles: ['super_admin', 'owner', 'accountant'] },
+  { to: '/debts', labelKey: 'nav.debts', icon: BadgeDollarSign, roles: ['super_admin', 'owner', 'manager', 'accountant'] },
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings2, roles: ['super_admin', 'owner'] }
 ];
 
 const roleLabels: Record<string, string> = {
@@ -66,6 +67,7 @@ export function DashboardLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { session, logout } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const userLabel = useMemo(() => {
@@ -91,8 +93,8 @@ export function DashboardLayout() {
       <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">BestApp</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">Çap evi idarəetməsi</h2>
-          <p className="mt-1 text-xs text-slate-500">Satış, istehsal, anbar və maliyyə axını bir paneldə</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">{t('layout.title', 'Çap evi idarəetməsi')}</h2>
+          <p className="mt-1 text-xs text-slate-500">{t('layout.subtitle', 'Satış, istehsal, anbar və maliyyə axını bir paneldə')}</p>
         </div>
         <button
           type="button"
@@ -121,7 +123,7 @@ export function DashboardLayout() {
               }
             >
               <Icon className="h-4 w-4" />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey, item.labelKey)}</span>
             </NavLink>
           );
         })}
@@ -188,13 +190,13 @@ export function DashboardLayout() {
                 </button>
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.28em] text-slate-400">ERP / MIS</p>
-                  <h1 className="truncate text-lg font-semibold text-slate-950">Çap evi əməliyyat paneli</h1>
+                  <h1 className="truncate text-lg font-semibold text-slate-950">{t('layout.headerTitle', 'Çap evi əməliyyat paneli')}</h1>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <Button variant="secondary" className="hidden sm:inline-flex" onClick={() => navigate('/orders/new')}>
-                  Yeni sifariş
+                  {t('layout.newOrder', 'Yeni sifariş')}
                 </Button>
 
                 <div className="relative">
@@ -235,7 +237,7 @@ export function DashboardLayout() {
                           onClick={() => navigate('/settings')}
                         >
                           <ShieldCheck className="h-4 w-4" />
-                          Giriş və rol ayarları
+                          {t('layout.security', 'Giriş və rol ayarları')}
                         </button>
                         <button
                           type="button"
@@ -243,7 +245,7 @@ export function DashboardLayout() {
                           onClick={handleLogout}
                         >
                           <LogOut className="h-4 w-4" />
-                          Çıxış
+                          {t('layout.logout', 'Çıxış')}
                         </button>
                       </div>
                     </div>

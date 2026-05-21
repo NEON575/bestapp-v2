@@ -1,7 +1,12 @@
-import { Body, Controller, Get, Inject, Patch } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { UpdateCompanySettingsDto } from './dto/settings.dto';
+import {
+  CreateSystemOptionDto,
+  UpdateAppPreferencesDto,
+  UpdateCompanySettingsDto,
+  UpdateSystemOptionDto
+} from './dto/settings.dto';
 import { SettingsService } from './settings.service';
 
 @ApiTags('settings')
@@ -21,9 +26,45 @@ export class SettingsController {
     return this.settingsService.updateCompanySettings(dto);
   }
 
+  @Get('preferences')
+  @Roles('super_admin', 'owner')
+  getPreferences() {
+    return this.settingsService.getAppPreferences();
+  }
+
+  @Patch('preferences')
+  @Roles('super_admin', 'owner')
+  updatePreferences(@Body() dto: UpdateAppPreferencesDto) {
+    return this.settingsService.updateAppPreferences(dto);
+  }
+
   @Get('reference-options')
   @Roles('super_admin', 'owner', 'manager', 'accountant')
   getReferenceOptions() {
     return this.settingsService.getReferenceOptions();
+  }
+
+  @Get('references')
+  @Roles('super_admin', 'owner')
+  getReferences() {
+    return this.settingsService.listSystemReferenceGroups();
+  }
+
+  @Post('references')
+  @Roles('super_admin', 'owner')
+  createReference(@Body() dto: CreateSystemOptionDto) {
+    return this.settingsService.createSystemOption(dto);
+  }
+
+  @Patch('references/:id')
+  @Roles('super_admin', 'owner')
+  updateReference(@Param('id') id: string, @Body() dto: UpdateSystemOptionDto) {
+    return this.settingsService.updateSystemOption(id, dto);
+  }
+
+  @Delete('references/:id')
+  @Roles('super_admin', 'owner')
+  removeReference(@Param('id') id: string) {
+    return this.settingsService.removeSystemOption(id);
   }
 }

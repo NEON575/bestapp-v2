@@ -45,6 +45,12 @@ export class SalariesController {
     return this.salariesService.updateEmployee(id, dto);
   }
 
+  @Delete('employees/:id')
+  @Roles('super_admin', 'owner')
+  removeEmployee(@Param('id') id: string) {
+    return this.salariesService.removeEmployee(id);
+  }
+
   @Post()
   @Roles('super_admin', 'owner', 'accountant')
   create(@Body() dto: CreateSalaryEntryDto) {

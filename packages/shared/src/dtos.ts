@@ -3,6 +3,7 @@ export interface CreateCustomerDto {
   companyName?: string;
   phone?: string;
   email?: string;
+  taxId?: string;
   address?: string;
   notes?: string;
   inquiryNote?: string;
@@ -99,6 +100,7 @@ export interface CreateMaterialCategoryDto {
   name: string;
   codePrefix?: string;
   description?: string;
+  isActive?: boolean;
   dynamicFields?: Array<{
     key: string;
     label: string;
@@ -407,3 +409,18 @@ export interface UpdateCompanySettingsDto {
   logoUrl?: string;
   notes?: string;
 }
+
+export interface SettingsPreferenceDto {
+  language?: 'az' | 'ru';
+}
+
+export interface CreateSystemOptionDto {
+  groupKey: string;
+  value: string;
+  labelAz: string;
+  labelRu: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateSystemOptionDto extends Partial<CreateSystemOptionDto> {}

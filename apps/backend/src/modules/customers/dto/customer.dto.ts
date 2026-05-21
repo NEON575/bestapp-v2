@@ -24,6 +24,11 @@ export class CreateCustomerDto {
   @ApiProperty()
   @IsOptional()
   @IsString()
+  taxId?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
   address?: string;
 
   @ApiProperty()

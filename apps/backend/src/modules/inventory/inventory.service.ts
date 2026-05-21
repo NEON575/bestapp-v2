@@ -773,6 +773,7 @@ export class InventoryService {
         name: data.name,
         codePrefix: data.codePrefix ?? data.code.slice(0, 3).toUpperCase(),
         description: data.description,
+        isActive: data.isActive ?? true,
         dynamicFields: (data.dynamicFields ?? []) as Prisma.InputJsonValue
       }
     });
@@ -786,6 +787,7 @@ export class InventoryService {
         name: data.name,
         codePrefix: data.codePrefix,
         description: data.description,
+        isActive: data.isActive,
         dynamicFields: data.dynamicFields as Prisma.InputJsonValue | undefined
       }
     });
@@ -803,7 +805,7 @@ export class InventoryService {
   listCategories() {
     return this.prisma.materialCategory.findMany({
       where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' }
+      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }]
     }).then((rows) =>
       rows.map((row) => ({
         ...row,

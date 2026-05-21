@@ -152,6 +152,11 @@ export class CreateMaterialCategoryDto {
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
   @ApiPropertyOptional({ type: 'array', example: [{ key: 'gram', label: 'Qram', type: 'number' }] })
   @IsOptional()
   @IsArray()

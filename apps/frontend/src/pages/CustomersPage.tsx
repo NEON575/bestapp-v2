@@ -29,8 +29,10 @@ export function CustomersPage() {
     companyName: '',
     phone: '',
     email: '',
-    address: '',
-    notes: ''
+    taxId: '',
+    notes: '',
+    inquiryNote: '',
+    isActive: true
   });
 
   const load = async (nextQuery = query) => {
@@ -40,8 +42,8 @@ export function CustomersPage() {
       const response = await customersClient.list(nextQuery);
       setRows(response.data);
       setMeta(response.meta);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить клиентов');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Müştərilər yüklənmədi');
     } finally {
       setLoading(false);
     }
@@ -49,7 +51,6 @@ export function CustomersPage() {
 
   useEffect(() => {
     void load(query);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.page, query.limit, query.search]);
 
   const updateQuery = (patch: Partial<typeof query>) => {
@@ -61,11 +62,20 @@ export function CustomersPage() {
     setCreating(true);
     try {
       await customersClient.create(form);
-      setForm({ name: '', companyName: '', phone: '', email: '', address: '', notes: '' });
+      setForm({
+        name: '',
+        companyName: '',
+        phone: '',
+        email: '',
+        taxId: '',
+        notes: '',
+        inquiryNote: '',
+        isActive: true
+      });
       setShowCreate(false);
       await load(query);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось создать клиента');
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Müştəri yaradılmadı');
     } finally {
       setCreating(false);
     }
@@ -74,7 +84,7 @@ export function CustomersPage() {
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Клиенты" description="CRM-список клиентов и их взаимодействий." />
+        <PageHeader title="Müştərilər" description="Müştəri bazası və satışla əlaqəli kartlar." />
         <LoadingState rows={4} />
       </div>
     );
@@ -87,41 +97,56 @@ export function CustomersPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Клиенты"
-        description="Карточки клиентов, контакты и история работы."
-        actions={<Button variant="secondary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? 'Скрыть форму' : 'Создать клиента'}</Button>}
+        title="Müştərilər"
+        description="Əlaqə məlumatları, VÖEN və satış tarixçəsi üçün əsas kartlar."
+        actions={
+          <Button variant="secondary" onClick={() => setShowCreate((value) => !value)}>
+            {showCreate ? 'Formanı gizlət' : 'Yeni müştəri'}
+          </Button>
+        }
       />
 
       <FilterBar>
         <div className="w-full lg:max-w-md">
-          <SearchInput value={query.search} onChange={(value) => updateQuery({ search: value })} placeholder="Поиск клиента" />
+          <SearchInput value={query.search} onChange={(value) => updateQuery({ search: value })} placeholder="Müştəri axtarışı" />
         </div>
       </FilterBar>
 
       {showCreate ? (
         <Card className="border-slate-200 bg-white p-5 shadow-sm">
           <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={handleCreate}>
-            <Field label="Имя">
+            <Field label="Ad">
               <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
             </Field>
-            <Field label="Компания">
+            <Field label="Şirkət">
               <Input value={form.companyName} onChange={(event) => setForm((current) => ({ ...current, companyName: event.target.value }))} />
             </Field>
-            <Field label="Телефон">
+            <Field label="Telefon">
               <Input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
             </Field>
-            <Field label="Электронная почта">
+            <Field label="Email">
               <Input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
             </Field>
-            <Field label="Адрес">
-              <Input value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} />
+            <Field label="VÖEN">
+              <Input value={form.taxId} onChange={(event) => setForm((current) => ({ ...current, taxId: event.target.value }))} />
             </Field>
-            <Field label="Заметки">
+            <Field label="Qeyd">
               <Input value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
             </Field>
+            <Field label="Sorğu / müraciət" className="md:col-span-2 xl:col-span-3">
+              <Input value={form.inquiryNote} onChange={(event) => setForm((current) => ({ ...current, inquiryNote: event.target.value }))} />
+            </Field>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700 md:col-span-2 xl:col-span-3">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
+              />
+              Aktiv müştəri
+            </label>
             <div className="md:col-span-2 xl:col-span-3 flex justify-end">
               <Button type="submit" disabled={creating}>
-                {creating ? 'Создаем...' : 'Создать клиента'}
+                {creating ? 'Yaradılır...' : 'Müştərini yarat'}
               </Button>
             </div>
           </form>
@@ -132,33 +157,24 @@ export function CustomersPage() {
         rowKey={(row) => row.id}
         data={rows}
         columns={[
-          { key: 'name', header: 'Имя', render: (row) => row.name },
-          { key: 'company', header: 'Компания', render: (row) => row.companyName ?? '—' },
-          { key: 'phone', header: 'Телефон', render: (row) => row.phone ?? '—' },
-          { key: 'email', header: 'Электронная почта', render: (row) => row.email ?? '—' },
-          { key: 'address', header: 'Адрес', render: (row) => row.address ?? '—' },
-          { key: 'notes', header: 'Заметки', render: (row) => row.notes ?? '—' },
-          {
-            key: 'orders',
-            header: 'Заказы',
-            render: (row) => row.totalOrders ?? 0
-          },
-          {
-            key: 'created',
-            header: 'Создан',
-            render: (row) => formatDateOnly(row.createdAt)
-          },
+          { key: 'name', header: 'Ad', render: (row) => row.name },
+          { key: 'company', header: 'Şirkət', render: (row) => row.companyName ?? '—' },
+          { key: 'phone', header: 'Telefon', render: (row) => row.phone ?? '—' },
+          { key: 'email', header: 'Email', render: (row) => row.email ?? '—' },
+          { key: 'taxId', header: 'VÖEN', render: (row) => row.taxId ?? '—' },
+          { key: 'notes', header: 'Qeyd', render: (row) => row.notes ?? '—' },
+          { key: 'created', header: 'Yaradılıb', render: (row) => formatDateOnly(row.createdAt) },
           {
             key: 'actions',
-            header: 'Действия',
+            header: 'Əməliyyat',
             render: (row) => (
               <Button variant="secondary" onClick={() => navigate(`/customers/${row.id}`)}>
-                Открыть
+                Aç
               </Button>
             )
           }
         ]}
-        emptyState={<EmptyState title="Клиенты не найдены" description="Создайте первого клиента." />}
+        emptyState={<EmptyState title="Müştəri tapılmadı" description="İlk müştərini əlavə edin." />}
       />
 
       <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => updateQuery({ page })} />
@@ -166,9 +182,9 @@ export function CustomersPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <label className="block space-y-2">
+    <label className={`block space-y-2 ${className ?? ''}`}>
       <span className="text-sm font-medium text-slate-700">{label}</span>
       {children}
     </label>

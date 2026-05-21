@@ -3,6 +3,7 @@ import { OrderStatus, Prisma, StockReservationStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { assertOrderStatusTransition } from '../../common/business/order-status';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { resolveApprovedById } from '../../common/business/pricing-approval';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -266,6 +267,16 @@ export class PricingService {
       throw new NotFoundException('Cost calculation not found');
     }
 
+    const approver = approvedById
+      ? await db.user.findFirst({
+          where: { id: approvedById, deletedAt: null, isActive: true },
+          select: { id: true }
+        })
+      : null;
+    const safeApprovedById = resolveApprovedById({
+      requestedUserId: approvedById,
+      existingUserId: approver?.id
+    });
     const approvedAt = new Date();
     const nextStatus = OrderStatus.approved;
     assertOrderStatusTransition(order.status, nextStatus);
@@ -276,7 +287,7 @@ export class PricingService {
       where: { orderId },
       data: {
         approvedAt,
-        approvedById
+        approvedById: safeApprovedById
       }
     });
 
@@ -284,7 +295,7 @@ export class PricingService {
       where: { orderId, approvedAt: null },
       data: {
         approvedAt,
-        approvedById
+        approvedById: safeApprovedById
       }
     });
 
@@ -303,7 +314,7 @@ export class PricingService {
       beforeData: beforeOrder,
       afterData: updatedOrder,
       metadata: {
-        approvedById
+        approvedById: safeApprovedById
       }
     });
 

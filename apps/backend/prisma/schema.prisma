@@ -177,6 +177,7 @@ model User {
   cashboxTransactions CashboxTransaction[] @relation("CashboxTransactionCreatedBy")
   auditLogs         AuditLog[]
   managedSalesEntries SalesEntry[]      @relation("SalesEntryManager")
+  employee          Employee?
 
   @@map("users")
 }
@@ -238,6 +239,7 @@ model Customer {
   companyName String?
   phone       String?
   email       String?
+  taxId       String?
   address     String?
   notes       String?
   inquiryNote String?
@@ -274,6 +276,7 @@ model Supplier {
 
 model Employee {
   id            String        @id @default(uuid())
+  userId        String?       @unique
   fullName      String
   phone         String?
   title         String?
@@ -283,6 +286,7 @@ model Employee {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   salaryEntries SalaryEntry[]
 
   @@map("employees")
@@ -322,6 +326,35 @@ model CompanySetting {
   updatedAt            DateTime @updatedAt
 
   @@map("company_settings")
+}
+
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  valueJson Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@map("app_settings")
+}
+
+model SystemOption {
+  id        String   @id @default(uuid())
+  groupKey  String
+  value     String
+  labelAz   String
+  labelRu   String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([groupKey, value])
+  @@index([groupKey, sortOrder])
+  @@map("system_options")
 }
 
 model Order {
@@ -401,6 +434,7 @@ model MaterialCategory {
   codePrefix  String     @default("MAT")
   dynamicFields Json?
   description String?
+  isActive    Boolean    @default(true)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?

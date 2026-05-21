@@ -16,6 +16,7 @@ function createEmptyCustomer(): CreateCustomerDto {
     companyName: '',
     phone: '',
     email: '',
+    taxId: '',
     notes: '',
     inquiryNote: '',
     isActive: true
@@ -57,23 +58,27 @@ export function OrderCreatePage() {
   const [error, setError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  const loadOptions = async () => {
+    const [customersResponse, managersResponse] = await Promise.all([
+      customersClient.list({ page: 1, limit: 200 }),
+      usersClient.listManagers()
+    ]);
+
+    setCustomers(customersResponse.data);
+    setManagers(managersResponse);
+    setForm((current) => ({
+      ...current,
+      managerId: current.managerId || managersResponse[0]?.id || ''
+    }));
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const [customersResponse, managersResponse] = await Promise.all([
-          customersClient.list({ page: 1, limit: 200 }),
-          usersClient.listManagers()
-        ]);
-
-        setCustomers(customersResponse.data);
-        setManagers(managersResponse);
-        setForm((current) => ({
-          ...current,
-          managerId: current.managerId || managersResponse[0]?.id || ''
-        }));
+        await loadOptions();
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Sifariş forması yüklənmədi');
       } finally {
@@ -83,6 +88,8 @@ export function OrderCreatePage() {
 
     void load();
   }, []);
+
+  const item = form.items?.[0];
 
   const updateItem = (patch: Partial<NonNullable<CreateOrderDto['items']>[number]>) => {
     setForm((current) => ({
@@ -97,15 +104,15 @@ export function OrderCreatePage() {
   };
 
   const validate = () => {
-    const item = form.items?.[0];
+    const currentItem = form.items?.[0];
     const nextErrors: Record<string, string> = {};
 
     if (!form.customerId) nextErrors.customerId = 'Müştəri seçin';
     if (!form.managerId) nextErrors.managerId = 'Menecer seçin';
     if (!form.date) nextErrors.date = 'Tarix seçin';
     if (!form.deadlineAt) nextErrors.deadlineAt = 'Təhvil tarixi seçin';
-    if (!item?.name?.trim()) nextErrors.productName = 'Məhsulun adını yazın';
-    if (!item?.quantity || Number(item.quantity) <= 0) nextErrors.quantity = 'Say 0-dan böyük olmalıdır';
+    if (!currentItem?.name?.trim()) nextErrors.productName = 'Məhsulun adını yazın';
+    if (!currentItem?.quantity || Number(currentItem.quantity) <= 0) nextErrors.quantity = 'Say 0-dan böyük olmalıdır';
 
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -113,13 +120,8 @@ export function OrderCreatePage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!validate()) {
+    if (!validate() || !item) {
       toast.warning('Forma natamamdır', 'Vacib sahələri doldurun.');
-      return;
-    }
-
-    const item = form.items?.[0];
-    if (!item) {
       return;
     }
 
@@ -127,7 +129,7 @@ export function OrderCreatePage() {
     setError(null);
 
     try {
-      const payload: CreateOrderDto = {
+      const created = await ordersClient.create({
         customerId: form.customerId,
         managerId: form.managerId,
         status: 'draft',
@@ -143,9 +145,8 @@ export function OrderCreatePage() {
             comment: item.comment || ''
           }
         ]
-      };
+      });
 
-      const created = await ordersClient.create(payload);
       toast.success('Sifariş yaradıldı', created.number);
       navigate(`/orders/${created.id}`);
     } catch (submitError) {
@@ -167,7 +168,7 @@ export function OrderCreatePage() {
     setCustomerSaving(true);
     try {
       const created = await customersClient.create(customerForm);
-      setCustomers((current) => [created, ...current]);
+      await loadOptions();
       setForm((current) => ({ ...current, customerId: created.id }));
       setCustomerForm(createEmptyCustomer());
       setShowCustomerModal(false);
@@ -187,13 +188,11 @@ export function OrderCreatePage() {
     return <ErrorState description={error} onRetry={() => window.location.reload()} />;
   }
 
-  const item = form.items?.[0];
-
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <PageHeader
         title="Sifariş yarat"
-        description="İşin qəbulunu sadə formada qeyd edin. Qiymət və maya dəyəri sonradan Satış və Hesablama bölməsində işlənəcək."
+        description="Burada iş qəbul olunur. Qiymət, xərc və xeyir sonradan Hesablama və Satış bölməsində işlənəcək."
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => navigate('/orders')}>
@@ -220,7 +219,8 @@ export function OrderCreatePage() {
                 <option value="">Müştəri seçin</option>
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.name}{customer.companyName ? ` - ${customer.companyName}` : ''}
+                    {customer.name}
+                    {customer.companyName ? ` — ${customer.companyName}` : ''}
                   </option>
                 ))}
               </select>
@@ -250,11 +250,7 @@ export function OrderCreatePage() {
           </Field>
 
           <Field label="Tarix" error={formErrors.date}>
-            <Input
-              type="date"
-              value={form.date ?? ''}
-              onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
-            />
+            <Input type="date" value={form.date ?? ''} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
           </Field>
 
           <Field label="Təhvil tarixi" error={formErrors.deadlineAt}>
@@ -284,20 +280,11 @@ export function OrderCreatePage() {
           </Field>
 
           <Field label="Say" error={formErrors.quantity}>
-            <Input
-              type="number"
-              min={1}
-              value={item?.quantity ?? 1}
-              onChange={(event) => updateItem({ quantity: Number(event.target.value) })}
-            />
+            <Input type="number" min={1} value={item?.quantity ?? 1} onChange={(event) => updateItem({ quantity: Number(event.target.value) })} />
           </Field>
 
           <Field label="Ölçü / format">
-            <Input
-              value={item?.formatText ?? ''}
-              onChange={(event) => updateItem({ formatText: event.target.value })}
-              placeholder="A4, A5, 90x50, 30x40"
-            />
+            <Input value={item?.formatText ?? ''} onChange={(event) => updateItem({ formatText: event.target.value })} placeholder="A4, A5, 90x50, 30x40" />
           </Field>
 
           <Field label="Qeyd" className="xl:col-span-3">
@@ -311,12 +298,7 @@ export function OrderCreatePage() {
         </div>
       </Card>
 
-      <Modal
-        open={showCustomerModal}
-        title="Tez müştəri yarat"
-        description="Sifarişdən çıxmadan yeni müştəri əlavə edin."
-        onClose={() => setShowCustomerModal(false)}
-      >
+      <Modal open={showCustomerModal} title="Tez müştəri yarat" description="Sifarişdən çıxmadan yeni müştəri əlavə edin." onClose={() => setShowCustomerModal(false)}>
         <form className="grid gap-4 md:grid-cols-2" onSubmit={createCustomer}>
           <Field label="Ad">
             <Input value={customerForm.name} onChange={(event) => setCustomerForm((current) => ({ ...current, name: event.target.value }))} required />
@@ -330,7 +312,10 @@ export function OrderCreatePage() {
           <Field label="Email">
             <Input value={customerForm.email ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, email: event.target.value }))} />
           </Field>
-          <Field label="Qeyd" className="md:col-span-2">
+          <Field label="VÖEN">
+            <Input value={customerForm.taxId ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, taxId: event.target.value }))} />
+          </Field>
+          <Field label="Qeyd">
             <Input value={customerForm.notes ?? ''} onChange={(event) => setCustomerForm((current) => ({ ...current, notes: event.target.value }))} />
           </Field>
           <Field label="Sorğu / müraciət qeydi" className="md:col-span-2">

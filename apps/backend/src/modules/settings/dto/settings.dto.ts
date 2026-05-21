@@ -1,5 +1,5 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { IsBoolean, IsInt, IsOptional, IsString, IsIn } from 'class-validator';
 
 export class UpdateCompanySettingsDto {
   @ApiPropertyOptional()
@@ -72,3 +72,40 @@ export class UpdateCompanySettingsDto {
   @IsString()
   notes?: string;
 }
+
+export class UpdateAppPreferencesDto {
+  @ApiPropertyOptional({ enum: ['az', 'ru'], default: 'az' })
+  @IsOptional()
+  @IsIn(['az', 'ru'])
+  language?: 'az' | 'ru';
+}
+
+export class CreateSystemOptionDto {
+  @ApiProperty()
+  @IsString()
+  groupKey!: string;
+
+  @ApiProperty()
+  @IsString()
+  value!: string;
+
+  @ApiProperty()
+  @IsString()
+  labelAz!: string;
+
+  @ApiProperty()
+  @IsString()
+  labelRu!: string;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateSystemOptionDto extends PartialType(CreateSystemOptionDto) {}

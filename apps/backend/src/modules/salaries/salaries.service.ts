@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
@@ -11,6 +12,11 @@ import {
   UpdateSalaryEntryDto
 } from './dto/salaries.dto';
 import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../../common/business/salary-entry';
+import {
+  buildEmployeePlaceholderEmail,
+  employeeShouldSyncToUser,
+  mapEmployeeRoleToUserRoles
+} from '../../common/business/employee-user';
 
 @Injectable()
 export class SalariesService {
@@ -19,7 +25,109 @@ export class SalariesService {
     @Inject(AuditService) private readonly auditService: AuditService
   ) {}
 
-  listEmployees() {
+  private async syncEmployeeUser(tx: Prisma.TransactionClient, employee: {
+    id: string;
+    userId: string | null;
+    fullName: string;
+    phone: string | null;
+    roleKey: string | null;
+    isActive: boolean;
+    deletedAt: Date | null;
+  }) {
+    const roleKeys = mapEmployeeRoleToUserRoles(employee.roleKey);
+    const shouldSync = employeeShouldSyncToUser(employee.roleKey);
+    const baseUserData = {
+      fullName: employee.fullName,
+      phone: employee.phone,
+      isActive: employee.isActive && shouldSync && !employee.deletedAt,
+      deletedAt: employee.deletedAt ?? (employee.isActive && shouldSync ? null : new Date())
+    };
+
+    if (!shouldSync) {
+      if (employee.userId) {
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: {
+            ...baseUserData,
+            isActive: false,
+            deletedAt: employee.deletedAt ?? new Date()
+          }
+        });
+        await tx.userRole.deleteMany({ where: { userId: employee.userId } });
+      }
+      return null;
+    }
+
+    const passwordHash = await bcrypt.hash(`Emp-${employee.id.slice(0, 8)}!`, 10);
+    const user =
+      employee.userId != null
+        ? await tx.user.update({
+            where: { id: employee.userId },
+            data: baseUserData
+          })
+        : await tx.user.create({
+            data: {
+              email: buildEmployeePlaceholderEmail(employee.fullName, employee.id),
+              passwordHash,
+              ...baseUserData
+            }
+          });
+
+    if (!employee.userId) {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { userId: user.id }
+      });
+    }
+
+    await tx.userRole.deleteMany({ where: { userId: user.id } });
+    if (roleKeys.length) {
+      for (const roleKey of roleKeys) {
+        const role = await tx.role.findUnique({ where: { key: roleKey } });
+        if (!role) continue;
+        await tx.userRole.upsert({
+          where: {
+            userId_roleId: {
+              userId: user.id,
+              roleId: role.id
+            }
+          },
+          update: {},
+          create: {
+            userId: user.id,
+            roleId: role.id
+          }
+        });
+      }
+    }
+
+    return user;
+  }
+
+  async listEmployees() {
+    const unsynced = await this.prisma.employee.findMany({
+      where: {
+        deletedAt: null,
+        userId: null,
+        isActive: true,
+        roleKey: { in: ['owner', 'manager', 'production', 'accountant', 'warehouse'] }
+      }
+    });
+
+    for (const employee of unsynced) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.syncEmployeeUser(tx, {
+          id: employee.id,
+          userId: employee.userId,
+          fullName: employee.fullName,
+          phone: employee.phone,
+          roleKey: employee.roleKey,
+          isActive: employee.isActive,
+          deletedAt: employee.deletedAt
+        });
+      });
+    }
+
     return this.prisma.employee.findMany({
       where: { deletedAt: null },
       orderBy: { fullName: 'asc' }
@@ -27,29 +135,90 @@ export class SalariesService {
   }
 
   createEmployee(dto: CreateEmployeeDto) {
-    return this.prisma.employee.create({
-      data: {
-        fullName: dto.fullName,
-        phone: dto.phone,
-        title: dto.title,
-        roleKey: dto.roleKey,
-        notes: dto.notes,
-        isActive: dto.isActive ?? true
-      }
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.create({
+        data: {
+          fullName: dto.fullName,
+          phone: dto.phone,
+          title: dto.title,
+          roleKey: dto.roleKey,
+          notes: dto.notes,
+          isActive: dto.isActive ?? true
+        }
+      });
+
+      await this.syncEmployeeUser(tx, {
+        id: employee.id,
+        userId: employee.userId,
+        fullName: employee.fullName,
+        phone: employee.phone,
+        roleKey: employee.roleKey,
+        isActive: employee.isActive,
+        deletedAt: employee.deletedAt
+      });
+
+      return tx.employee.findUniqueOrThrow({ where: { id: employee.id } });
     });
   }
 
   updateEmployee(id: string, dto: UpdateEmployeeDto) {
-    return this.prisma.employee.update({
-      where: { id },
-      data: {
-        fullName: dto.fullName,
-        phone: dto.phone,
-        title: dto.title,
-        roleKey: dto.roleKey,
-        notes: dto.notes,
-        isActive: dto.isActive
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.employee.update({
+        where: { id },
+        data: {
+          fullName: dto.fullName,
+          phone: dto.phone,
+          title: dto.title,
+          roleKey: dto.roleKey,
+          notes: dto.notes,
+          isActive: dto.isActive
+        }
+      });
+
+      await this.syncEmployeeUser(tx, {
+        id: updated.id,
+        userId: updated.userId,
+        fullName: updated.fullName,
+        phone: updated.phone,
+        roleKey: updated.roleKey,
+        isActive: updated.isActive,
+        deletedAt: updated.deletedAt
+      });
+
+      return updated;
+    });
+  }
+
+  removeEmployee(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.findFirst({
+        where: { id, deletedAt: null }
+      });
+
+      if (!employee) {
+        throw new NotFoundException('Employee not found');
       }
+
+      const deletedAt = new Date();
+      const updated = await tx.employee.update({
+        where: { id },
+        data: {
+          isActive: false,
+          deletedAt
+        }
+      });
+
+      await this.syncEmployeeUser(tx, {
+        id: updated.id,
+        userId: updated.userId,
+        fullName: updated.fullName,
+        phone: updated.phone,
+        roleKey: updated.roleKey,
+        isActive: updated.isActive,
+        deletedAt: updated.deletedAt
+      });
+
+      return updated;
     });
   }
 
