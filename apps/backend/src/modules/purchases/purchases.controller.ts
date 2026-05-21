@@ -51,6 +51,12 @@ export class PurchasesController {
     return this.purchasesService.updateSupplier(id, dto);
   }
 
+  @Delete('suppliers/:id')
+  @Roles('super_admin', 'owner')
+  removeSupplier(@Param('id') id: string) {
+    return this.purchasesService.removeSupplier(id);
+  }
+
   @Post()
   @Roles('super_admin', 'owner', 'accountant', 'manager')
   create(@Body() dto: CreatePurchaseEntryDto) {

@@ -156,7 +156,7 @@ export class InventoryService {
     return generateMaterialCode(sequence.prefix || prefix, sequence.currentValue, sequence.padding);
   }
 
-  private async syncStockLevel(materialId: string, warehouseId: string, tx?: Prisma.TransactionClient) {
+  async syncStockLevel(materialId: string, warehouseId: string, tx?: Prisma.TransactionClient) {
     const db = this.db(tx);
     const movementTotals = await db.stockMovement.aggregate({
       where: { materialId, warehouseId },
@@ -198,6 +198,49 @@ export class InventoryService {
         onHand,
         reserved,
         available
+      }
+    });
+  }
+
+  async refreshMaterialSnapshots(materialId: string, tx?: Prisma.TransactionClient) {
+    const db = this.db(tx);
+    const [latestPurchaseMovement, purchaseInTotals, latestMovement] = await Promise.all([
+      db.stockMovement.findFirst({
+        where: {
+          materialId,
+          type: StockMovementType.purchase_in
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+      }),
+      db.stockMovement.aggregate({
+        where: {
+          materialId,
+          type: StockMovementType.purchase_in
+        },
+        _sum: {
+          quantity: true,
+          totalCost: true
+        }
+      }),
+      db.stockMovement.findFirst({
+        where: { materialId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+      })
+    ]);
+
+    const totalQuantity = toNumber(purchaseInTotals._sum.quantity);
+    const totalCost = toNumber(purchaseInTotals._sum.totalCost);
+    const averageCost = totalQuantity > 0 ? roundQty(totalCost / totalQuantity) : 0;
+    const lastPurchasePrice = toNumber(latestPurchaseMovement?.unitCost);
+
+    await db.material.update({
+      where: { id: materialId },
+      data: {
+        lastPurchasePrice,
+        averageCost,
+        unitCost: averageCost || lastPurchasePrice,
+        costPrice: averageCost || lastPurchasePrice,
+        lastMovementAt: latestMovement?.createdAt ?? null
       }
     });
   }
@@ -349,11 +392,16 @@ export class InventoryService {
       name: material.name,
       sku: material.sku,
       unit: material.unit,
+      stockUnit: (material as any).stockUnit ?? material.unit,
+      packageUnit: (material as any).packageUnit ?? null,
+      defaultUnitsPerPackage: (material as any).defaultUnitsPerPackage ?? null,
       gram: material.gram != null ? toNumber(material.gram) : null,
       size: material.size ?? null,
       packPrice: toNumber(material.packPrice),
       quantityInPack: material.quantityInPack ?? 1,
       unitCost,
+      lastPurchasePrice: toNumber((material as any).lastPurchasePrice),
+      averageCost: toNumber((material as any).averageCost),
       vatIncluded: Boolean(material.vatIncluded),
       metadata: (material.metadata as Record<string, unknown> | null | undefined) ?? null,
       isActive: material.isActive ?? true,
@@ -362,6 +410,7 @@ export class InventoryService {
       reserved,
       available,
       costPrice: toNumber(material.costPrice ?? material.unitCost),
+      lastMovementAt: ((material as any).lastMovementAt as Date | null | undefined)?.toISOString?.() ?? ((material as any).lastMovementAt ?? null),
       notes: material.notes ?? null,
       category: material.category
         ? {
@@ -388,6 +437,7 @@ export class InventoryService {
               { name: { contains: query.search, mode: 'insensitive' } },
               { sku: { contains: query.search, mode: 'insensitive' } },
               { unit: { contains: query.search, mode: 'insensitive' } },
+              { stockUnit: { contains: query.search, mode: 'insensitive' } },
               { category: { name: { contains: query.search, mode: 'insensitive' } } },
               { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
               { size: { contains: query.search, mode: 'insensitive' } }
@@ -414,9 +464,21 @@ export class InventoryService {
     });
 
     const normalized = materials.map((material) => this.mapMaterial(material));
-    const filtered = query.lowStockOnly
-      ? normalized.filter((material) => material.available <= material.minStockLevel)
-      : normalized;
+    const filtered = normalized.filter((material) => {
+      if (query.lowStockOnly && !(material.available <= material.minStockLevel)) {
+        return false;
+      }
+
+      if (query.stockState === 'positive' && !(material.onHand > 0)) {
+        return false;
+      }
+
+      if (query.stockState === 'zero' && material.onHand !== 0) {
+        return false;
+      }
+
+      return true;
+    });
     const paged = filtered.slice(skip, skip + take);
 
     return buildPaginatedResponse(paged, filtered.length, page, limit);
@@ -464,11 +526,16 @@ export class InventoryService {
           name: dto.name,
           sku,
           unit: dto.unit,
+          stockUnit: dto.stockUnit ?? dto.unit,
+          packageUnit: dto.packageUnit,
+          defaultUnitsPerPackage: dto.defaultUnitsPerPackage,
           gram: dto.gram,
           size: dto.size,
           packPrice: dto.packPrice ?? 0,
           quantityInPack,
           unitCost,
+          lastPurchasePrice: dto.costPrice ?? unitCost,
+          averageCost: dto.costPrice ?? unitCost,
           vatIncluded: dto.vatIncluded ?? false,
           metadata,
           isActive: dto.isActive ?? true,
@@ -511,11 +578,16 @@ export class InventoryService {
           name: dto.name,
           sku: dto.sku,
           unit: dto.unit,
+          stockUnit: dto.stockUnit ?? dto.unit,
+          packageUnit: dto.packageUnit,
+          defaultUnitsPerPackage: dto.defaultUnitsPerPackage,
           gram: dto.gram,
           size: dto.size,
           packPrice: dto.packPrice,
           quantityInPack: dto.quantityInPack != null ? quantityInPack : undefined,
           unitCost,
+          lastPurchasePrice: dto.costPrice ?? undefined,
+          averageCost: dto.costPrice ?? undefined,
           vatIncluded: dto.vatIncluded,
           metadata,
           isActive: dto.isActive,
@@ -606,13 +678,16 @@ export class InventoryService {
             unitCost: dto.unitCost ?? 0,
             totalCost,
             reference: dto.reference,
-            note: dto.note
+            note: dto.note,
+            createdAt: dto.date ? new Date(dto.date) : undefined
           }
         });
 
         if (dto.warehouseId) {
           await this.syncStockLevel(dto.materialId, dto.warehouseId, tx);
         }
+
+        await this.refreshMaterialSnapshots(dto.materialId, tx);
 
         await this.auditService.logTx(tx, {
           action: 'stock.movement_created',
@@ -650,7 +725,7 @@ export class InventoryService {
             warehouseId: dto.warehouseId,
             quantity: dto.quantity,
             status: StockReservationStatus.reserved,
-            reservedAt: new Date(),
+            reservedAt: dto.date ? new Date(dto.date) : new Date(),
             note: dto.note
           }
         });
@@ -667,11 +742,13 @@ export class InventoryService {
             unitCost: toNumber(material.costPrice),
             totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
             reference: `reserve:${reservation.id}`,
-            note: dto.note
+            note: dto.note,
+            createdAt: dto.date ? new Date(dto.date) : undefined
           }
         });
 
         await this.syncStockLevel(material.id, warehouse.id, tx);
+        await this.refreshMaterialSnapshots(material.id, tx);
 
         await this.auditService.logTx(tx, {
           action: 'stock.reserved',
@@ -711,7 +788,7 @@ export class InventoryService {
           return this.consumeReservationInTx(tx, dto.reservationId);
         }
 
-        const material = await this.ensureMaterial(dto.materialId, tx);
+    const material = await this.ensureMaterial(dto.materialId, tx);
         const warehouseId = dto.warehouseId;
         if (warehouseId) {
           await this.ensureWarehouse(warehouseId, tx);
@@ -732,13 +809,16 @@ export class InventoryService {
             balanceDelta: -Math.abs(dto.quantity),
             unitCost: toNumber(material.costPrice),
             totalCost: roundQty(toNumber(material.costPrice) * dto.quantity),
-            note: dto.note
+            note: dto.note,
+            createdAt: dto.date ? new Date(dto.date) : undefined
           }
         });
 
         if (warehouseId) {
           await this.syncStockLevel(material.id, warehouseId, tx);
         }
+
+        await this.refreshMaterialSnapshots(material.id, tx);
 
         await this.auditService.logTx(tx, {
           action: 'stock.written_off',
@@ -843,17 +923,21 @@ export class InventoryService {
         name: material.name,
         sku: material.sku,
         unit: material.unit,
+        stockUnit: (material as any).stockUnit ?? material.unit,
         gram: (material as any).gram != null ? toNumber((material as any).gram) : null,
         size: (material as any).size ?? null,
         packPrice: toNumber((material as any).packPrice),
         quantityInPack: (material as any).quantityInPack ?? 1,
         unitCost,
+        lastPurchasePrice: toNumber((material as any).lastPurchasePrice),
+        averageCost: toNumber((material as any).averageCost),
         vatIncluded: Boolean((material as any).vatIncluded),
         minStockLevel: toNumber(material.minStockLevel),
         onHand,
         reserved,
         available,
         costPrice: unitCost,
+        lastMovementAt: ((material as any).lastMovementAt as Date | null | undefined)?.toISOString?.() ?? ((material as any).lastMovementAt ?? null),
         notes: (material as any).notes ?? null
       };
     });

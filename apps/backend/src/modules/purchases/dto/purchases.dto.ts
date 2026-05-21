@@ -45,6 +45,11 @@ export class CreateSupplierDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  taxId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   email?: string;
 
   @ApiPropertyOptional()
@@ -71,15 +76,58 @@ export class CreatePurchaseEntryDto {
   @IsString()
   supplierId!: string;
 
+  @ApiProperty()
+  @IsString()
+  materialId!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
+
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()
   date?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  amount!: number;
+  quantity?: number;
+
+  @ApiProperty()
+  @IsString()
+  stockUnit!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  packageUnit?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  unitsPerPackage?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  packageQuantity?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  unitPrice?: number;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  amount?: number;
 
   @ApiPropertyOptional()
   @Type(() => Number)
@@ -99,4 +147,3 @@ export class CreatePurchaseEntryDto {
 }
 
 export class UpdatePurchaseEntryDto extends PartialType(CreatePurchaseEntryDto) {}
-

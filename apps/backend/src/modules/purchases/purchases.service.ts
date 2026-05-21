@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { DebtStatus, Prisma, SalesPaymentType } from '@prisma/client';
+import { DebtStatus, Prisma, SalesPaymentType, StockMovementType } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
@@ -10,7 +10,14 @@ import {
   UpdatePurchaseEntryDto,
   UpdateSupplierDto
 } from './dto/purchases.dto';
-import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../../common/business/purchase-entry';
+import { aggregateSupplierDebt } from '../../common/business/purchase-entry';
+import { recalculatePurchaseFlow } from '../../common/business/purchase-flow';
+import { InventoryService } from '../inventory/inventory.service';
+
+function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
+  if (value == null) return 0;
+  return typeof value === 'number' ? value : Number(value.toString());
+}
 
 function resolvePayableStatus(remainingDebt: number) {
   return remainingDebt <= 0 ? DebtStatus.closed : DebtStatus.open;
@@ -20,13 +27,14 @@ function resolvePayableStatus(remainingDebt: number) {
 export class PurchasesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AuditService) private readonly auditService: AuditService
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(InventoryService) private readonly inventoryService: InventoryService
   ) {}
 
   async listSuppliers() {
     return this.prisma.supplier.findMany({
       where: { deletedAt: null },
-      orderBy: { name: 'asc' }
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }]
     });
   }
 
@@ -36,6 +44,7 @@ export class PurchasesService {
         code: dto.code,
         name: dto.name,
         phone: dto.phone,
+        taxId: dto.taxId,
         email: dto.email,
         address: dto.address,
         notes: dto.notes,
@@ -47,8 +56,64 @@ export class PurchasesService {
   updateSupplier(id: string, dto: UpdateSupplierDto) {
     return this.prisma.supplier.update({
       where: { id },
-      data: dto
+      data: {
+        code: dto.code,
+        name: dto.name,
+        phone: dto.phone,
+        taxId: dto.taxId,
+        email: dto.email,
+        address: dto.address,
+        notes: dto.notes,
+        isActive: dto.isActive
+      }
     });
+  }
+
+  removeSupplier(id: string) {
+    return this.prisma.supplier.update({
+      where: { id },
+      data: {
+        isActive: false,
+        deletedAt: new Date()
+      }
+    });
+  }
+
+  private async ensureMaterial(tx: Prisma.TransactionClient, materialId: string) {
+    const material = await tx.material.findFirst({
+      where: { id: materialId, deletedAt: null }
+    });
+
+    if (!material) {
+      throw new NotFoundException('Material not found');
+    }
+
+    return material;
+  }
+
+  private async resolveWarehouseId(tx: Prisma.TransactionClient, requestedWarehouseId?: string) {
+    if (requestedWarehouseId) {
+      const warehouse = await tx.warehouse.findFirst({
+        where: { id: requestedWarehouseId, deletedAt: null, isActive: true }
+      });
+
+      if (!warehouse) {
+        throw new NotFoundException('Warehouse not found');
+      }
+
+      return warehouse.id;
+    }
+
+    const defaultWarehouse = await tx.warehouse.findFirst({
+      where: { deletedAt: null, isActive: true },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    if (!defaultWarehouse) {
+      throw new NotFoundException('Warehouse not found');
+    }
+
+    return defaultWarehouse.id;
   }
 
   private async syncPayable(tx: Prisma.TransactionClient, purchaseEntryId: string) {
@@ -93,6 +158,64 @@ export class PurchasesService {
     }
   }
 
+  private async syncPurchaseMovement(tx: Prisma.TransactionClient, purchaseEntryId: string, previousState?: { materialId: string; warehouseId: string | null }) {
+    const purchase = await tx.purchaseEntry.findUnique({
+      where: { id: purchaseEntryId }
+    });
+
+    if (!purchase || !purchase.materialId) {
+      throw new NotFoundException('Purchase entry not found');
+    }
+
+    const movement = await tx.stockMovement.findFirst({
+      where: { purchaseEntryId: purchase.id, type: StockMovementType.purchase_in }
+    });
+
+    if (movement) {
+      await tx.stockMovement.update({
+        where: { id: movement.id },
+        data: {
+          materialId: purchase.materialId,
+          warehouseId: purchase.warehouseId,
+          type: StockMovementType.purchase_in,
+          quantity: purchase.totalQuantity,
+          balanceDelta: purchase.totalQuantity,
+          unitCost: purchase.unitPrice,
+          totalCost: purchase.amount,
+          reference: `purchase:${purchase.id}`,
+          note: purchase.comment,
+          createdAt: purchase.date
+        }
+      });
+    } else {
+      await tx.stockMovement.create({
+        data: {
+          purchaseEntryId: purchase.id,
+          materialId: purchase.materialId,
+          warehouseId: purchase.warehouseId,
+          type: StockMovementType.purchase_in,
+          quantity: purchase.totalQuantity,
+          balanceDelta: purchase.totalQuantity,
+          unitCost: purchase.unitPrice,
+          totalCost: purchase.amount,
+          reference: `purchase:${purchase.id}`,
+          note: purchase.comment,
+          createdAt: purchase.date
+        }
+      });
+    }
+
+    if (previousState?.warehouseId) {
+      await this.inventoryService.syncStockLevel(previousState.materialId, previousState.warehouseId, tx);
+      await this.inventoryService.refreshMaterialSnapshots(previousState.materialId, tx);
+    }
+
+    if (purchase.warehouseId) {
+      await this.inventoryService.syncStockLevel(purchase.materialId, purchase.warehouseId, tx);
+    }
+    await this.inventoryService.refreshMaterialSnapshots(purchase.materialId, tx);
+  }
+
   async findAll(query: PurchaseEntryQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
     const where: Prisma.PurchaseEntryWhereInput = {
@@ -101,6 +224,8 @@ export class PurchasesService {
         ? {
             OR: [
               { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+              { material: { name: { contains: query.search, mode: 'insensitive' } } },
+              { material: { sku: { contains: query.search, mode: 'insensitive' } } },
               { comment: { contains: query.search, mode: 'insensitive' } }
             ]
           }
@@ -129,6 +254,8 @@ export class PurchasesService {
         orderBy,
         include: {
           supplier: true,
+          material: true,
+          warehouse: true,
           payable: true
         }
       })
@@ -144,12 +271,30 @@ export class PurchasesService {
   async create(dto: CreatePurchaseEntryDto) {
     return this.prisma.$transaction(
       async (tx) => {
-        const calculated = recalculatePurchaseEntry(dto.amount, dto.paymentAmount ?? 0);
+        const material = await this.ensureMaterial(tx, dto.materialId);
+        const warehouseId = await this.resolveWarehouseId(tx, dto.warehouseId);
+        const calculated = recalculatePurchaseFlow({
+          quantity: dto.quantity,
+          packageQuantity: dto.packageQuantity,
+          unitsPerPackage: dto.unitsPerPackage,
+          unitPrice: dto.unitPrice,
+          totalAmount: dto.amount,
+          paymentAmount: dto.paymentAmount
+        });
+
         const created = await tx.purchaseEntry.create({
           data: {
             supplierId: dto.supplierId,
+            materialId: dto.materialId,
+            warehouseId,
             date: dto.date ? new Date(dto.date) : new Date(),
-            amount: calculated.amount,
+            stockUnit: dto.stockUnit || material.stockUnit || material.unit,
+            packageUnit: dto.packageUnit,
+            unitsPerPackage: dto.unitsPerPackage ?? null,
+            packageQuantity: dto.packageQuantity ?? null,
+            totalQuantity: calculated.totalQuantity,
+            unitPrice: calculated.unitPrice,
+            amount: calculated.totalAmount,
             paymentAmount: calculated.paymentAmount,
             remainingDebt: calculated.remainingDebt,
             paymentType: (dto.paymentType as SalesPaymentType | undefined) ?? SalesPaymentType.hesab,
@@ -157,6 +302,7 @@ export class PurchasesService {
           }
         });
 
+        await this.syncPurchaseMovement(tx, created.id);
         await this.syncPayable(tx, created.id);
 
         await this.auditService.logTx(tx, {
@@ -166,7 +312,10 @@ export class PurchasesService {
           afterData: created
         });
 
-        return created;
+        return tx.purchaseEntry.findUniqueOrThrow({
+          where: { id: created.id },
+          include: { supplier: true, material: true, warehouse: true, payable: true }
+        });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -183,14 +332,36 @@ export class PurchasesService {
           throw new NotFoundException('Purchase entry not found');
         }
 
-        const calculated = recalculatePurchaseEntry(dto.amount ?? Number(existing.amount), dto.paymentAmount ?? Number(existing.paymentAmount));
+        const materialId = dto.materialId ?? existing.materialId;
+        if (!materialId) {
+          throw new NotFoundException('Material not found');
+        }
+
+        const material = await this.ensureMaterial(tx, materialId);
+        const warehouseId = await this.resolveWarehouseId(tx, dto.warehouseId ?? existing.warehouseId ?? undefined);
+        const calculated = recalculatePurchaseFlow({
+          quantity: dto.quantity ?? toNumber(existing.totalQuantity),
+          packageQuantity: dto.packageQuantity ?? toNumber(existing.packageQuantity),
+          unitsPerPackage: dto.unitsPerPackage ?? toNumber(existing.unitsPerPackage),
+          unitPrice: dto.unitPrice ?? toNumber(existing.unitPrice),
+          totalAmount: dto.amount ?? toNumber(existing.amount),
+          paymentAmount: dto.paymentAmount ?? toNumber(existing.paymentAmount)
+        });
 
         const updated = await tx.purchaseEntry.update({
           where: { id },
           data: {
             supplierId: dto.supplierId ?? existing.supplierId,
+            materialId,
+            warehouseId,
             date: dto.date ? new Date(dto.date) : existing.date,
-            amount: calculated.amount,
+            stockUnit: dto.stockUnit ?? existing.stockUnit ?? material.stockUnit ?? material.unit,
+            packageUnit: dto.packageUnit ?? existing.packageUnit,
+            unitsPerPackage: dto.unitsPerPackage ?? existing.unitsPerPackage,
+            packageQuantity: dto.packageQuantity ?? existing.packageQuantity,
+            totalQuantity: calculated.totalQuantity,
+            unitPrice: calculated.unitPrice,
+            amount: calculated.totalAmount,
             paymentAmount: calculated.paymentAmount,
             remainingDebt: calculated.remainingDebt,
             paymentType: (dto.paymentType as SalesPaymentType | undefined) ?? existing.paymentType,
@@ -198,6 +369,10 @@ export class PurchasesService {
           }
         });
 
+        await this.syncPurchaseMovement(tx, updated.id, {
+          materialId: existing.materialId ?? materialId,
+          warehouseId: existing.warehouseId
+        });
         await this.syncPayable(tx, updated.id);
 
         await this.auditService.logTx(tx, {
@@ -208,7 +383,10 @@ export class PurchasesService {
           afterData: updated
         });
 
-        return updated;
+        return tx.purchaseEntry.findUniqueOrThrow({
+          where: { id: updated.id },
+          include: { supplier: true, material: true, warehouse: true, payable: true }
+        });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -229,6 +407,7 @@ export class PurchasesService {
           ? {
               OR: [
                 { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+                { material: { name: { contains: query.search, mode: 'insensitive' } } },
                 { comment: { contains: query.search, mode: 'insensitive' } }
               ]
             }

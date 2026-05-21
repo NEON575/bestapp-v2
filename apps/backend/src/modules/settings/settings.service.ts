@@ -177,6 +177,10 @@ export class SettingsService {
     };
   }
 
+  listUnits() {
+    return DEFAULT_UNITS;
+  }
+
   async createSystemOption(dto: CreateSystemOptionDto) {
     return this.prisma.systemOption.create({
       data: {

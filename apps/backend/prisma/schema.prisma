@@ -259,6 +259,7 @@ model Supplier {
   code            String?          @unique
   name            String
   phone           String?
+  taxId           String?
   email           String?
   address         String?
   notes           String?
@@ -450,11 +451,16 @@ model Material {
   name            String
   sku             String?         @unique
   unit            String
+  stockUnit       String          @default("ədəd")
+  packageUnit     String?
+  defaultUnitsPerPackage Int?
   gram            Decimal?        @db.Decimal(10, 2)
   size            String?
   packPrice       Decimal         @default(0) @db.Decimal(18, 2)
   quantityInPack  Int             @default(1)
   unitCost        Decimal         @default(0) @db.Decimal(18, 4)
+  lastPurchasePrice Decimal       @default(0) @db.Decimal(18, 4)
+  averageCost     Decimal         @default(0) @db.Decimal(18, 4)
   vatIncluded     Boolean         @default(false)
   metadata        Json?
   isActive        Boolean         @default(true)
@@ -462,6 +468,7 @@ model Material {
   stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
   reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
   costPrice       Decimal         @default(0) @db.Decimal(18, 4)
+  lastMovementAt  DateTime?
   notes           String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -471,6 +478,7 @@ model Material {
   stockLevels     StockLevel[]
   stockReservations StockReservation[]
   stockMovements  StockMovement[]
+  purchaseEntries PurchaseEntry[]
   orderItems      OrderItem[]
 
   @@map("materials")
@@ -563,8 +571,16 @@ model SalesEntry {
 model PurchaseEntry {
   id             String           @id @default(uuid())
   supplierId     String
+  materialId     String?
+  warehouseId    String?
   payableId      String?          @unique
   date           DateTime         @default(now())
+  stockUnit      String
+  packageUnit    String?
+  unitsPerPackage Decimal?        @db.Decimal(18, 4)
+  packageQuantity Decimal?        @db.Decimal(18, 4)
+  totalQuantity  Decimal          @default(0) @db.Decimal(18, 4)
+  unitPrice      Decimal          @default(0) @db.Decimal(18, 4)
   amount         Decimal          @db.Decimal(18, 2)
   paymentAmount  Decimal          @default(0) @db.Decimal(18, 2)
   remainingDebt  Decimal          @default(0) @db.Decimal(18, 2)
@@ -575,7 +591,10 @@ model PurchaseEntry {
   deletedAt      DateTime?
 
   supplier       Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  material       Material?        @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  warehouse      Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   payable        Payable?         @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  stockMovements StockMovement[]
 
   @@index([date])
   @@map("purchase_entries")
@@ -612,6 +631,7 @@ model Warehouse {
   stockLevels StockLevel[]
   reservations StockReservation[]
   movements   StockMovement[]
+  purchaseEntries PurchaseEntry[]
 
   @@map("warehouses")
 }
@@ -664,6 +684,7 @@ model StockMovement {
   orderId         String?
   orderItemId     String?
   productionJobId String?
+  purchaseEntryId String?
   type            StockMovementType
   quantity        Decimal           @db.Decimal(18, 4)
   balanceDelta    Decimal           @default(0) @db.Decimal(18, 4)
@@ -678,6 +699,7 @@ model StockMovement {
   order           Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
   orderItem       OrderItem?        @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
   productionJob   ProductionJob?    @relation(fields: [productionJobId], references: [id], onDelete: SetNull)
+  purchaseEntry   PurchaseEntry?    @relation(fields: [purchaseEntryId], references: [id], onDelete: SetNull)
 
   @@map("stock_movements")
 }

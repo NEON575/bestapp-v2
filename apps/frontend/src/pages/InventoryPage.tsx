@@ -1,326 +1,389 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
-import type { InventoryMaterialItem, InventoryMovementItem, InventorySummary, WarehouseItem } from '@bestapp/shared';
-import { Button, Card, Input } from '@bestapp/ui';
+import type {
+  CreateStockMovementDto,
+  InventoryMaterialItem,
+  InventoryMovementItem,
+  InventorySummary,
+  MaterialCategoryItem,
+  MaterialQueryDto,
+  WarehouseItem
+} from '@bestapp/shared';
+import { Button, Input } from '@bestapp/ui';
 import { inventoryClient } from '../shared/api/inventory';
-import {
-  DataTable,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Modal,
-  PageHeader,
-  StatCard,
-  StatusBadge
-} from '../shared/components';
-import { useToast } from '../shared/toast/toast-context';
+import { EmptyState, ErrorState, LoadingState, Modal, PageHeader, Pagination } from '../shared/components';
 import { formatCurrency, formatDateOnly, formatNumber } from '../shared/lib/format';
+import { useToast } from '../shared/toast/toast-context';
 
-type InventoryAction = 'receipt' | 'reserve' | 'write_off' | 'adjustment';
+type InventoryActionType = 'purchase_in' | 'write_off' | 'adjustment' | 'reserve' | 'waste';
+type MovementTab = 'all' | InventoryActionType;
 
-type InventoryFormState = {
+type MovementDraft = {
+  date: string;
   materialId: string;
   warehouseId: string;
-  quantity: number;
+  quantity: string;
   orderId: string;
-  reservationId: string;
-  productionJobId: string;
   note: string;
+  reference: string;
   direction: 'increase' | 'decrease';
 };
 
-const emptyForm = (): InventoryFormState => ({
-  materialId: '',
-  warehouseId: '',
-  quantity: 1,
-  orderId: '',
-  reservationId: '',
-  productionJobId: '',
-  note: '',
-  direction: 'increase'
-});
+const movementLabels: Record<InventoryActionType, string> = {
+  purchase_in: 'Giriş',
+  write_off: 'Çıxış',
+  adjustment: 'Düzəliş',
+  reserve: 'Rezerv',
+  waste: 'Fire / zay'
+};
+
+const movementBadgeClasses: Record<string, string> = {
+  purchase_in: 'bg-emerald-50 text-emerald-700',
+  write_off: 'bg-rose-50 text-rose-700',
+  adjustment: 'bg-sky-50 text-sky-700',
+  reserve: 'bg-amber-50 text-amber-700',
+  waste: 'bg-slate-200 text-slate-700'
+};
+
+function emptyMovementDraft(defaultWarehouseId = ''): MovementDraft {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    materialId: '',
+    warehouseId: defaultWarehouseId,
+    quantity: '',
+    orderId: '',
+    note: '',
+    reference: '',
+    direction: 'increase'
+  };
+}
+
+function toNumber(value: string | number | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toIsoDate(value: string) {
+  return value ? new Date(`${value}T00:00:00`).toISOString() : undefined;
+}
 
 export function InventoryPage() {
   const toast = useToast();
   const [summary, setSummary] = useState<InventorySummary | null>(null);
   const [materials, setMaterials] = useState<InventoryMaterialItem[]>([]);
   const [movements, setMovements] = useState<InventoryMovementItem[]>([]);
+  const [categories, setCategories] = useState<MaterialCategoryItem[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
+  const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [query, setQuery] = useState<MaterialQueryDto>({
+    page: 1,
+    limit: 20,
+    search: '',
+    categoryId: '',
+    lowStockOnly: false,
+    stockState: undefined,
+    sortBy: 'name',
+    sortOrder: 'asc'
+  });
+  const [movementTab, setMovementTab] = useState<MovementTab>('all');
+  const [action, setAction] = useState<InventoryActionType | null>(null);
+  const [form, setForm] = useState<MovementDraft>(emptyMovementDraft());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [action, setAction] = useState<InventoryAction | null>(null);
-  const [form, setForm] = useState<InventoryFormState>(emptyForm());
-  const [formError, setFormError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = async (nextQuery = query) => {
     setLoading(true);
     setError(null);
+
     try {
-      const [summaryResponse, materialsResponse, movementsResponse, warehousesResponse] = await Promise.all([
+      const [summaryResponse, materialsResponse, movementsResponse, categoriesResponse, warehousesResponse] = await Promise.all([
         inventoryClient.summary(),
-        inventoryClient.materials({ page: 1, limit: 50 }),
-        inventoryClient.movements({ page: 1, limit: 10 }),
+        inventoryClient.materials(nextQuery),
+        inventoryClient.movements({ page: 1, limit: 30, sortBy: 'createdAt', sortOrder: 'desc' }),
+        inventoryClient.categories(),
         inventoryClient.warehouses()
       ]);
 
       setSummary(summaryResponse);
       setMaterials(materialsResponse.data);
+      setMeta(materialsResponse.meta);
       setMovements(movementsResponse.data);
+      setCategories(categoriesResponse);
       setWarehouses(warehousesResponse);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить склад');
+      setForm((current) => ({
+        ...current,
+        warehouseId: current.warehouseId || warehousesResponse[0]?.id || ''
+      }));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Anbar məlumatları yüklənmədi');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(query);
+  }, [query.page, query.limit, query.search, query.categoryId, query.lowStockOnly, query.stockState]);
 
-  const lowStockMaterials = useMemo(() => summary?.materialsBelowMinimum ?? [], [summary]);
+  const movementRows = useMemo(
+    () => (movementTab === 'all' ? movements : movements.filter((item) => item.type === movementTab)),
+    [movementTab, movements]
+  );
 
-  const openAction = (nextAction: InventoryAction) => {
+  const openAction = (nextAction: InventoryActionType) => {
     setAction(nextAction);
-    setForm(emptyForm());
-    setFormError(null);
+    setForm(emptyMovementDraft(warehouses[0]?.id ?? ''));
   };
 
   const closeAction = () => {
     setAction(null);
-    setForm(emptyForm());
-    setFormError(null);
+    setForm(emptyMovementDraft(warehouses[0]?.id ?? ''));
   };
 
   const submitAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSaving(true);
-    setFormError(null);
-    setError(null);
+    if (!action) return;
 
+    setSaving(true);
     try {
-      if (!form.materialId || !form.warehouseId) {
-        throw new Error('Выберите материал и склад');
-      }
+      const date = toIsoDate(form.date);
 
       if (action === 'reserve') {
         if (!form.orderId) {
-          throw new Error('Для резерва нужен заказ');
+          throw new Error('Rezerv üçün sifariş ID vacibdir');
         }
 
         await inventoryClient.reserve({
           orderId: form.orderId,
           materialId: form.materialId,
           warehouseId: form.warehouseId,
-          quantity: Number(form.quantity),
-          note: form.note
+          quantity: toNumber(form.quantity),
+          note: form.note || undefined,
+          date
         });
-      } else if (action === 'write_off') {
-        await inventoryClient.writeOff({
+      } else {
+        const payload: CreateStockMovementDto = {
           materialId: form.materialId,
-          warehouseId: form.warehouseId,
-          reservationId: form.reservationId || undefined,
+          warehouseId: form.warehouseId || undefined,
           orderId: form.orderId || undefined,
-          productionJobId: form.productionJobId || undefined,
-          quantity: Number(form.quantity),
-          note: form.note
-        });
-      } else if (action === 'adjustment') {
-        await inventoryClient.createMovement({
-          materialId: form.materialId,
-          warehouseId: form.warehouseId,
-          type: 'adjustment',
-          quantity: form.direction === 'decrease' ? -Math.abs(Number(form.quantity)) : Math.abs(Number(form.quantity)),
-          note: form.note
-        });
-      } else if (action === 'receipt') {
-        await inventoryClient.createMovement({
-          materialId: form.materialId,
-          warehouseId: form.warehouseId,
-          type: 'purchase_in',
-          quantity: Math.abs(Number(form.quantity)),
-          note: form.note
-        });
+          type: action,
+          quantity:
+            action === 'adjustment'
+              ? form.direction === 'decrease'
+                ? -Math.abs(toNumber(form.quantity))
+                : Math.abs(toNumber(form.quantity))
+              : Math.abs(toNumber(form.quantity)),
+          reference: form.reference || undefined,
+          note: form.note || undefined,
+          date
+        };
+
+        if (action === 'write_off') {
+          await inventoryClient.writeOff({
+            materialId: payload.materialId,
+            warehouseId: payload.warehouseId,
+            orderId: payload.orderId,
+            quantity: Math.abs(payload.quantity),
+            note: payload.note,
+            date: payload.date
+          });
+        } else {
+          await inventoryClient.createMovement(payload);
+        }
       }
 
-      toast.success('Складская операция выполнена');
+      toast.success('Anbar əməliyyatı saxlanıldı');
       closeAction();
-      await load();
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось выполнить складскую операцию';
-      setFormError(message);
-      toast.error('Не удалось выполнить складскую операцию', message);
+      await load(query);
+    } catch (saveError) {
+      toast.error('Anbar əməliyyatı saxlanmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
     } finally {
       setSaving(false);
     }
   };
 
   if (loading && !summary) {
-    return (
-      <div className="space-y-5">
-        <PageHeader title="Склад" description="Остатки, движения и минимальные запасы." />
-        <LoadingState rows={4} />
-      </div>
-    );
+    return <LoadingState rows={6} />;
   }
 
   if (error && !summary) {
-    return <ErrorState description={error} onRetry={() => void load()} />;
+    return <ErrorState description={error} onRetry={() => void load(query)} />;
   }
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Склад"
-        description="Складской контроль: остатки, резервы, списания и движения."
+        title="Anbar"
+        description="Material qalığı, rezervlər və bütün anbar hərəkətləri burada izlənir."
         actions={
           <>
-            <Button variant="secondary" type="button" onClick={() => openAction('receipt')}>
-              Приход
+            <Button variant="secondary" onClick={() => openAction('purchase_in')}>
+              Giriş
             </Button>
-            <Button variant="secondary" type="button" onClick={() => openAction('reserve')}>
-              Резерв
+            <Button variant="secondary" onClick={() => openAction('reserve')}>
+              Rezerv
             </Button>
-            <Button variant="secondary" type="button" onClick={() => openAction('write_off')}>
-              Списание
+            <Button variant="secondary" onClick={() => openAction('write_off')}>
+              Çıxış
             </Button>
-            <Button type="button" onClick={() => openAction('adjustment')}>
-              Корректировка
+            <Button variant="secondary" onClick={() => openAction('adjustment')}>
+              Düzəliş
             </Button>
+            <Button onClick={() => openAction('waste')}>Fire / zay</Button>
           </>
         }
       />
 
-      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {error ? <InlineAlert>{error}</InlineAlert> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Всего материалов" value={String(summary?.totalMaterials ?? 0)} />
-        <StatCard label="Мало на складе" value={String(summary?.lowStockCount ?? 0)} accent="rose" />
-        <StatCard label="Стоимость запасов" value={formatCurrency(summary?.totalStockValue)} accent="emerald" />
-        <StatCard label="Зарезервировано" value={formatCurrency(summary?.reservedValue)} accent="amber" />
-        <StatCard label="Критических позиций" value={String(lowStockMaterials.length)} accent="sky" />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard label="Material sayı" value={String(summary?.totalMaterials ?? 0)} />
+        <SummaryCard label="Az qalanlar" value={String(summary?.lowStockCount ?? 0)} tone="rose" />
+        <SummaryCard label="Ümumi stok dəyəri" value={formatCurrency(summary?.totalStockValue)} tone="emerald" />
+        <SummaryCard label="Rezerv dəyəri" value={formatCurrency(summary?.reservedValue)} tone="amber" />
+        <SummaryCard label="Son hərəkətlər" value={String(summary?.recentMovements.length ?? 0)} />
       </div>
 
-      <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">Материалы</h2>
-        <div className="mt-4">
-          <DataTable
-            rowKey={(row) => row.id}
-            data={materials}
-            columns={[
-              { key: 'name', header: 'Название', render: (row) => row.name },
-              { key: 'category', header: 'Категория', render: (row) => row.category?.name ?? '—' },
-              { key: 'sku', header: 'Артикул', render: (row) => row.sku ?? '—' },
-              { key: 'unit', header: 'Ед.', render: (row) => row.unit },
-              { key: 'onHand', header: 'Остаток', render: (row) => formatNumber(row.onHand) },
-              { key: 'reserved', header: 'Резерв', render: (row) => formatNumber(row.reserved) },
-              { key: 'available', header: 'Доступно', render: (row) => formatNumber(row.available) },
-              { key: 'min', header: 'Мин. запас', render: (row) => formatNumber(row.minStockLevel) },
-              { key: 'cost', header: 'Себестоимость', render: (row) => formatCurrency(row.costPrice) },
-              {
-                key: 'state',
-                header: 'Состояние',
-                render: (row) => (
-                  <StatusBadge
-                    kind="custom"
-                    status={row.available && row.available <= row.minStockLevel ? 'low_stock' : 'ok'}
-                    label={row.available && row.available <= row.minStockLevel ? 'Мало на складе' : 'Норма'}
-                  />
-                )
-              }
-            ]}
-            emptyState={<EmptyState title="Материалы не найдены" description="Добавьте материалы через backend API." />}
-          />
-        </div>
-      </Card>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Ниже минимума</h2>
-          <div className="mt-4 space-y-3">
-            {lowStockMaterials.length ? (
-              lowStockMaterials.map((material) => (
-                <div key={material.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-950">{material.name}</div>
-                      <div className="text-xs text-slate-500">
-                        Остаток {material.available} · Минимум {material.minStockLevel}
-                      </div>
-                    </div>
-                    <StatusBadge kind="custom" status="low_stock" label="Мало на складе" />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyState title="Дефицита нет" description="Все материалы выше минимального уровня." />
-            )}
-          </div>
-        </Card>
-
-        <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Последние движения</h2>
-          <div className="mt-4 space-y-3">
-            {movements.length ? (
-              movements.map((movement) => (
-                <div key={movement.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-950">{movement.material?.name ?? 'Материал'}</div>
-                      <div className="text-xs text-slate-500">
-                        {movement.quantity} · {movement.warehouse?.name ?? '—'} · {formatDateOnly(movement.createdAt)}
-                      </div>
-                    </div>
-                    <StatusBadge kind="movement" status={movement.type} />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyState title="Движений нет" description="Первые движения появятся после работы склада." />
-            )}
-          </div>
-        </Card>
-      </div>
-
-      <Modal
-        open={action !== null}
-        title={
-          action === 'receipt'
-            ? 'Приход материала'
-            : action === 'reserve'
-              ? 'Резерв материала'
-              : action === 'write_off'
-                ? 'Списание материала'
-                : 'Корректировка склада'
-        }
-        description="Заполните поля операции и сохраните движение склада."
-        onClose={closeAction}
-      >
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={submitAction}>
-          <Field label="Материал">
-            <select
-              value={form.materialId}
-              onChange={(event) => setForm((current) => ({ ...current, materialId: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              required
-            >
-              <option value="">Выберите материал</option>
-              {materials.map((material) => (
-                <option key={material.id} value={material.id}>
-                  {material.name}
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 lg:grid-cols-5">
+          <Field label="Axtarış">
+            <Input value={query.search ?? ''} onChange={(event) => setQuery((current) => ({ ...current, search: event.target.value, page: 1 }))} placeholder="Material, kod və ya ölçü" />
+          </Field>
+          <Field label="Kateqoriya">
+            <select value={query.categoryId ?? ''} onChange={(event) => setQuery((current) => ({ ...current, categoryId: event.target.value, page: 1 }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Bütün kateqoriyalar</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
                 </option>
               ))}
             </select>
           </Field>
+          <label className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" checked={Boolean(query.lowStockOnly)} onChange={(event) => setQuery((current) => ({ ...current, lowStockOnly: event.target.checked, page: 1 }))} />
+            Az qalanlar
+          </label>
+          <button type="button" onClick={() => setQuery((current) => ({ ...current, stockState: current.stockState === 'positive' ? undefined : 'positive', page: 1 }))} className={`rounded-xl border px-4 py-3 text-left text-sm ${query.stockState === 'positive' ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700'}`}>
+            Qalıq &gt; 0
+          </button>
+          <button type="button" onClick={() => setQuery((current) => ({ ...current, stockState: current.stockState === 'zero' ? undefined : 'zero', page: 1 }))} className={`rounded-xl border px-4 py-3 text-left text-sm ${query.stockState === 'zero' ? 'border-slate-400 bg-slate-100 text-slate-700' : 'border-slate-200 bg-white text-slate-700'}`}>
+            Qalıq = 0
+          </button>
+        </div>
+      </div>
 
-          <Field label="Склад">
-            <select
-              value={form.warehouseId}
-              onChange={(event) => setForm((current) => ({ ...current, warehouseId: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              required
-            >
-              <option value="">Выберите склад</option>
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1250px] text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                {['Material', 'Kateqoriya', 'Vahid', 'Qalıq', 'Rezerv', 'Mövcud', 'Minimum qalıq', 'Son alış qiyməti', 'Orta qiymət', 'Son hərəkət tarixi'].map((header) => (
+                  <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {materials.length ? materials.map((material) => (
+                <tr key={material.id} className="border-b border-slate-100">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-950">{material.name}</div>
+                    <div className="text-xs text-slate-500">{material.sku ?? 'Kod yoxdur'}</div>
+                  </td>
+                  <td className="px-4 py-3">{material.category?.name ?? '—'}</td>
+                  <td className="px-4 py-3">{material.stockUnit ?? material.unit}</td>
+                  <td className="px-4 py-3">{formatNumber(material.onHand)}</td>
+                  <td className="px-4 py-3">{formatNumber(material.reserved)}</td>
+                  <td className={`px-4 py-3 font-semibold ${Number(material.available ?? 0) <= Number(material.minStockLevel ?? 0) ? 'text-rose-600' : 'text-slate-900'}`}>{formatNumber(material.available)}</td>
+                  <td className="px-4 py-3">{formatNumber(material.minStockLevel)}</td>
+                  <td className="px-4 py-3">{formatCurrency(material.lastPurchasePrice)}</td>
+                  <td className="px-4 py-3">{formatCurrency(material.averageCost)}</td>
+                  <td className="px-4 py-3 text-slate-500">{material.lastMovementAt ? formatDateOnly(material.lastMovementAt) : '—'}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8">
+                    <EmptyState title="Material tapılmadı" description="Filtrləri dəyişin və ya Alış bölməsindən material üçün giriş yaradın." />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => setQuery((current) => ({ ...current, page }))} />
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Anbar hərəkətləri</h2>
+            <p className="mt-1 text-sm text-slate-500">Giriş, çıxış, düzəliş, rezerv və fire əməliyyatları eyni jurnalda görünür.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[{ key: 'all', label: 'Hamısı' }, ...Object.entries(movementLabels).map(([key, label]) => ({ key, label }))].map((item) => (
+              <button key={item.key} type="button" onClick={() => setMovementTab(item.key as MovementTab)} className={`rounded-full px-4 py-2 text-sm font-medium ${movementTab === item.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                {['Tarix', 'Material', 'Miqdar', 'Səbəb / istinad', 'Əlaqəli sifariş', 'Qeyd', 'Hərəkət'].map((header) => (
+                  <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {movementRows.length ? movementRows.map((movement) => (
+                <tr key={movement.id} className="border-b border-slate-100">
+                  <td className="px-4 py-3">{movement.createdAt ? formatDateOnly(movement.createdAt) : '—'}</td>
+                  <td className="px-4 py-3 font-medium text-slate-950">{movement.material?.name ?? '—'}</td>
+                  <td className={`px-4 py-3 font-semibold ${Number(movement.balanceDelta ?? movement.quantity) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatNumber(movement.balanceDelta ?? movement.quantity)}
+                  </td>
+                  <td className="px-4 py-3">{movement.reference ?? '—'}</td>
+                  <td className="px-4 py-3">{movement.order?.number ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-500">{movement.note ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${movementBadgeClasses[movement.type] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {movementLabels[movement.type as InventoryActionType] ?? movement.type}
+                    </span>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8">
+                    <EmptyState title="Hərəkət yoxdur" description="İlk əməliyyatdan sonra jurnal burada görünəcək." />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal
+        open={action !== null}
+        title={action ? `${movementLabels[action]} əməliyyatı` : 'Anbar əməliyyatı'}
+        description="Tarix, material, miqdar və səbəbi qeyd edin. Sistem anbar qalığını avtomatik yeniləyəcək."
+        onClose={closeAction}
+      >
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={submitAction}>
+          <Field label="Tarix">
+            <Input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
+          </Field>
+
+          <Field label="Anbar">
+            <select value={form.warehouseId} onChange={(event) => setForm((current) => ({ ...current, warehouseId: event.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" required>
+              <option value="">Anbar seçin</option>
               {warehouses.map((warehouse) => (
                 <option key={warehouse.id} value={warehouse.id}>
                   {warehouse.name}
@@ -329,61 +392,70 @@ export function InventoryPage() {
             </select>
           </Field>
 
-          <Field label="Количество">
-            <Input type="number" min={1} value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: Number(event.target.value) }))} />
+          <Field label="Material" className="md:col-span-2">
+            <select value={form.materialId} onChange={(event) => setForm((current) => ({ ...current, materialId: event.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" required>
+              <option value="">Material seçin</option>
+              {materials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.name}
+                </option>
+              ))}
+            </select>
           </Field>
 
-          {action === 'reserve' ? (
-            <Field label="Заказ">
-              <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} required />
-            </Field>
-          ) : null}
-
-          {action === 'write_off' ? (
-            <>
-              <Field label="Резерв ID">
-                <Input value={form.reservationId} onChange={(event) => setForm((current) => ({ ...current, reservationId: event.target.value }))} />
-              </Field>
-              <Field label="Заказ ID">
-                <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} />
-              </Field>
-              <Field label="Задание ID">
-                <Input value={form.productionJobId} onChange={(event) => setForm((current) => ({ ...current, productionJobId: event.target.value }))} />
-              </Field>
-            </>
-          ) : null}
+          <Field label="Miqdar">
+            <Input type="number" min="0" step="0.0001" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required />
+          </Field>
 
           {action === 'adjustment' ? (
-            <Field label="Тип корректировки">
-              <select
-                value={form.direction}
-                onChange={(event) => setForm((current) => ({ ...current, direction: event.target.value as InventoryFormState['direction'] }))}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              >
-                <option value="increase">Увеличить</option>
-                <option value="decrease">Уменьшить</option>
+            <Field label="İstiqamət">
+              <select value={form.direction} onChange={(event) => setForm((current) => ({ ...current, direction: event.target.value as MovementDraft['direction'] }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                <option value="increase">Artır</option>
+                <option value="decrease">Azalt</option>
               </select>
             </Field>
           ) : null}
 
-          <Field label="Комментарий" className="md:col-span-2">
-            <Input value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} />
+          {action === 'reserve' || action === 'write_off' ? (
+            <Field label="Əlaqəli sifariş">
+              <Input value={form.orderId} onChange={(event) => setForm((current) => ({ ...current, orderId: event.target.value }))} placeholder="Order ID və ya sifariş əlaqəsi" />
+            </Field>
+          ) : null}
+
+          <Field label="Səbəb / istinad">
+            <Input value={form.reference} onChange={(event) => setForm((current) => ({ ...current, reference: event.target.value }))} placeholder="Məs: alış, inventar, daxili istifadə" />
           </Field>
 
-          {formError ? <div className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
+          <Field label="Qeyd" className="md:col-span-2">
+            <Input value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} placeholder="Əlavə qeyd" />
+          </Field>
 
           <div className="md:col-span-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={closeAction}>
-              Отмена
+              Bağla
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Выполняем...' : 'Сохранить'}
+              {saving ? 'Saxlanılır...' : 'Yadda saxla'}
             </Button>
           </div>
         </form>
       </Modal>
     </div>
   );
+}
+
+function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: 'rose' | 'emerald' | 'amber' }) {
+  const colorClass = tone === 'rose' ? 'text-rose-600' : tone === 'emerald' ? 'text-emerald-600' : tone === 'amber' ? 'text-amber-600' : 'text-slate-950';
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className={`mt-1 text-sm font-semibold ${colorClass}`}>{value}</div>
+    </div>
+  );
+}
+
+function InlineAlert({ children }: { children: ReactNode }) {
+  return <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{children}</div>;
 }
 
 function Field({

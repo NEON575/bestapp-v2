@@ -8,6 +8,7 @@ import type {
 } from '@bestapp/shared';
 import { Button, Input } from '@bestapp/ui';
 import { inventoryClient } from '../shared/api/inventory';
+import { settingsClient } from '../shared/api/settings';
 import { EmptyState, ErrorState, LoadingState, Modal, PageHeader, Pagination } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 
@@ -15,6 +16,9 @@ type MaterialDraft = {
   categoryId: string;
   name: string;
   unit: string;
+  stockUnit: string;
+  packageUnit: string;
+  defaultUnitsPerPackage: string;
   gram: string;
   size: string;
   quantityInPack: string;
@@ -29,6 +33,9 @@ const emptyDraft: MaterialDraft = {
   categoryId: '',
   name: '',
   unit: 'ədəd',
+  stockUnit: 'ədəd',
+  packageUnit: '',
+  defaultUnitsPerPackage: '',
   gram: '',
   size: '',
   quantityInPack: '',
@@ -49,6 +56,9 @@ function createDraft(row: InventoryMaterialItem): MaterialDraft {
     categoryId: row.category?.id ?? '',
     name: row.name,
     unit: row.unit,
+    stockUnit: row.stockUnit ?? row.unit,
+    packageUnit: row.packageUnit ?? '',
+    defaultUnitsPerPackage: row.defaultUnitsPerPackage != null ? String(row.defaultUnitsPerPackage) : '',
     gram: row.gram != null ? String(row.gram) : '',
     size: row.size ?? '',
     quantityInPack: row.quantityInPack != null ? String(row.quantityInPack) : '',
@@ -65,6 +75,9 @@ function toDto(draft: MaterialDraft): CreateMaterialDto {
     categoryId: draft.categoryId || undefined,
     name: draft.name.trim(),
     unit: draft.unit.trim() || 'ədəd',
+    stockUnit: draft.stockUnit.trim() || draft.unit.trim() || 'ədəd',
+    packageUnit: draft.packageUnit || undefined,
+    defaultUnitsPerPackage: draft.defaultUnitsPerPackage ? toNumber(draft.defaultUnitsPerPackage) : undefined,
     gram: draft.gram ? toNumber(draft.gram) : undefined,
     size: draft.size || undefined,
     quantityInPack: draft.quantityInPack ? toNumber(draft.quantityInPack) : undefined,
@@ -81,6 +94,7 @@ export function MaterialsPage() {
   const [rows, setRows] = useState<InventoryMaterialItem[]>([]);
   const [categories, setCategories] = useState<MaterialCategoryItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [units, setUnits] = useState<string[]>([]);
   const [query, setQuery] = useState<MaterialQueryDto>({
     page: 1,
     limit: 20,
@@ -105,14 +119,16 @@ export function MaterialsPage() {
     setError(null);
 
     try {
-      const [materialsResponse, categoriesResponse] = await Promise.all([
+      const [materialsResponse, categoriesResponse, unitResponse] = await Promise.all([
         inventoryClient.materials(nextQuery),
-        inventoryClient.categories()
+        inventoryClient.categories(),
+        settingsClient.units()
       ]);
 
       setRows(materialsResponse.data);
       setMeta(materialsResponse.meta);
       setCategories(categoriesResponse);
+      setUnits(unitResponse);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Materiallar yüklənmədi');
     } finally {
@@ -265,6 +281,7 @@ export function MaterialsPage() {
                       key={row.id}
                       draft={draft}
                       categories={categories}
+                      units={units}
                       selectedCategory={selectedEditCategory}
                       saving={saving}
                       onChange={setDraft}
@@ -318,7 +335,7 @@ export function MaterialsPage() {
         onClose={() => setCreateOpen(false)}
       >
         <div className="space-y-4">
-          <EditableMaterialForm draft={createDraftState} categories={categories} selectedCategory={selectedCreateCategory} onChange={setCreateDraftState} />
+          <EditableMaterialForm draft={createDraftState} categories={categories} units={units} selectedCategory={selectedCreateCategory} onChange={setCreateDraftState} />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
               Bağla
@@ -336,6 +353,7 @@ export function MaterialsPage() {
 function EditableMaterialRow({
   draft,
   categories,
+  units,
   selectedCategory,
   saving,
   onChange,
@@ -344,6 +362,7 @@ function EditableMaterialRow({
 }: {
   draft: MaterialDraft;
   categories: MaterialCategoryItem[];
+  units: string[];
   selectedCategory: MaterialCategoryItem | null;
   saving: boolean;
   onChange: (draft: MaterialDraft) => void;
@@ -354,7 +373,7 @@ function EditableMaterialRow({
     <tr className="bg-amber-50/60 align-top">
       <td className="px-4 py-3 text-xs font-medium text-slate-500">{selectedCategory?.codePrefix ?? 'MAT'}-auto</td>
       <td className="px-4 py-3" colSpan={7}>
-        <EditableMaterialForm draft={draft} categories={categories} selectedCategory={selectedCategory} compact onChange={onChange} />
+        <EditableMaterialForm draft={draft} categories={categories} units={units} selectedCategory={selectedCategory} compact onChange={onChange} />
       </td>
       <td className="px-4 py-3">
         <div className="flex gap-2">
@@ -373,12 +392,14 @@ function EditableMaterialRow({
 function EditableMaterialForm({
   draft,
   categories,
+  units,
   selectedCategory,
   compact,
   onChange
 }: {
   draft: MaterialDraft;
   categories: MaterialCategoryItem[];
+  units: string[];
   selectedCategory: MaterialCategoryItem | null;
   compact?: boolean;
   onChange: (draft: MaterialDraft) => void;
@@ -421,7 +442,38 @@ function EditableMaterialForm({
       </Field>
 
       <Field label="Vahid">
-        <Input value={draft.unit} onChange={(event) => onChange({ ...draft, unit: event.target.value })} />
+        <select value={draft.unit} onChange={(event) => onChange({ ...draft, unit: event.target.value, stockUnit: draft.stockUnit || event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          {units.map((unit) => (
+            <option key={unit} value={unit}>
+              {unit}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Anbar vahidi">
+        <select value={draft.stockUnit} onChange={(event) => onChange({ ...draft, stockUnit: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          {units.map((unit) => (
+            <option key={unit} value={unit}>
+              {unit}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Qablaşdırma vahidi">
+        <select value={draft.packageUnit} onChange={(event) => onChange({ ...draft, packageUnit: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+          <option value="">Seçilməyib</option>
+          {units.map((unit) => (
+            <option key={unit} value={unit}>
+              {unit}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Bir qablaşdırmada vahid sayı">
+        <Input value={draft.defaultUnitsPerPackage} onChange={(event) => onChange({ ...draft, defaultUnitsPerPackage: event.target.value })} />
       </Field>
 
       <Field label="Qram">

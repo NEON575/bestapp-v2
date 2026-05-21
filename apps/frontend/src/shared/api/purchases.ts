@@ -63,5 +63,10 @@ export const purchasesClient = {
   async updateSupplier(id: string, dto: UpdateSupplierDto) {
     const { data } = await api.patch<SupplierItem>(`/purchases/suppliers/${id}`, dto);
     return data;
+  },
+
+  async removeSupplier(id: string) {
+    const { data } = await api.delete<SupplierItem>(`/purchases/suppliers/${id}`);
+    return data;
   }
 };

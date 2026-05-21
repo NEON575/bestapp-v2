@@ -41,6 +41,11 @@ export const settingsClient = {
     return data;
   },
 
+  async units() {
+    const { data } = await api.get<string[]>('/settings/units');
+    return data;
+  },
+
   async createReference(dto: CreateSystemOptionDto) {
     const { data } = await api.post('/settings/references', dto);
     return data;

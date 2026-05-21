@@ -70,6 +70,9 @@ export interface CreateMaterialDto {
   name: string;
   sku?: string;
   unit: string;
+  stockUnit?: string;
+  packageUnit?: string;
+  defaultUnitsPerPackage?: number;
   gram?: number;
   size?: string;
   packPrice?: number;
@@ -93,6 +96,7 @@ export interface MaterialQueryDto extends PaginationQueryDto {
   gram?: number;
   size?: string;
   lowStockOnly?: boolean;
+  stockState?: 'positive' | 'zero';
 }
 
 export interface CreateMaterialCategoryDto {
@@ -144,6 +148,7 @@ export interface ReserveStockDto {
   warehouseId: string;
   quantity: number;
   note?: string;
+  date?: string;
 }
 
 export interface WriteOffStockDto {
@@ -154,6 +159,7 @@ export interface WriteOffStockDto {
   productionJobId?: string;
   quantity: number;
   note?: string;
+  date?: string;
 }
 
 export interface CreateStockMovementDto {
@@ -168,6 +174,7 @@ export interface CreateStockMovementDto {
   totalCost?: number;
   reference?: string;
   note?: string;
+  date?: string;
 }
 
 export interface CreateProductionJobDto {
@@ -314,6 +321,7 @@ export interface CreateSupplierDto {
   code?: string;
   name: string;
   phone?: string;
+  taxId?: string;
   email?: string;
   address?: string;
   notes?: string;
@@ -339,8 +347,16 @@ export interface UpdatePaperDto extends Partial<CreatePaperDto> {}
 
 export interface CreatePurchaseEntryDto {
   supplierId: string;
+  materialId: string;
+  warehouseId?: string;
   date?: string;
-  amount: number;
+  quantity?: number;
+  stockUnit: string;
+  packageUnit?: string;
+  unitsPerPackage?: number;
+  packageQuantity?: number;
+  unitPrice?: number;
+  amount?: number;
   paymentAmount?: number;
   paymentType?: string;
   comment?: string;

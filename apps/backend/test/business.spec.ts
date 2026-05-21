@@ -15,6 +15,14 @@ import { aggregateSupplierDebt, recalculatePurchaseEntry } from '../src/common/b
 import { aggregateSalaryByEmployee, recalculateSalaryEntry } from '../src/common/business/salary-entry';
 import { calculatePaperPricePerSheet } from '../src/common/business/paper-pricing';
 import {
+  applyPurchaseReceipt,
+  buildPurchaseMovement,
+  calculateNextAverageCost,
+  calculatePackageQuantity,
+  calculateStockValue,
+  recalculatePurchaseFlow
+} from '../src/common/business/purchase-flow';
+import {
   generateMaterialCode,
   sanitizeMaterialMetadata
 } from '../src/common/business/material-catalog';
@@ -281,6 +289,129 @@ test('purchase and supplier debt calculations are consistent', () => {
     paymentAmount: 140,
     remainingDebt: 260
   });
+});
+
+test('package quantity calculation supports packaging conversion', () => {
+  assert.equal(calculatePackageQuantity(3, 500, 0), 1500);
+  assert.equal(calculatePackageQuantity(undefined, undefined, 120), 120);
+});
+
+test('purchase recalculation derives total amount, unit price and debt', () => {
+  const result = recalculatePurchaseFlow({
+    packageQuantity: 3,
+    unitsPerPackage: 500,
+    unitPrice: 0.42,
+    paymentAmount: 200
+  });
+
+  assert.deepEqual(result, {
+    totalQuantity: 1500,
+    unitPrice: 0.42,
+    totalAmount: 630,
+    paymentAmount: 200,
+    remainingDebt: 430
+  });
+
+  const reverse = recalculatePurchaseFlow({
+    quantity: 100,
+    totalAmount: 55,
+    paymentAmount: 5
+  });
+
+  assert.deepEqual(reverse, {
+    totalQuantity: 100,
+    unitPrice: 0.55,
+    totalAmount: 55,
+    paymentAmount: 5,
+    remainingDebt: 50
+  });
+});
+
+test('purchase helper produces purchase_in stock movement payload', () => {
+  const movement = buildPurchaseMovement({
+    materialId: 'm1',
+    warehouseId: 'w1',
+    totalQuantity: 1500,
+    unitPrice: 0.42,
+    totalAmount: 630,
+    reference: 'purchase:p1',
+    note: 'A3 kağız'
+  });
+
+  assert.deepEqual(movement, {
+    type: 'purchase_in',
+    materialId: 'm1',
+    warehouseId: 'w1',
+    quantity: 1500,
+    balanceDelta: 1500,
+    unitCost: 0.42,
+    totalCost: 630,
+    reference: 'purchase:p1',
+    note: 'A3 kağız'
+  });
+});
+
+test('purchase receipt increases stock and updates material price snapshots', () => {
+  const applied = applyPurchaseReceipt({
+    currentOnHand: 500,
+    currentAverageCost: 0.35,
+    incomingQuantity: 1500,
+    incomingUnitPrice: 0.42,
+    paymentAmount: 200
+  });
+
+  assert.deepEqual(applied, {
+    onHand: 2000,
+    lastPurchasePrice: 0.42,
+    averageCost: 0.4025,
+    totalAmount: 630,
+    paymentAmount: 200,
+    remainingDebt: 430,
+    stockValue: 805
+  });
+});
+
+test('average cost and stock value are calculated after purchase', () => {
+  assert.equal(
+    calculateNextAverageCost({
+      currentOnHand: 500,
+      currentAverageCost: 0.35,
+      incomingQuantity: 1500,
+      incomingUnitPrice: 0.42
+    }),
+    0.4025
+  );
+  assert.equal(calculateStockValue(2000, 0.4025), 805);
+});
+
+test('stock summary after purchase stays structurally correct', () => {
+  const applied = applyPurchaseReceipt({
+    currentOnHand: 0,
+    currentAverageCost: 0,
+    incomingQuantity: 1500,
+    incomingUnitPrice: 0.42,
+    paymentAmount: 100
+  });
+
+  const summary = calculateInventorySummary({
+    totalMaterials: 1,
+    lowStockCount: 0,
+    totalStockValue: applied.stockValue,
+    reservedValue: 0,
+    materialsBelowMinimum: [],
+    recentMovements: [
+      buildPurchaseMovement({
+        materialId: 'm1',
+        warehouseId: 'w1',
+        totalQuantity: 1500,
+        unitPrice: 0.42,
+        totalAmount: 630
+      })
+    ]
+  });
+
+  assert.equal(summary.totalStockValue, 630);
+  assert.equal(summary.recentMovements[0]?.type, 'purchase_in');
 });
 
 test('salary recalculation matches excel balance logic', () => {

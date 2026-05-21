@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/query/pagination.dto';
 
 export enum StockMovementTypeDto {
@@ -39,6 +39,11 @@ export class MaterialQueryDto extends PaginationQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   lowStockOnly?: boolean;
+
+  @ApiPropertyOptional({ enum: ['positive', 'zero'] })
+  @IsOptional()
+  @IsString()
+  stockState?: 'positive' | 'zero';
 }
 
 export class CreateMaterialDto {
@@ -59,6 +64,21 @@ export class CreateMaterialDto {
   @ApiProperty()
   @IsString()
   unit!: string;
+
+  @ApiPropertyOptional({ example: 'list' })
+  @IsOptional()
+  @IsString()
+  stockUnit?: string;
+
+  @ApiPropertyOptional({ example: 'bağlama' })
+  @IsOptional()
+  @IsString()
+  packageUnit?: string;
+
+  @ApiPropertyOptional({ example: 500 })
+  @IsOptional()
+  @IsNumber()
+  defaultUnitsPerPackage?: number;
 
   @ApiProperty({ required: false, example: 300 })
   @IsOptional()
@@ -217,6 +237,11 @@ export class CreateStockMovementDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }
 
 export class ReserveStockDto {
@@ -245,6 +270,11 @@ export class ReserveStockDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }
 
 export class WriteOffStockDto {
@@ -280,4 +310,9 @@ export class WriteOffStockDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }

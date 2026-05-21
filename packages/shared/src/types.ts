@@ -98,6 +98,7 @@ export interface SupplierItem {
   code?: string | null;
   name: string;
   phone?: string | null;
+  taxId?: string | null;
   email?: string | null;
   address?: string | null;
   notes?: string | null;
@@ -205,11 +206,20 @@ export interface SalesEntryItem {
 export interface PurchaseEntryItem {
   id: string;
   date: string;
+  quantity?: number;
+  stockUnit?: string | null;
+  packageUnit?: string | null;
+  unitsPerPackage?: number | null;
+  packageQuantity?: number | null;
+  totalQuantity?: number;
+  unitPrice?: number;
   amount: number;
   paymentAmount: number;
   remainingDebt: number;
   paymentType: string;
   comment?: string | null;
+  material?: InventoryMaterialItem | null;
+  warehouse?: WarehouseItem | null;
   supplier?: SupplierItem | null;
 }
 
@@ -408,11 +418,16 @@ export interface InventoryMaterialItem {
   name: string;
   sku?: string | null;
   unit: string;
+  stockUnit?: string;
+  packageUnit?: string | null;
+  defaultUnitsPerPackage?: number | null;
   gram?: number | null;
   size?: string | null;
   packPrice?: number;
   quantityInPack?: number;
   unitCost?: number;
+  lastPurchasePrice?: number;
+  averageCost?: number;
   vatIncluded?: boolean;
   metadata?: Record<string, unknown> | null;
   isActive?: boolean;
@@ -421,6 +436,7 @@ export interface InventoryMaterialItem {
   reserved?: number;
   available?: number;
   costPrice?: number;
+  lastMovementAt?: string | null;
   notes?: string | null;
   category?: MaterialCategoryItem | null;
   supplier?: SupplierItem | null;

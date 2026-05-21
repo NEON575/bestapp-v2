@@ -44,6 +44,12 @@ export class SettingsController {
     return this.settingsService.getReferenceOptions();
   }
 
+  @Get('units')
+  @Roles('super_admin', 'owner', 'manager', 'accountant')
+  getUnits() {
+    return this.settingsService.listUnits();
+  }
+
   @Get('references')
   @Roles('super_admin', 'owner')
   getReferences() {
