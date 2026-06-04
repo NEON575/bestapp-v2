@@ -411,6 +411,7 @@ export interface StockReservationItem {
   note?: string | null;
   material?: InventoryMaterialItem | null;
   warehouse?: WarehouseItem | null;
+  order?: OrderListItem | null;
 }
 
 export interface InventoryMaterialItem {
@@ -474,6 +475,7 @@ export interface WarehouseItem {
 export interface InventoryMovementItem {
   id: string;
   type: string;
+  displayType?: string;
   quantity: number;
   balanceDelta?: number;
   unitCost?: number;
@@ -485,6 +487,21 @@ export interface InventoryMovementItem {
   warehouse?: WarehouseItem | null;
   order?: OrderListItem | null;
   productionJob?: ProductionJobItem | null;
+  purchaseEntry?: PurchaseEntryItem | null;
+}
+
+export interface InventoryStockLevelItem {
+  warehouse?: WarehouseItem | null;
+  onHand: number;
+  reserved: number;
+  available: number;
+}
+
+export interface InventoryMaterialDetail extends InventoryMaterialItem {
+  stockLevels?: InventoryStockLevelItem[];
+  stockValue?: number;
+  lastPurchaseAt?: string | null;
+  recentMovements?: InventoryMovementItem[];
 }
 
 export interface InvoiceItem {

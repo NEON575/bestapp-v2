@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import {
   CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
+  InventoryMovementQueryDto,
+  InventoryReservationQueryDto,
   MaterialQueryDto,
   ReserveStockDto,
   UpdateMaterialCategoryDto,
@@ -87,8 +88,14 @@ export class InventoryController {
 
   @Get('movements')
   @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
-  listMovements(@Query() query: PaginationQueryDto) {
+  listMovements(@Query() query: InventoryMovementQueryDto) {
     return this.inventoryService.findMovements(query);
+  }
+
+  @Get('reservations')
+  @Roles('super_admin', 'owner', 'warehouse', 'manager', 'production')
+  listReservations(@Query() query: InventoryReservationQueryDto) {
+    return this.inventoryService.findReservations(query);
   }
 
   @Post('movements')

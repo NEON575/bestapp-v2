@@ -2,13 +2,16 @@ import type {
   CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
+  InventoryMaterialDetail,
   InventoryMaterialItem,
+  InventoryMovementQueryDto,
   InventoryMovementItem,
   InventorySummary,
   MaterialQueryDto,
   PaginationQuery,
   PaginatedResponse,
   ReserveStockDto,
+  StockReservationItem,
   UpdateMaterialCategoryDto,
   UpdateMaterialDto,
   WriteOffStockDto,
@@ -32,7 +35,7 @@ export const inventoryClient = {
   },
 
   async material(id: string) {
-    const { data } = await api.get<InventoryMaterialItem>(`/inventory/materials/${id}`);
+    const { data } = await api.get<InventoryMaterialDetail>(`/inventory/materials/${id}`);
     return data;
   },
 
@@ -51,8 +54,15 @@ export const inventoryClient = {
     return data;
   },
 
-  async movements(query: PaginationQuery = {}) {
+  async movements(query: InventoryMovementQueryDto | PaginationQuery = {}) {
     const { data } = await api.get<PaginatedResponse<InventoryMovementItem>>('/inventory/movements', {
+      params: buildQueryParams(query)
+    });
+    return data;
+  },
+
+  async reservations(query: { materialId?: string; activeOnly?: boolean } = {}) {
+    const { data } = await api.get<StockReservationItem[]>('/inventory/reservations', {
       params: buildQueryParams(query)
     });
     return data;

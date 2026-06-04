@@ -46,6 +46,31 @@ export class MaterialQueryDto extends PaginationQueryDto {
   stockState?: 'positive' | 'zero';
 }
 
+export class InventoryMovementQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  materialId?: string;
+
+  @ApiPropertyOptional({ enum: StockMovementTypeDto })
+  @IsOptional()
+  @IsEnum(StockMovementTypeDto)
+  type?: StockMovementTypeDto;
+}
+
+export class InventoryReservationQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  materialId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  activeOnly?: boolean;
+}
+
 export class CreateMaterialDto {
   @ApiPropertyOptional()
   @IsOptional()

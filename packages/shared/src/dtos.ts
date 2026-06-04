@@ -99,6 +99,11 @@ export interface MaterialQueryDto extends PaginationQueryDto {
   stockState?: 'positive' | 'zero';
 }
 
+export interface InventoryMovementQueryDto extends PaginationQueryDto {
+  materialId?: string;
+  type?: string;
+}
+
 export interface CreateMaterialCategoryDto {
   code: string;
   name: string;

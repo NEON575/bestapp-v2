@@ -3,6 +3,8 @@ import test from 'node:test';
 import { OrderStatus } from '@prisma/client';
 import { assertOrderStatusTransition } from '../src/common/business/order-status';
 import { applyConsume, applyRelease, applyReserve } from '../src/common/business/inventory-flow';
+import { filterInventoryMaterials } from '../src/common/business/inventory-materials';
+import { getMovementBalanceDelta } from '../src/common/business/inventory-balance';
 import { calculateOrderProfitability } from '../src/common/business/profitability';
 import { buildPaginatedResponse, normalizePagination } from '../src/common/query/pagination';
 import { buildOrderListWhere } from '../src/common/business/order-filters';
@@ -54,6 +56,14 @@ test('inventory reserve, release and consume update balances correctly', () => {
 
   const consumed = applyConsume(released, 20);
   assert.deepEqual(consumed, { onHand: 80, reserved: 0, available: 80 });
+});
+
+test('inventory movement deltas follow warehouse rules', () => {
+  assert.equal(getMovementBalanceDelta('purchase_in' as any, 40), 40);
+  assert.equal(getMovementBalanceDelta('write_off' as any, 15), -15);
+  assert.equal(getMovementBalanceDelta('waste' as any, 5), -5);
+  assert.equal(getMovementBalanceDelta('reserve' as any, 12), 0);
+  assert.equal(getMovementBalanceDelta('adjustment' as any, -8), -8);
 });
 
 test('payment partial and full states are resolved correctly', () => {
@@ -437,6 +447,22 @@ test('stock summary after purchase stays structurally correct', () => {
 
   assert.equal(summary.totalStockValue, 630);
   assert.equal(summary.recentMovements[0]?.type, 'purchase_in');
+});
+
+test('low stock filter keeps only materials below minimum', () => {
+  const filtered = filterInventoryMaterials(
+    [
+      { available: 3, onHand: 3, minStockLevel: 5, id: 'm1' },
+      { available: 12, onHand: 12, minStockLevel: 5, id: 'm2' },
+      { available: 0, onHand: 0, minStockLevel: 2, id: 'm3' }
+    ],
+    { lowStockOnly: true }
+  );
+
+  assert.deepEqual(
+    filtered.map((item) => (item as any).id),
+    ['m1', 'm3']
+  );
 });
 
 test('salary recalculation matches excel balance logic', () => {

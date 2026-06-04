@@ -2,13 +2,15 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StockMovementType, StockReservationStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { PaginationQueryDto } from '../../common/query/pagination.dto';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
 import { calculateInventorySummary } from '../../common/business/inventory-summary';
+import { filterInventoryMaterials } from '../../common/business/inventory-materials';
 import {
   CreateMaterialCategoryDto,
   CreateMaterialDto,
   CreateStockMovementDto,
+  InventoryMovementQueryDto,
+  InventoryReservationQueryDto,
   MaterialQueryDto,
   ReserveStockDto,
   UpdateMaterialCategoryDto,
@@ -423,6 +425,42 @@ export class InventoryService {
     };
   }
 
+  private mapMovement(movement: any) {
+    return {
+      ...movement,
+      quantity: toNumber(movement.quantity),
+      balanceDelta: toNumber(movement.balanceDelta),
+      unitCost: toNumber(movement.unitCost),
+      totalCost: toNumber(movement.totalCost),
+      createdAt: movement.createdAt?.toISOString?.() ?? movement.createdAt ?? null,
+      displayType:
+        movement.type === StockMovementType.purchase_in
+          ? 'Alış girişi'
+          : movement.type === StockMovementType.write_off
+            ? 'Çıxış'
+            : movement.type === StockMovementType.adjustment
+              ? 'Düzəliş'
+              : movement.type === StockMovementType.reserve
+                ? 'Rezerv'
+                : movement.type === StockMovementType.waste
+                  ? 'Fire / zay'
+                  : movement.type === StockMovementType.return
+                    ? 'Geri qaytarma'
+                    : movement.type,
+      purchaseEntry: movement.purchaseEntry
+        ? {
+            ...movement.purchaseEntry,
+            amount: toNumber(movement.purchaseEntry.amount),
+            paymentAmount: toNumber(movement.purchaseEntry.paymentAmount),
+            remainingDebt: toNumber(movement.purchaseEntry.remainingDebt),
+            totalQuantity: toNumber(movement.purchaseEntry.totalQuantity),
+            unitPrice: toNumber(movement.purchaseEntry.unitPrice),
+            date: movement.purchaseEntry.date?.toISOString?.() ?? movement.purchaseEntry.date ?? null
+          }
+        : null
+    };
+  }
+
   async findMaterials(query: MaterialQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
     const where: Prisma.MaterialWhereInput = {
@@ -464,21 +502,7 @@ export class InventoryService {
     });
 
     const normalized = materials.map((material) => this.mapMaterial(material));
-    const filtered = normalized.filter((material) => {
-      if (query.lowStockOnly && !(material.available <= material.minStockLevel)) {
-        return false;
-      }
-
-      if (query.stockState === 'positive' && !(material.onHand > 0)) {
-        return false;
-      }
-
-      if (query.stockState === 'zero' && material.onHand !== 0) {
-        return false;
-      }
-
-      return true;
-    });
+    const filtered = filterInventoryMaterials(normalized, query);
     const paged = filtered.slice(skip, skip + take);
 
     return buildPaginatedResponse(paged, filtered.length, page, limit);
@@ -489,12 +513,12 @@ export class InventoryService {
       where: { id, deletedAt: null },
       include: {
         category: true,
-        supplier: true,
         stockLevels: {
           include: {
             warehouse: true
           }
-        }
+        },
+        supplier: true
       }
     });
 
@@ -502,7 +526,46 @@ export class InventoryService {
       return null;
     }
 
-    return this.mapMaterial(material);
+    const [recentMovements, latestPurchaseMovement] = await Promise.all([
+      this.prisma.stockMovement.findMany({
+        where: { materialId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 10,
+        include: {
+          material: true,
+          warehouse: true,
+          order: true,
+          productionJob: true,
+          purchaseEntry: {
+            include: {
+              supplier: true,
+              warehouse: true,
+              material: true
+            }
+          }
+        }
+      }),
+      this.prisma.stockMovement.findFirst({
+        where: { materialId: id, type: StockMovementType.purchase_in },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+      })
+    ]);
+
+    const mapped = this.mapMaterial(material);
+    const stockLevels = (material.stockLevels ?? []).map((level) => ({
+      warehouse: level.warehouse,
+      onHand: roundQty(toNumber(level.onHand)),
+      reserved: roundQty(toNumber(level.reserved)),
+      available: roundQty(toNumber(level.available))
+    }));
+
+    return {
+      ...mapped,
+      stockLevels,
+      stockValue: roundQty((mapped.onHand ?? 0) * (mapped.averageCost ?? mapped.costPrice ?? 0)),
+      lastPurchaseAt: latestPurchaseMovement?.createdAt?.toISOString?.() ?? null,
+      recentMovements: recentMovements.map((movement) => this.mapMovement(movement))
+    };
   }
 
   async createMaterial(dto: CreateMaterialDto) {
@@ -608,9 +671,11 @@ export class InventoryService {
     });
   }
 
-  async findMovements(query: PaginationQueryDto) {
+  async findMovements(query: InventoryMovementQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
     const where: Prisma.StockMovementWhereInput = {
+      ...(query.materialId ? { materialId: query.materialId } : {}),
+      ...(query.type ? { type: query.type as StockMovementType } : {}),
       ...(query.search
         ? {
             OR: [
@@ -640,18 +705,47 @@ export class InventoryService {
         where,
         skip,
         take,
-        orderBy,
+        orderBy: [orderBy, { id: 'desc' }],
         include: {
           material: true,
           warehouse: true,
           order: true,
           orderItem: true,
-          productionJob: true
+          productionJob: true,
+          purchaseEntry: {
+            include: {
+              supplier: true,
+              warehouse: true,
+              material: true
+            }
+          }
         }
       })
     ]);
 
-    return buildPaginatedResponse(data, total, page, limit);
+    return buildPaginatedResponse(data.map((movement) => this.mapMovement(movement)), total, page, limit);
+  }
+
+  async findReservations(query: Partial<InventoryReservationQueryDto> = {}) {
+    return this.prisma.stockReservation.findMany({
+      where: {
+        deletedAt: null,
+        ...(query.materialId ? { materialId: query.materialId } : {}),
+        ...(query.activeOnly
+          ? {
+              status: {
+                in: [StockReservationStatus.open, StockReservationStatus.reserved]
+              }
+            }
+          : {})
+      },
+      orderBy: [{ reservedAt: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        material: true,
+        warehouse: true,
+        order: true
+      }
+    });
   }
 
   async createMovement(dto: CreateStockMovementDto) {
