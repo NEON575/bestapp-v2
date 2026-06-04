@@ -5,13 +5,16 @@ import type {
   CreateEmployeeDto,
   CreateMaterialCategoryDto,
   CreateSystemOptionDto,
+  CreateUnitDto,
   EmployeeItem,
   MaterialCategoryItem,
   MaterialDynamicField,
+  SettingUnitItem,
   SettingsReferenceGroup,
   SystemOptionItem,
   UpdateEmployeeDto,
-  UpdateSystemOptionDto
+  UpdateSystemOptionDto,
+  UpdateUnitDto
 } from '@bestapp/shared';
 import { Button, Card, Input } from '@bestapp/ui';
 import { inventoryClient } from '../shared/api/inventory';
@@ -21,7 +24,7 @@ import { ErrorState, LoadingState, PageHeader } from '../shared/components';
 import { useLanguage } from '../shared/i18n/language-context';
 import { useToast } from '../shared/toast/toast-context';
 
-type SettingsTab = 'company' | 'language' | 'employees' | 'categories' | 'references';
+type SettingsTab = 'company' | 'language' | 'employees' | 'units' | 'categories' | 'references';
 
 const availableDynamicFields: MaterialDynamicField[] = [
   { key: 'type', label: 'Tip', type: 'text' },
@@ -92,28 +95,46 @@ function emptyReference(groupKey: string): CreateSystemOptionDto {
   };
 }
 
+function emptyUnit(): CreateUnitDto {
+  return {
+    value: '',
+    labelAz: '',
+    labelRu: '',
+    sortOrder: 0,
+    isActive: true
+  };
+}
+
 export function SettingsPage() {
   const toast = useToast();
   const { language, setLanguage, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<SettingsTab>('company');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [company, setCompany] = useState<CompanySettings>(emptyCompany());
   const [preferences, setPreferences] = useState<AppPreferences>({ language: 'az' });
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
   const [employeeDraft, setEmployeeDraft] = useState<CreateEmployeeDto>(emptyEmployee());
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+
+  const [units, setUnits] = useState<SettingUnitItem[]>([]);
+  const [unitDraft, setUnitDraft] = useState<CreateUnitDto>(emptyUnit());
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+
   const [categories, setCategories] = useState<MaterialCategoryItem[]>([]);
   const [categoryDraft, setCategoryDraft] = useState<CreateMaterialCategoryDto>(emptyCategory());
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+
   const [referenceGroups, setReferenceGroups] = useState<SettingsReferenceGroup[]>([]);
-  const [units, setUnits] = useState<string[]>([]);
   const [selectedReferenceGroup, setSelectedReferenceGroup] = useState('payment_types');
   const [referenceDraft, setReferenceDraft] = useState<CreateSystemOptionDto>(emptyReference('payment_types'));
   const [editingReferenceId, setEditingReferenceId] = useState<string | null>(null);
+
   const [savingCompany, setSavingCompany] = useState(false);
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [savingEmployee, setSavingEmployee] = useState(false);
+  const [savingUnit, setSavingUnit] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingReference, setSavingReference] = useState(false);
 
@@ -122,10 +143,11 @@ export function SettingsPage() {
     setError(null);
 
     try {
-      const [companyResponse, preferencesResponse, employeesResponse, categoriesResponse, referencesResponse] = await Promise.all([
+      const [companyResponse, preferencesResponse, employeesResponse, unitsResponse, categoriesResponse, referencesResponse] = await Promise.all([
         settingsClient.company(),
         settingsClient.preferences(),
         salariesClient.listEmployees(),
+        settingsClient.units(),
         inventoryClient.categories(),
         settingsClient.references()
       ]);
@@ -134,9 +156,9 @@ export function SettingsPage() {
       setPreferences(preferencesResponse);
       await setLanguage(preferencesResponse.language, { persist: false });
       setEmployees(employeesResponse);
+      setUnits(unitsResponse);
       setCategories(categoriesResponse);
       setReferenceGroups(referencesResponse.groups);
-      setUnits(referencesResponse.units);
       setSelectedReferenceGroup(referencesResponse.groups[0]?.key ?? 'payment_types');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Ayarlar yüklənmədi');
@@ -242,6 +264,59 @@ export function SettingsPage() {
     }
   };
 
+  const saveUnit = async () => {
+    if (!unitDraft.labelAz.trim() || !unitDraft.value.trim()) {
+      toast.warning('Vahidin adı və dəyəri vacibdir');
+      return;
+    }
+
+    setSavingUnit(true);
+    try {
+      if (editingUnitId) {
+        await settingsClient.updateUnit(editingUnitId, unitDraft as UpdateUnitDto);
+      } else {
+        await settingsClient.createUnit(unitDraft);
+      }
+
+      setUnitDraft(emptyUnit());
+      setEditingUnitId(null);
+      await load();
+      toast.success(editingUnitId ? 'Vahid yeniləndi' : 'Vahid əlavə olundu');
+    } catch (saveError) {
+      toast.error('Vahid saxlanmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
+  const toggleUnit = async (unit: SettingUnitItem, isActive: boolean) => {
+    try {
+      if (isActive) {
+        await settingsClient.activateUnit(unit.id);
+      } else {
+        await settingsClient.deactivateUnit(unit.id);
+      }
+      await load();
+      toast.success(isActive ? 'Vahid aktiv edildi' : 'Vahid passiv edildi');
+    } catch (saveError) {
+      toast.error('Vahid yenilənmədi', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+    }
+  };
+
+  const deleteUnit = async (unitId: string) => {
+    try {
+      await settingsClient.removeUnit(unitId);
+      if (editingUnitId === unitId) {
+        setEditingUnitId(null);
+        setUnitDraft(emptyUnit());
+      }
+      await load();
+      toast.success('Vahid silindi');
+    } catch (saveError) {
+      toast.error('Vahid silinmədi', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+    }
+  };
+
   const saveCategory = async () => {
     if (!categoryDraft.name?.trim() || !categoryDraft.code?.trim()) {
       toast.warning('Kateqoriya adı və kodu vacibdir');
@@ -315,9 +390,9 @@ export function SettingsPage() {
       setReferenceDraft(emptyReference(selectedReferenceGroup));
       setEditingReferenceId(null);
       await load();
-      toast.success(editingReferenceId ? 'Siyahı elementi yeniləndi' : 'Siyahı elementi əlavə olundu');
+      toast.success(editingReferenceId ? 'Element yeniləndi' : 'Element əlavə olundu');
     } catch (saveError) {
-      toast.error('Siyahı elementi saxlanmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+      toast.error('Element saxlanmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
     } finally {
       setSavingReference(false);
     }
@@ -357,13 +432,17 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t('settings.title', 'Ayarlar')} description={t('settings.description', 'Şirkət məlumatları, işçilər, dil və seçim siyahıları burada idarə olunur.')} />
+      <PageHeader
+        title={t('settings.title', 'Ayarlar')}
+        description={t('settings.description', 'Şirkət məlumatları, dil, işçilər və sistem siyahıları burada idarə olunur.')}
+      />
 
       <div className="flex flex-wrap gap-2">
         {[
-          ['company', 'Şirkət məlumatları'],
-          ['language', 'Dil və lokalizasiya'],
+          ['company', 'Şirkət'],
+          ['language', 'Dil'],
           ['employees', 'İşçilər'],
+          ['units', 'Vahidlər'],
           ['categories', 'Material kateqoriyaları'],
           ['references', 'Seçim siyahıları']
         ].map(([key, label]) => (
@@ -381,16 +460,16 @@ export function SettingsPage() {
       </div>
 
       {activeTab === 'company' ? (
-        <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">Şirkət məlumatları</h2>
-              <p className="text-sm text-slate-500">Qaimə, PDF və gələcək sənədlər üçün əsas məlumatlar.</p>
-            </div>
-            <Button onClick={() => void saveCompany()} disabled={savingCompany}>
-              {savingCompany ? 'Saxlanılır...' : 'Yadda saxla'}
-            </Button>
-          </div>
+        <Card className="p-5">
+          <SectionHeader
+            title="Şirkət məlumatları"
+            description="Qaimə, sənəd və hesabatlarda istifadə olunacaq əsas məlumatlar."
+            action={
+              <Button onClick={() => void saveCompany()} disabled={savingCompany}>
+                {savingCompany ? 'Saxlanılır...' : 'Yadda saxla'}
+              </Button>
+            }
+          />
 
           <div className="grid gap-4 md:grid-cols-2">
             {[
@@ -430,16 +509,16 @@ export function SettingsPage() {
       ) : null}
 
       {activeTab === 'language' ? (
-        <Card className="border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">Dil və lokalizasiya</h2>
-              <p className="text-sm text-slate-500">Default dil Azərbaycan dilidir. Sonradan rus dilinə keçmək mümkündür.</p>
-            </div>
-            <Button onClick={() => void saveLanguage()} disabled={savingLanguage}>
-              {savingLanguage ? 'Saxlanılır...' : 'Yadda saxla'}
-            </Button>
-          </div>
+        <Card className="p-5">
+          <SectionHeader
+            title="Dil və lokalizasiya"
+            description="İnterfeys dili default olaraq Azərbaycan dilidir."
+            action={
+              <Button onClick={() => void saveLanguage()} disabled={savingLanguage}>
+                {savingLanguage ? 'Saxlanılır...' : 'Yadda saxla'}
+              </Button>
+            }
+          />
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="İnterfeys dili">
@@ -456,26 +535,14 @@ export function SettingsPage() {
             <Field label="Aktiv seçim">
               <Input value={language === 'az' ? 'Azərbaycan dili' : 'Русский язык'} readOnly />
             </Field>
-
-            <Field label="Vahidlər" className="md:col-span-2">
-              <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                {units.map((unit) => (
-                  <span key={unit} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                    {unit}
-                  </span>
-                ))}
-              </div>
-            </Field>
           </div>
         </Card>
       ) : null}
 
       {activeTab === 'employees' ? (
         <div className="grid gap-5 xl:grid-cols-[0.95fr_1.25fr]">
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">İşçi forması</h2>
-            <p className="mt-1 text-sm text-slate-500">Burada əlavə etdiyiniz menecer sifarişdə dropdown-da görünəcək.</p>
-
+          <Card className="p-5">
+            <SectionHeader title="İşçi forması" description="Burada əlavə etdiyiniz menecer sifarişdə dropdown-da görünəcək." />
             <div className="mt-4 grid gap-3">
               <Field label="Ad soyad">
                 <Input value={employeeDraft.fullName} onChange={(event) => setEmployeeDraft((current) => ({ ...current, fullName: event.target.value }))} />
@@ -504,14 +571,9 @@ export function SettingsPage() {
                 <Input value={employeeDraft.notes ?? ''} onChange={(event) => setEmployeeDraft((current) => ({ ...current, notes: event.target.value }))} />
               </Field>
               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={employeeDraft.isActive ?? true}
-                  onChange={(event) => setEmployeeDraft((current) => ({ ...current, isActive: event.target.checked }))}
-                />
+                <input type="checkbox" checked={employeeDraft.isActive ?? true} onChange={(event) => setEmployeeDraft((current) => ({ ...current, isActive: event.target.checked }))} />
                 Aktiv işçi
               </label>
-
               <div className="flex gap-2">
                 <Button onClick={() => void saveEmployee()} disabled={savingEmployee}>
                   {savingEmployee ? 'Saxlanılır...' : editingEmployeeId ? 'Yenilə' : 'Əlavə et'}
@@ -531,56 +593,148 @@ export function SettingsPage() {
             </div>
           </Card>
 
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">İşçi siyahısı</h2>
+          <Card className="p-5">
+            <SectionHeader title="İşçi siyahısı" description="Menecer, maaş və istehsal axınında istifadə olunan işçilər." />
             <div className="mt-4 space-y-3">
               {employees.map((employee) => (
-                <div key={employee.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-950">{employee.fullName}</div>
-                      <div className="mt-1 text-sm text-slate-500">{[employee.title, employee.roleKey, employee.phone].filter(Boolean).join(' • ') || 'Məlumat yoxdur'}</div>
-                      <div className="mt-2 text-xs text-slate-500">Menecer dropdown üçün user bağlıdır: {employee.userId ? 'Bəli' : 'Yox'}</div>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${employee.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {employee.isActive ? 'Aktiv' : 'Passiv'}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => {
-                        setEditingEmployeeId(employee.id);
-                        setEmployeeDraft({
-                          fullName: employee.fullName,
-                          phone: employee.phone ?? '',
-                          title: employee.title ?? '',
-                          roleKey: employee.roleKey ?? 'other',
-                          notes: employee.notes ?? '',
-                          isActive: employee.isActive
-                        });
-                      }}
-                    >
-                      Düzəliş
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => void toggleEmployee(employee, !employee.isActive)}
-                    >
-                      {employee.isActive ? 'Passiv et' : 'Aktiv et'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs text-rose-600"
-                      onClick={() => void deleteEmployee(employee.id)}
-                    >
-                      Sil
-                    </Button>
-                  </div>
-                </div>
+                <EntityRow
+                  key={employee.id}
+                  title={employee.fullName}
+                  subtitle={[employee.title, employee.roleKey, employee.phone].filter(Boolean).join(' • ') || 'Məlumat yoxdur'}
+                  status={employee.isActive ? 'Aktiv' : 'Passiv'}
+                  active={employee.isActive}
+                  actions={
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-lg px-3 text-xs"
+                        onClick={() => {
+                          setEditingEmployeeId(employee.id);
+                          setEmployeeDraft({
+                            fullName: employee.fullName,
+                            phone: employee.phone ?? '',
+                            title: employee.title ?? '',
+                            roleKey: employee.roleKey ?? 'other',
+                            notes: employee.notes ?? '',
+                            isActive: employee.isActive
+                          });
+                        }}
+                      >
+                        Düzəliş
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => void toggleEmployee(employee, !employee.isActive)}>
+                        {employee.isActive ? 'Passiv et' : 'Aktiv et'}
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs text-rose-600" onClick={() => void deleteEmployee(employee.id)}>
+                        Sil
+                      </Button>
+                    </>
+                  }
+                />
               ))}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === 'units' ? (
+        <div className="grid gap-5 xl:grid-cols-[0.95fr_1.25fr]">
+          <Card className="p-5">
+            <SectionHeader title="Vahid forması" description="Material və alış axınında istifadə olunan vahidləri buradan idarə edin." />
+            <div className="mt-4 grid gap-3">
+              <Field label="Ad">
+                <Input value={unitDraft.labelAz} onChange={(event) => setUnitDraft((current) => ({ ...current, labelAz: event.target.value }))} />
+              </Field>
+              <Field label="Dəyər">
+                <Input value={unitDraft.value} onChange={(event) => setUnitDraft((current) => ({ ...current, value: event.target.value }))} />
+              </Field>
+              <Field label="Rus adı">
+                <Input value={unitDraft.labelRu} onChange={(event) => setUnitDraft((current) => ({ ...current, labelRu: event.target.value }))} />
+              </Field>
+              <Field label="Sıra">
+                <Input
+                  type="number"
+                  value={unitDraft.sortOrder ?? 0}
+                  onChange={(event) => setUnitDraft((current) => ({ ...current, sortOrder: Number(event.target.value) || 0 }))}
+                />
+              </Field>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={unitDraft.isActive ?? true} onChange={(event) => setUnitDraft((current) => ({ ...current, isActive: event.target.checked }))} />
+                Aktiv vahid
+              </label>
+              <div className="flex gap-2">
+                <Button onClick={() => void saveUnit()} disabled={savingUnit}>
+                  {savingUnit ? 'Saxlanılır...' : editingUnitId ? 'Yenilə' : 'Əlavə et'}
+                </Button>
+                {editingUnitId ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingUnitId(null);
+                      setUnitDraft(emptyUnit());
+                    }}
+                  >
+                    Təmizlə
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <SectionHeader title="Vahidlər" description="Sistem boyunca istifadə olunan vahidlər siyahısı." />
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    {['Ad', 'Dəyər', 'Sıra', 'Status', 'Əməliyyat'].map((header) => (
+                      <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em]">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {units.map((unit) => (
+                    <tr key={unit.id} className="border-b border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-950">{unit.labelAz}</td>
+                      <td className="px-4 py-3 text-slate-500">{unit.value}</td>
+                      <td className="px-4 py-3">{unit.sortOrder}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${unit.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {unit.isActive ? 'Aktiv' : 'Passiv'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="secondary"
+                            className="h-8 rounded-lg px-3 text-xs"
+                            onClick={() => {
+                              setEditingUnitId(unit.id);
+                              setUnitDraft({
+                                value: unit.value,
+                                labelAz: unit.labelAz,
+                                labelRu: unit.labelRu,
+                                sortOrder: unit.sortOrder,
+                                isActive: unit.isActive
+                              });
+                            }}
+                          >
+                            Düzəliş
+                          </Button>
+                          <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => void toggleUnit(unit, !unit.isActive)}>
+                            {unit.isActive ? 'Passiv et' : 'Aktiv et'}
+                          </Button>
+                          <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs text-rose-600" onClick={() => void deleteUnit(unit.id)}>
+                            Sil
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         </div>
@@ -588,8 +742,8 @@ export function SettingsPage() {
 
       {activeTab === 'categories' ? (
         <div className="grid gap-5 xl:grid-cols-[0.95fr_1.25fr]">
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">Material kateqoriyası</h2>
+          <Card className="p-5">
+            <SectionHeader title="Material kateqoriyası" description="Dinamik sahələri ilə birlikdə material kateqoriyalarını idarə edin." />
             <div className="mt-4 grid gap-3">
               <Field label="Kod">
                 <Input value={categoryDraft.code} onChange={(event) => setCategoryDraft((current) => ({ ...current, code: event.target.value.toLowerCase() }))} />
@@ -614,14 +768,9 @@ export function SettingsPage() {
                 </div>
               </Field>
               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={categoryDraft.isActive ?? true}
-                  onChange={(event) => setCategoryDraft((current) => ({ ...current, isActive: event.target.checked }))}
-                />
+                <input type="checkbox" checked={categoryDraft.isActive ?? true} onChange={(event) => setCategoryDraft((current) => ({ ...current, isActive: event.target.checked }))} />
                 Aktiv kateqoriya
               </label>
-
               <div className="flex gap-2">
                 <Button onClick={() => void saveCategory()} disabled={savingCategory}>
                   {savingCategory ? 'Saxlanılır...' : editingCategoryId ? 'Yenilə' : 'Yarat'}
@@ -641,54 +790,44 @@ export function SettingsPage() {
             </div>
           </Card>
 
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">Kateqoriyalar</h2>
+          <Card className="p-5">
+            <SectionHeader title="Kateqoriyalar" description="Material bazasında görünəcək aktiv və passiv kateqoriyalar." />
             <div className="mt-4 space-y-3">
               {categories.map((category) => (
-                <div key={category.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-950">{category.name}</div>
-                      <div className="mt-1 text-sm text-slate-500">{(category.dynamicFields ?? []).map((field) => field.label).join(', ') || 'Dinamik sahə yoxdur'}</div>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${category.isActive !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {category.isActive !== false ? 'Aktiv' : 'Passiv'}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => {
-                        setEditingCategoryId(category.id);
-                        setCategoryDraft({
-                          code: category.code,
-                          name: category.name,
-                          codePrefix: category.codePrefix ?? '',
-                          description: category.description ?? '',
-                          isActive: category.isActive ?? true,
-                          dynamicFields: category.dynamicFields ?? []
-                        });
-                      }}
-                    >
-                      Düzəliş
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => void toggleCategory(category, category.isActive === false)}
-                    >
-                      {category.isActive === false ? 'Aktiv et' : 'Passiv et'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs text-rose-600"
-                      onClick={() => void deleteCategory(category.id)}
-                    >
-                      Sil
-                    </Button>
-                  </div>
-                </div>
+                <EntityRow
+                  key={category.id}
+                  title={category.name}
+                  subtitle={(category.dynamicFields ?? []).map((field) => field.label).join(', ') || 'Dinamik sahə yoxdur'}
+                  status={category.isActive !== false ? 'Aktiv' : 'Passiv'}
+                  active={category.isActive !== false}
+                  actions={
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-lg px-3 text-xs"
+                        onClick={() => {
+                          setEditingCategoryId(category.id);
+                          setCategoryDraft({
+                            code: category.code,
+                            name: category.name,
+                            codePrefix: category.codePrefix ?? '',
+                            description: category.description ?? '',
+                            isActive: category.isActive ?? true,
+                            dynamicFields: category.dynamicFields ?? []
+                          });
+                        }}
+                      >
+                        Düzəliş
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => void toggleCategory(category, category.isActive === false)}>
+                        {category.isActive === false ? 'Aktiv et' : 'Passiv et'}
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs text-rose-600" onClick={() => void deleteCategory(category.id)}>
+                        Sil
+                      </Button>
+                    </>
+                  }
+                />
               ))}
             </div>
           </Card>
@@ -697,8 +836,8 @@ export function SettingsPage() {
 
       {activeTab === 'references' ? (
         <div className="grid gap-5 xl:grid-cols-[0.95fr_1.25fr]">
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">Seçim siyahıları</h2>
+          <Card className="p-5">
+            <SectionHeader title="Seçim siyahıları" description="Ödəniş, status və digər seçim siyahılarını buradan idarə edin." />
             <div className="mt-4 grid gap-3">
               <Field label="Siyahı qrupu">
                 <select
@@ -734,11 +873,7 @@ export function SettingsPage() {
                 />
               </Field>
               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={referenceDraft.isActive ?? true}
-                  onChange={(event) => setReferenceDraft((current) => ({ ...current, isActive: event.target.checked }))}
-                />
+                <input type="checkbox" checked={referenceDraft.isActive ?? true} onChange={(event) => setReferenceDraft((current) => ({ ...current, isActive: event.target.checked }))} />
                 Aktiv element
               </label>
               <div className="flex gap-2">
@@ -760,60 +895,98 @@ export function SettingsPage() {
             </div>
           </Card>
 
-          <Card className="border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">{referenceGroups.find((group) => group.key === selectedReferenceGroup)?.label ?? 'Siyahı elementləri'}</h2>
+          <Card className="p-5">
+            <SectionHeader title={referenceGroups.find((group) => group.key === selectedReferenceGroup)?.label ?? 'Siyahı elementləri'} />
             <div className="mt-4 space-y-3">
               {currentReferenceItems.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-950">{item.labelAz}</div>
-                      <div className="mt-1 text-sm text-slate-500">{item.labelRu}</div>
-                      <div className="mt-1 text-xs text-slate-500">{item.value}</div>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {item.isActive ? 'Aktiv' : 'Passiv'}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => {
-                        setEditingReferenceId(item.id);
-                        setReferenceDraft({
-                          groupKey: item.groupKey,
-                          value: item.value,
-                          labelAz: item.labelAz,
-                          labelRu: item.labelRu,
-                          sortOrder: item.sortOrder,
-                          isActive: item.isActive
-                        });
-                      }}
-                    >
-                      Düzəliş
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs"
-                      onClick={() => void toggleReference(item, !item.isActive)}
-                    >
-                      {item.isActive ? 'Passiv et' : 'Aktiv et'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-8 rounded-lg px-3 text-xs text-rose-600"
-                      onClick={() => void deleteReference(item.id)}
-                    >
-                      Sil
-                    </Button>
-                  </div>
-                </div>
+                <EntityRow
+                  key={item.id}
+                  title={item.labelAz}
+                  subtitle={`${item.labelRu} • ${item.value}`}
+                  status={item.isActive ? 'Aktiv' : 'Passiv'}
+                  active={item.isActive}
+                  actions={
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-lg px-3 text-xs"
+                        onClick={() => {
+                          setEditingReferenceId(item.id);
+                          setReferenceDraft({
+                            groupKey: item.groupKey,
+                            value: item.value,
+                            labelAz: item.labelAz,
+                            labelRu: item.labelRu,
+                            sortOrder: item.sortOrder,
+                            isActive: item.isActive
+                          });
+                        }}
+                      >
+                        Düzəliş
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => void toggleReference(item, !item.isActive)}>
+                        {item.isActive ? 'Passiv et' : 'Aktiv et'}
+                      </Button>
+                      <Button variant="secondary" className="h-8 rounded-lg px-3 text-xs text-rose-600" onClick={() => void deleteReference(item.id)}>
+                        Sil
+                      </Button>
+                    </>
+                  }
+                />
               ))}
             </div>
           </Card>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SectionHeader({
+  title,
+  description,
+  action
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+function EntityRow({
+  title,
+  subtitle,
+  status,
+  active,
+  actions
+}: {
+  title: string;
+  subtitle?: string;
+  status: string;
+  active: boolean;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-medium text-slate-950">{title}</div>
+          {subtitle ? <div className="mt-1 text-sm text-slate-500">{subtitle}</div> : null}
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+          {status}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">{actions}</div>
     </div>
   );
 }

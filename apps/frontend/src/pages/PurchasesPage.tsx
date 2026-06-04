@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import type {
   CreatePurchaseEntryDto,
   CreateSupplierDto,
@@ -6,6 +6,7 @@ import type {
   PurchaseEntryItem,
   PurchaseEntryQueryDto,
   PurchaseSummary,
+  SettingUnitItem,
   SupplierItem,
   UpdateSupplierDto,
   WarehouseItem
@@ -46,6 +47,7 @@ type SupplierDraft = {
 };
 
 const defaultPaymentType = SalesPaymentType.HESAB;
+const defaultUnitValue = 'ədəd';
 
 function toInputDate(value?: string | null) {
   if (!value) return new Date().toISOString().slice(0, 10);
@@ -62,13 +64,28 @@ function round(value: number, precision = 2) {
   return Math.round(value * factor) / factor;
 }
 
-function emptyPurchaseDraft(defaultWarehouseId = '', defaultUnit = 'ədəd'): PurchaseDraft {
+function createDefaultPurchaseQuery(limit = 20): PurchaseEntryQueryDto {
+  return {
+    page: 1,
+    limit,
+    search: '',
+    sortBy: 'date',
+    sortOrder: 'desc',
+    supplierId: '',
+    paymentType: '',
+    onlyDebtors: false,
+    dateFrom: '',
+    dateTo: ''
+  };
+}
+
+function emptyPurchaseDraft(defaultWarehouseId = '', unitValue = defaultUnitValue): PurchaseDraft {
   return {
     supplierId: '',
     materialId: '',
     warehouseId: defaultWarehouseId,
     date: toInputDate(),
-    stockUnit: defaultUnit,
+    stockUnit: unitValue,
     packageUnit: '',
     unitsPerPackage: '',
     packageQuantity: '',
@@ -97,11 +114,21 @@ function createDraft(row: PurchaseEntryItem): PurchaseDraft {
     materialId: row.material?.id ?? '',
     warehouseId: row.warehouse?.id ?? '',
     date: toInputDate(row.date),
-    stockUnit: row.stockUnit ?? row.material?.stockUnit ?? row.material?.unit ?? 'ədəd',
+    stockUnit: row.stockUnit ?? row.material?.stockUnit ?? row.material?.unit ?? defaultUnitValue,
     packageUnit: row.packageUnit ?? row.material?.packageUnit ?? '',
-    unitsPerPackage: row.unitsPerPackage != null ? String(row.unitsPerPackage) : row.material?.defaultUnitsPerPackage != null ? String(row.material.defaultUnitsPerPackage) : '',
+    unitsPerPackage:
+      row.unitsPerPackage != null
+        ? String(row.unitsPerPackage)
+        : row.material?.defaultUnitsPerPackage != null
+          ? String(row.material.defaultUnitsPerPackage)
+          : '',
     packageQuantity: row.packageQuantity != null ? String(row.packageQuantity) : '',
-    quantity: row.totalQuantity != null ? String(row.totalQuantity) : row.quantity != null ? String(row.quantity) : '',
+    quantity:
+      row.totalQuantity != null
+        ? String(row.totalQuantity)
+        : row.quantity != null
+          ? String(row.quantity)
+          : '',
     unitPrice: row.unitPrice != null ? String(row.unitPrice) : '',
     amount: row.amount != null ? String(row.amount) : '',
     paymentAmount: row.paymentAmount != null ? String(row.paymentAmount) : '',
@@ -117,7 +144,7 @@ function toDto(draft: PurchaseDraft): CreatePurchaseEntryDto {
     warehouseId: draft.warehouseId || undefined,
     date: draft.date ? new Date(`${draft.date}T00:00:00`).toISOString() : undefined,
     quantity: draft.quantity ? toNumber(draft.quantity) : undefined,
-    stockUnit: draft.stockUnit || 'ədəd',
+    stockUnit: draft.stockUnit || defaultUnitValue,
     packageUnit: draft.packageUnit || undefined,
     unitsPerPackage: draft.unitsPerPackage ? toNumber(draft.unitsPerPackage) : undefined,
     packageQuantity: draft.packageQuantity ? toNumber(draft.packageQuantity) : undefined,
@@ -143,20 +170,24 @@ function calculatePreview(draft: PurchaseDraft) {
   const packageQuantity = toNumber(draft.packageQuantity);
   const unitsPerPackage = toNumber(draft.unitsPerPackage);
   const fallbackQuantity = toNumber(draft.quantity);
-  const totalQuantity = packageQuantity > 0 && unitsPerPackage > 0 ? round(packageQuantity * unitsPerPackage, 4) : round(fallbackQuantity, 4);
+  const totalQuantity =
+    packageQuantity > 0 && unitsPerPackage > 0 ? round(packageQuantity * unitsPerPackage, 4) : round(fallbackQuantity, 4);
   const unitPrice = toNumber(draft.unitPrice);
   const amount = toNumber(draft.amount);
   const computedAmount = totalQuantity > 0 && unitPrice > 0 ? round(totalQuantity * unitPrice, 2) : round(amount, 2);
   const computedUnitPrice = unitPrice > 0 ? round(unitPrice, 4) : totalQuantity > 0 && amount > 0 ? round(amount / totalQuantity, 4) : 0;
   const paymentAmount = round(toNumber(draft.paymentAmount), 2);
-  const remainingDebt = round(computedAmount - paymentAmount, 2);
 
   return {
     totalQuantity,
     unitPrice: computedUnitPrice,
     amount: computedAmount,
-    remainingDebt
+    remainingDebt: round(computedAmount - paymentAmount, 2)
   };
+}
+
+function getActiveUnits(units: SettingUnitItem[]) {
+  return units.filter((unit) => unit.isActive);
 }
 
 export function PurchasesPage() {
@@ -166,20 +197,9 @@ export function PurchasesPage() {
   const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
   const [materials, setMaterials] = useState<InventoryMaterialItem[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
-  const [units, setUnits] = useState<string[]>([]);
+  const [units, setUnits] = useState<SettingUnitItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
-  const [query, setQuery] = useState<PurchaseEntryQueryDto>({
-    page: 1,
-    limit: 20,
-    search: '',
-    sortBy: 'date',
-    sortOrder: 'desc',
-    supplierId: '',
-    paymentType: '',
-    onlyDebtors: false,
-    dateFrom: '',
-    dateTo: ''
-  });
+  const [query, setQuery] = useState<PurchaseEntryQueryDto>(createDefaultPurchaseQuery());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PurchaseDraft | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -187,6 +207,7 @@ export function PurchasesPage() {
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
   const [supplierDraft, setSupplierDraft] = useState<SupplierDraft>(emptySupplierDraft());
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingSupplier, setSavingSupplier] = useState(false);
@@ -206,6 +227,10 @@ export function PurchasesPage() {
         settingsClient.units()
       ]);
 
+      const availableUnits = getActiveUnits(unitResponse);
+      const defaultWarehouseId = warehouseResponse[0]?.id ?? '';
+      const defaultUnit = availableUnits[0]?.value ?? defaultUnitValue;
+
       setRows(listResponse.data);
       setMeta(listResponse.meta);
       setSummary(summaryResponse);
@@ -213,9 +238,6 @@ export function PurchasesPage() {
       setMaterials(materialResponse.data);
       setWarehouses(warehouseResponse);
       setUnits(unitResponse);
-
-      const defaultWarehouseId = warehouseResponse[0]?.id ?? '';
-      const defaultUnit = unitResponse[0] ?? 'ədəd';
       setQuickDraft((current) => ({
         ...current,
         warehouseId: current.warehouseId || defaultWarehouseId,
@@ -233,9 +255,8 @@ export function PurchasesPage() {
   }, [query.page, query.limit, query.search, query.supplierId, query.paymentType, query.onlyDebtors, query.dateFrom, query.dateTo]);
 
   const supplierTotals = summary?.supplierTotals ?? [];
+  const unitOptions = useMemo(() => getActiveUnits(units), [units]);
   const quickPreview = useMemo(() => calculatePreview(quickDraft), [quickDraft]);
-  const selectedCreateMaterial = useMemo(() => materials.find((item) => item.id === quickDraft.materialId) ?? null, [materials, quickDraft.materialId]);
-  const selectedEditMaterial = useMemo(() => materials.find((item) => item.id === draft?.materialId) ?? null, [materials, draft?.materialId]);
 
   const updateDraftFromMaterial = (current: PurchaseDraft, materialId: string) => {
     const material = materials.find((item) => item.id === materialId);
@@ -254,6 +275,12 @@ export function PurchasesPage() {
   const resetSupplierDraft = () => {
     setEditingSupplierId(null);
     setSupplierDraft(emptySupplierDraft());
+  };
+
+  const refreshAfterCreate = async () => {
+    const nextQuery = createDefaultPurchaseQuery(query.limit ?? 20);
+    setQuery(nextQuery);
+    await load(nextQuery);
   };
 
   const saveRow = async (id: string, source: PurchaseDraft) => {
@@ -285,12 +312,12 @@ export function PurchasesPage() {
     setSaving(true);
     try {
       await purchasesClient.quickCreate(toDto(quickDraft));
-      toast.success('Alış əlavə olundu');
       const defaultWarehouseId = warehouses[0]?.id ?? '';
-      const defaultUnit = units[0] ?? 'ədəd';
+      const defaultUnit = unitOptions[0]?.value ?? defaultUnitValue;
       setQuickDraft(emptyPurchaseDraft(defaultWarehouseId, defaultUnit));
       setQuickOpen(false);
-      await load(query);
+      await refreshAfterCreate();
+      toast.success('Alış siyahıya əlavə olundu', 'Yeni alış anbara giriş və təchizatçı borcu ilə birlikdə qeydə alındı.');
     } catch (saveError) {
       toast.error('Alış sətri yaradılmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
     } finally {
@@ -354,9 +381,12 @@ export function PurchasesPage() {
     <div className="space-y-5">
       <PageHeader
         title="Alış"
-        description="Material alışları, təchizatçı borcları və anbara girişlər bir axında idarə olunur."
+        description="Material alışları, anbara giriş və təchizatçı borcu bir yerdə idarə olunur."
         actions={
           <>
+            <Button variant="secondary" onClick={() => setFiltersOpen((current) => !current)}>
+              Filtrlər
+            </Button>
             <Button variant="secondary" onClick={() => setSupplierModalOpen(true)}>
               Təchizatçılar
             </Button>
@@ -367,57 +397,96 @@ export function PurchasesPage() {
 
       {error ? <InlineAlert>{error}</InlineAlert> : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-4">
         <SummaryBox label="Alış cəmi" value={formatCurrency(summary?.totalPurchaseAmount)} />
         <SummaryBox label="Ödəniş cəmi" value={formatCurrency(summary?.totalPaymentAmount)} />
-        <SummaryBox label="Qalıq borc" value={formatCurrency(summary?.totalSupplierDebt)} highlight="rose" />
-        <SummaryBox label="Borclu təchizatçılar" value={String(supplierTotals.filter((item) => item.remainingDebt > 0).length)} />
+        <SummaryBox label="Qalıq borc" value={formatCurrency(summary?.totalSupplierDebt)} tone="danger" />
+        <SummaryBox label="Borclu təchizatçı" value={String(supplierTotals.filter((item) => item.remainingDebt > 0).length)} />
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-6">
-          <Field label="Axtarış">
-            <Input value={query.search ?? ''} onChange={(event) => setQuery((current) => ({ ...current, search: event.target.value, page: 1 }))} placeholder="Material, təchizatçı, qeyd" />
-          </Field>
-          <Field label="Təchizatçı">
-            <select value={query.supplierId ?? ''} onChange={(event) => setQuery((current) => ({ ...current, supplierId: event.target.value, page: 1 }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
-              <option value="">Bütün təchizatçılar</option>
-              {suppliers.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Ödəniş növü">
-            <select value={query.paymentType ?? ''} onChange={(event) => setQuery((current) => ({ ...current, paymentType: event.target.value, page: 1 }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
-              <option value="">Hamısı</option>
-              {Object.entries(salesPaymentTypeLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Tarixdən">
-            <Input type="date" value={query.dateFrom ?? ''} onChange={(event) => setQuery((current) => ({ ...current, dateFrom: event.target.value, page: 1 }))} />
-          </Field>
-          <Field label="Tarixə">
-            <Input type="date" value={query.dateTo ?? ''} onChange={(event) => setQuery((current) => ({ ...current, dateTo: event.target.value, page: 1 }))} />
-          </Field>
-          <label className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <input type="checkbox" checked={Boolean(query.onlyDebtors)} onChange={(event) => setQuery((current) => ({ ...current, onlyDebtors: event.target.checked, page: 1 }))} />
-            Yalnız borclular
-          </label>
+      {filtersOpen ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">Filtrlər</h2>
+              <p className="text-sm text-slate-500">Siyahını daraltmaq üçün lazım olan filtrləri seçin.</p>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const nextQuery = createDefaultPurchaseQuery(query.limit ?? 20);
+                setQuery(nextQuery);
+              }}
+            >
+              Təmizlə
+            </Button>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-6">
+            <Field label="Axtarış">
+              <Input
+                value={query.search ?? ''}
+                onChange={(event) => setQuery((current) => ({ ...current, search: event.target.value, page: 1 }))}
+                placeholder="Material, təchizatçı, qeyd"
+              />
+            </Field>
+            <Field label="Təchizatçı">
+              <select
+                value={query.supplierId ?? ''}
+                onChange={(event) => setQuery((current) => ({ ...current, supplierId: event.target.value, page: 1 }))}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              >
+                <option value="">Bütün təchizatçılar</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Ödəniş növü">
+              <select
+                value={query.paymentType ?? ''}
+                onChange={(event) => setQuery((current) => ({ ...current, paymentType: event.target.value, page: 1 }))}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              >
+                <option value="">Hamısı</option>
+                {Object.entries(salesPaymentTypeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Tarixdən">
+              <Input type="date" value={query.dateFrom ?? ''} onChange={(event) => setQuery((current) => ({ ...current, dateFrom: event.target.value, page: 1 }))} />
+            </Field>
+            <Field label="Tarixə">
+              <Input type="date" value={query.dateTo ?? ''} onChange={(event) => setQuery((current) => ({ ...current, dateTo: event.target.value, page: 1 }))} />
+            </Field>
+            <label className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(query.onlyDebtors)}
+                onChange={(event) => setQuery((current) => ({ ...current, onlyDebtors: event.target.checked, page: 1 }))}
+              />
+              Yalnız borclular
+            </label>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {!rows.length && !quickOpen ? (
-        <EmptyState title="Alış sətri yoxdur" description="Yeni alış əlavə etdikdən sonra material anbara avtomatik daxil olacaq." />
+        <EmptyState
+          title="Alış sətri yoxdur"
+          description="Yeni alış əlavə etdikdən sonra material anbara avtomatik daxil olacaq."
+          actionLabel="Yeni alış"
+          onAction={() => setQuickOpen(true)}
+        />
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-[1400px] text-sm">
+            <table className="min-w-[1180px] text-sm">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {[
@@ -425,17 +494,15 @@ export function PurchasesPage() {
                     'Təchizatçı',
                     'Material',
                     'Miqdar',
-                    'Vahid',
                     'Qablaşdırma',
                     'Vahid qiymət',
-                    'Ümumi alış məbləği',
+                    'Məbləğ',
                     'Ödəniş',
                     'Qalıq borc',
                     'Ödəniş növü',
-                    'Qeyd',
                     'Əməliyyat'
                   ].map((header) => (
-                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em]">
                       {header}
                     </th>
                   ))}
@@ -448,7 +515,7 @@ export function PurchasesPage() {
                     materials={materials}
                     suppliers={suppliers}
                     warehouses={warehouses}
-                    units={units}
+                    units={unitOptions}
                     saving={saving}
                     onChange={setQuickDraft}
                     onChangeMaterial={(materialId) => setQuickDraft((current) => updateDraftFromMaterial(current, materialId))}
@@ -456,11 +523,13 @@ export function PurchasesPage() {
                     onSave={() => void saveQuick()}
                   />
                 ) : null}
+
                 {rows.map((row) => {
                   const isEditing = editingId === row.id && draft;
-                  const packaging = row.packageQuantity && row.unitsPerPackage
-                    ? `${formatNumber(row.packageQuantity)} ${row.packageUnit ?? 'qablaşdırma'} × ${formatNumber(row.unitsPerPackage)}`
-                    : '—';
+                  const packaging =
+                    row.packageQuantity && row.unitsPerPackage
+                      ? `${formatNumber(row.packageQuantity)} ${row.packageUnit ?? 'qablaşdırma'} × ${formatNumber(row.unitsPerPackage)}`
+                      : '—';
 
                   return isEditing ? (
                     <PurchaseEditRow
@@ -469,7 +538,7 @@ export function PurchasesPage() {
                       materials={materials}
                       suppliers={suppliers}
                       warehouses={warehouses}
-                      units={units}
+                      units={unitOptions}
                       saving={saving}
                       onChange={setDraft}
                       onChangeMaterial={(materialId) => setDraft((current) => (current ? updateDraftFromMaterial(current, materialId) : current))}
@@ -487,15 +556,18 @@ export function PurchasesPage() {
                         <div className="font-medium text-slate-950">{row.material?.name ?? '—'}</div>
                         <div className="text-xs text-slate-500">{row.material?.sku ?? 'Kod yoxdur'}</div>
                       </td>
-                      <td className="px-4 py-3">{formatNumber(row.totalQuantity ?? row.quantity)}</td>
-                      <td className="px-4 py-3">{row.stockUnit ?? row.material?.stockUnit ?? row.material?.unit ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <div>{formatNumber(row.totalQuantity ?? row.quantity)}</div>
+                        <div className="text-xs text-slate-500">{row.stockUnit ?? row.material?.stockUnit ?? row.material?.unit ?? '—'}</div>
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{packaging}</td>
                       <td className="px-4 py-3">{formatCurrency(row.unitPrice)}</td>
-                      <td className="px-4 py-3">{formatCurrency(row.amount)}</td>
+                      <td className="px-4 py-3 font-medium text-slate-950">{formatCurrency(row.amount)}</td>
                       <td className="px-4 py-3">{formatCurrency(row.paymentAmount)}</td>
-                      <td className={`px-4 py-3 font-semibold ${row.remainingDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(row.remainingDebt)}</td>
+                      <td className={`px-4 py-3 font-semibold ${row.remainingDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {formatCurrency(row.remainingDebt)}
+                      </td>
                       <td className="px-4 py-3">{getSalesLabel(salesPaymentTypeLabels, row.paymentType)}</td>
-                      <td className="px-4 py-3 text-slate-500">{row.comment ?? '—'}</td>
                       <td className="px-4 py-3">
                         <Button
                           variant="secondary"
@@ -517,37 +589,45 @@ export function PurchasesPage() {
         </div>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[1.5fr,1fr]">
+      <div className="grid gap-5 xl:grid-cols-[1.35fr,1fr]">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-950">Təchizatçı borcları</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Təchizatçı borcları</h2>
+              <p className="text-sm text-slate-500">Alışlardan yaranan qalıq borclar burada toplanır.</p>
+            </div>
             <Button variant="secondary" onClick={() => setSupplierModalOpen(true)}>
-              Təchizatçıları idarə et
+              Təchizatçılar
             </Button>
           </div>
+
           <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['Təchizatçı', 'Alış cəmi', 'Ödəniş', 'Qalıq borc'].map((header) => (
-                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em]">
                       {header}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {supplierTotals.length ? supplierTotals.map((item) => (
-                  <tr key={item.supplierId} className="border-b border-slate-100">
-                    <td className="px-4 py-3 font-medium text-slate-950">{item.supplierName}</td>
-                    <td className="px-4 py-3">{formatCurrency(item.purchaseAmount)}</td>
-                    <td className="px-4 py-3">{formatCurrency(item.paymentAmount)}</td>
-                    <td className={`px-4 py-3 font-semibold ${item.remainingDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(item.remainingDebt)}</td>
-                  </tr>
-                )) : (
+                {supplierTotals.length ? (
+                  supplierTotals.map((item) => (
+                    <tr key={item.supplierId} className="border-b border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-950">{item.supplierName}</td>
+                      <td className="px-4 py-3">{formatCurrency(item.purchaseAmount)}</td>
+                      <td className="px-4 py-3">{formatCurrency(item.paymentAmount)}</td>
+                      <td className={`px-4 py-3 font-semibold ${item.remainingDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {formatCurrency(item.remainingDebt)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
                     <td colSpan={4} className="px-4 py-8">
-                      <EmptyState title="Borclu təchizatçı yoxdur" description="Alış yaradıldıqdan sonra borc xülasəsi burada görünəcək." />
+                      <EmptyState title="Borclu təchizatçı yoxdur" description="Yeni alışlar yarandıqca borc xülasəsi burada görünəcək." />
                     </td>
                   </tr>
                 )}
@@ -557,13 +637,13 @@ export function PurchasesPage() {
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Alış axını</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Bu axın necə işləyir?</h2>
           <div className="mt-4 space-y-3 text-sm text-slate-600">
             <StepRow title="1. Alış yaradılır" description="Material, qablaşdırma və qiymət daxil edilir." />
-            <StepRow title="2. Ümumi say hesablanır" description="Bağlama × vahid sayı əsasında total miqdar formalaşır." />
-            <StepRow title="3. Anbara giriş yaranır" description="purchase_in hərəkəti və stock level avtomatik yenilənir." />
-            <StepRow title="4. Son qiymətlər yenilənir" description="Son alış qiyməti və orta maya dəyəri material kartına yazılır." />
-            <StepRow title="5. Təchizatçı borcu hesablanır" description="Ödəniş çıxıldıqdan sonra qalıq borc avtomatik saxlanılır." />
+            <StepRow title="2. Ümumi say hesablanır" description="Bağlama və vahid sayı əsasında stok miqdarı yaranır." />
+            <StepRow title="3. Anbara giriş yazılır" description="purchase_in hərəkəti avtomatik yaradılır." />
+            <StepRow title="4. Qiymət yenilənir" description="Materialın son alış qiyməti və orta maya dəyəri yenilənir." />
+            <StepRow title="5. Borc yaranır" description="Ödənişdən sonra qalıq borc təchizatçı üzrə saxlanılır." />
           </div>
         </div>
       </div>
@@ -615,7 +695,7 @@ export function PurchasesPage() {
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   {['Ad', 'Telefon', 'VÖEN', 'Status', 'Əməliyyat'].map((header) => (
-                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.16em]">
+                    <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em]">
                       {header}
                     </th>
                   ))}
@@ -689,7 +769,7 @@ function PurchaseEditRow({
   materials: InventoryMaterialItem[];
   suppliers: SupplierItem[];
   warehouses: WarehouseItem[];
-  units: string[];
+  units: SettingUnitItem[];
   saving: boolean;
   onChange: (draft: PurchaseDraft) => void;
   onChangeMaterial: (materialId: string) => void;
@@ -699,12 +779,16 @@ function PurchaseEditRow({
   const preview = calculatePreview(draft);
 
   return (
-    <tr className="bg-amber-50/70 align-top">
+    <tr className="bg-amber-50/60 align-top">
       <td className="px-3 py-3">
         <Input className="h-9 rounded-lg px-2 text-sm" type="date" value={draft.date} onChange={(event) => onChange({ ...draft, date: event.target.value })} />
       </td>
       <td className="px-3 py-3">
-        <select className="h-9 w-44 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.supplierId} onChange={(event) => onChange({ ...draft, supplierId: event.target.value })}>
+        <select
+          className="h-9 w-44 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+          value={draft.supplierId}
+          onChange={(event) => onChange({ ...draft, supplierId: event.target.value })}
+        >
           <option value="">Təchizatçı</option>
           {suppliers.map((supplier) => (
             <option key={supplier.id} value={supplier.id}>
@@ -714,7 +798,11 @@ function PurchaseEditRow({
         </select>
       </td>
       <td className="px-3 py-3">
-        <select className="h-9 w-52 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.materialId} onChange={(event) => onChangeMaterial(event.target.value)}>
+        <select
+          className="h-9 w-52 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+          value={draft.materialId}
+          onChange={(event) => onChangeMaterial(event.target.value)}
+        >
           <option value="">Material</option>
           {materials.map((material) => (
             <option key={material.id} value={material.id}>
@@ -725,32 +813,30 @@ function PurchaseEditRow({
       </td>
       <td className="px-3 py-3">
         <div className="grid gap-2">
-          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.packageQuantity} onChange={(event) => onChange({ ...draft, packageQuantity: event.target.value })} placeholder="Qablaşdırma sayı" />
-          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.unitsPerPackage} onChange={(event) => onChange({ ...draft, unitsPerPackage: event.target.value })} placeholder="Bir qablaşdırmada" />
-          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.quantity} onChange={(event) => onChange({ ...draft, quantity: event.target.value })} placeholder="Əl ilə ümumi say" />
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-500">
-            Ümumi say: <span className="font-semibold text-slate-900">{formatNumber(preview.totalQuantity)}</span>
-          </div>
+          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.quantity} onChange={(event) => onChange({ ...draft, quantity: event.target.value })} placeholder="Ümumi say" />
+          <select className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.stockUnit} onChange={(event) => onChange({ ...draft, stockUnit: event.target.value })}>
+            {units.map((unit) => (
+              <option key={unit.id} value={unit.value}>
+                {unit.labelAz}
+              </option>
+            ))}
+          </select>
+          <div className="text-xs text-slate-500">Hesablanan: {formatNumber(preview.totalQuantity)}</div>
         </div>
       </td>
       <td className="px-3 py-3">
         <div className="grid gap-2">
-          <select className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.stockUnit} onChange={(event) => onChange({ ...draft, stockUnit: event.target.value })}>
+          <select className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.packageUnit} onChange={(event) => onChange({ ...draft, packageUnit: event.target.value })}>
+            <option value="">Qablaşdırma</option>
             {units.map((unit) => (
-              <option key={unit} value={unit}>
-                {unit}
+              <option key={unit.id} value={unit.value}>
+                {unit.labelAz}
               </option>
             ))}
           </select>
-          <select className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.packageUnit} onChange={(event) => onChange({ ...draft, packageUnit: event.target.value })}>
-            <option value="">Qablaşdırma növü</option>
-            {units.map((unit) => (
-              <option key={unit} value={unit}>
-                {unit}
-              </option>
-            ))}
-          </select>
-          <select className="h-9 w-32 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.warehouseId} onChange={(event) => onChange({ ...draft, warehouseId: event.target.value })}>
+          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.unitsPerPackage} onChange={(event) => onChange({ ...draft, unitsPerPackage: event.target.value })} placeholder="Bir qablaşdırmada" />
+          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.packageQuantity} onChange={(event) => onChange({ ...draft, packageQuantity: event.target.value })} placeholder="Qablaşdırma sayı" />
+          <select className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={draft.warehouseId} onChange={(event) => onChange({ ...draft, warehouseId: event.target.value })}>
             <option value="">Anbar</option>
             {warehouses.map((warehouse) => (
               <option key={warehouse.id} value={warehouse.id}>
@@ -760,26 +846,11 @@ function PurchaseEditRow({
           </select>
         </div>
       </td>
-      <td className="px-3 py-3 text-xs text-slate-500">
-        {draft.packageQuantity && draft.unitsPerPackage
-          ? `${draft.packageQuantity} ${draft.packageUnit || 'qablaşdırma'} × ${draft.unitsPerPackage}`
-          : 'Qablaşdırma seçimi yoxdur'}
+      <td className="px-3 py-3">
+        <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.unitPrice} onChange={(event) => onChange({ ...draft, unitPrice: event.target.value })} placeholder="Vahid qiyməti" />
       </td>
       <td className="px-3 py-3">
-        <div className="grid gap-2">
-          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.0001" value={draft.unitPrice} onChange={(event) => onChange({ ...draft, unitPrice: event.target.value })} placeholder="Vahid qiyməti" />
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-500">
-            Hesablanan: <span className="font-semibold text-slate-900">{formatCurrency(preview.unitPrice)}</span>
-          </div>
-        </div>
-      </td>
-      <td className="px-3 py-3">
-        <div className="grid gap-2">
-          <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.01" value={draft.amount} onChange={(event) => onChange({ ...draft, amount: event.target.value })} placeholder="Ümumi məbləğ" />
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-500">
-            Hesablanan: <span className="font-semibold text-slate-900">{formatCurrency(preview.amount)}</span>
-          </div>
-        </div>
+        <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.01" value={draft.amount} onChange={(event) => onChange({ ...draft, amount: event.target.value })} placeholder="Məbləğ" />
       </td>
       <td className="px-3 py-3">
         <Input className="h-9 rounded-lg px-2 text-sm" type="number" step="0.01" value={draft.paymentAmount} onChange={(event) => onChange({ ...draft, paymentAmount: event.target.value })} placeholder="Ödəniş" />
@@ -793,9 +864,6 @@ function PurchaseEditRow({
             </option>
           ))}
         </select>
-      </td>
-      <td className="px-3 py-3">
-        <Input className="h-9 rounded-lg px-2 text-sm" value={draft.comment} onChange={(event) => onChange({ ...draft, comment: event.target.value })} placeholder="Qeyd" />
       </td>
       <td className="px-3 py-3">
         <div className="flex flex-col gap-2">
@@ -820,12 +888,12 @@ function StepRow({ title, description }: { title: string; description: string })
   );
 }
 
-function SummaryBox({ label, value, highlight }: { label: string; value: string; highlight?: 'rose' | 'emerald' }) {
-  const colorClass = highlight === 'rose' ? 'text-rose-600' : highlight === 'emerald' ? 'text-emerald-600' : 'text-slate-950';
+function SummaryBox({ label, value, tone }: { label: string; value: string; tone?: 'danger' | 'success' }) {
+  const colorClass = tone === 'danger' ? 'text-rose-600' : tone === 'success' ? 'text-emerald-600' : 'text-slate-950';
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400">{label}</div>
-      <div className={`mt-1 text-sm font-semibold ${colorClass}`}>{value}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</div>
+      <div className={`mt-2 text-lg font-semibold ${colorClass}`}>{value}</div>
     </div>
   );
 }

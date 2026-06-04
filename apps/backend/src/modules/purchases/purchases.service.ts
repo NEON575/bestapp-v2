@@ -13,6 +13,7 @@ import {
 import { aggregateSupplierDebt } from '../../common/business/purchase-entry';
 import { recalculatePurchaseFlow } from '../../common/business/purchase-flow';
 import { InventoryService } from '../inventory/inventory.service';
+import { buildPurchaseOrderBy, buildPurchaseWhere } from '../../common/business/purchase-list';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
@@ -218,32 +219,8 @@ export class PurchasesService {
 
   async findAll(query: PurchaseEntryQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
-    const where: Prisma.PurchaseEntryWhereInput = {
-      deletedAt: null,
-      ...(query.search
-        ? {
-            OR: [
-              { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
-              { material: { name: { contains: query.search, mode: 'insensitive' } } },
-              { material: { sku: { contains: query.search, mode: 'insensitive' } } },
-              { comment: { contains: query.search, mode: 'insensitive' } }
-            ]
-          }
-        : {}),
-      ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-      ...(query.paymentType ? { paymentType: query.paymentType as SalesPaymentType } : {}),
-      ...(query.onlyDebtors ? { remainingDebt: { gt: 0 } } : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            date: {
-              gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
-              lte: query.dateTo ? new Date(query.dateTo) : undefined
-            }
-          }
-        : {})
-    };
-
-    const orderBy = { [query.sortBy ?? 'date']: query.sortOrder ?? 'desc' } as Prisma.PurchaseEntryOrderByWithRelationInput;
+    const where = buildPurchaseWhere(query);
+    const orderBy = buildPurchaseOrderBy(query.sortBy, query.sortOrder);
 
     const [total, data] = await this.prisma.$transaction([
       this.prisma.purchaseEntry.count({ where }),
@@ -401,29 +378,7 @@ export class PurchasesService {
 
   async summary(query: Partial<PurchaseEntryQueryDto> = {}) {
     const entries = await this.prisma.purchaseEntry.findMany({
-      where: {
-        deletedAt: null,
-        ...(query.search
-          ? {
-              OR: [
-                { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
-                { material: { name: { contains: query.search, mode: 'insensitive' } } },
-                { comment: { contains: query.search, mode: 'insensitive' } }
-              ]
-            }
-          : {}),
-        ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.paymentType ? { paymentType: query.paymentType as SalesPaymentType } : {}),
-        ...(query.onlyDebtors ? { remainingDebt: { gt: 0 } } : {}),
-        ...(query.dateFrom || query.dateTo
-          ? {
-              date: {
-                gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
-                lte: query.dateTo ? new Date(query.dateTo) : undefined
-              }
-            }
-          : {})
-      },
+      where: buildPurchaseWhere(query),
       include: { supplier: true }
     });
 

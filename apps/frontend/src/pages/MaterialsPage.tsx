@@ -4,7 +4,8 @@ import type {
   InventoryMaterialItem,
   MaterialCategoryItem,
   MaterialDynamicField,
-  MaterialQueryDto
+  MaterialQueryDto,
+  SettingUnitItem
 } from '@bestapp/shared';
 import { Button, Input } from '@bestapp/ui';
 import { inventoryClient } from '../shared/api/inventory';
@@ -94,7 +95,7 @@ export function MaterialsPage() {
   const [rows, setRows] = useState<InventoryMaterialItem[]>([]);
   const [categories, setCategories] = useState<MaterialCategoryItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
-  const [units, setUnits] = useState<string[]>([]);
+  const [units, setUnits] = useState<SettingUnitItem[]>([]);
   const [query, setQuery] = useState<MaterialQueryDto>({
     page: 1,
     limit: 20,
@@ -144,6 +145,7 @@ export function MaterialsPage() {
     () => categories.find((item) => item.id === createDraftState.categoryId) ?? null,
     [categories, createDraftState.categoryId]
   );
+  const unitOptions = useMemo(() => units.filter((unit) => unit.isActive), [units]);
 
   const selectedEditCategory = useMemo(
     () => categories.find((item) => item.id === draft?.categoryId) ?? null,
@@ -362,7 +364,7 @@ function EditableMaterialRow({
 }: {
   draft: MaterialDraft;
   categories: MaterialCategoryItem[];
-  units: string[];
+  units: SettingUnitItem[];
   selectedCategory: MaterialCategoryItem | null;
   saving: boolean;
   onChange: (draft: MaterialDraft) => void;
@@ -399,12 +401,13 @@ function EditableMaterialForm({
 }: {
   draft: MaterialDraft;
   categories: MaterialCategoryItem[];
-  units: string[];
+  units: SettingUnitItem[];
   selectedCategory: MaterialCategoryItem | null;
   compact?: boolean;
   onChange: (draft: MaterialDraft) => void;
 }) {
   const fields = selectedCategory?.dynamicFields ?? [];
+  const unitOptions = units.filter((unit) => unit.isActive);
 
   const updateMetadata = (key: string, value: unknown) => {
     onChange({
@@ -443,32 +446,32 @@ function EditableMaterialForm({
 
       <Field label="Vahid">
         <select value={draft.unit} onChange={(event) => onChange({ ...draft, unit: event.target.value, stockUnit: draft.stockUnit || event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
-          {units.map((unit) => (
-            <option key={unit} value={unit}>
-              {unit}
-            </option>
-          ))}
+            {unitOptions.map((unit) => (
+              <option key={unit.id} value={unit.value}>
+                {unit.labelAz}
+              </option>
+            ))}
         </select>
       </Field>
 
       <Field label="Anbar vahidi">
         <select value={draft.stockUnit} onChange={(event) => onChange({ ...draft, stockUnit: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
-          {units.map((unit) => (
-            <option key={unit} value={unit}>
-              {unit}
-            </option>
-          ))}
+            {unitOptions.map((unit) => (
+              <option key={unit.id} value={unit.value}>
+                {unit.labelAz}
+              </option>
+            ))}
         </select>
       </Field>
 
       <Field label="Qablaşdırma vahidi">
         <select value={draft.packageUnit} onChange={(event) => onChange({ ...draft, packageUnit: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
           <option value="">Seçilməyib</option>
-          {units.map((unit) => (
-            <option key={unit} value={unit}>
-              {unit}
-            </option>
-          ))}
+            {unitOptions.map((unit) => (
+              <option key={unit.id} value={unit.value}>
+                {unit.labelAz}
+              </option>
+            ))}
         </select>
       </Field>
 

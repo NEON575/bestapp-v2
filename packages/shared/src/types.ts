@@ -677,6 +677,8 @@ export interface SystemOptionItem {
   isActive: boolean;
 }
 
+export interface SettingUnitItem extends SystemOptionItem {}
+
 export interface SettingsReferenceGroup {
   key: string;
   label: string;

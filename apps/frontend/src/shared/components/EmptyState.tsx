@@ -17,9 +17,9 @@ export function EmptyState({
   onAction
 }: EmptyStateProps) {
   return (
-    <Card className="border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+    <Card className="border-dashed border-slate-200 bg-slate-50/70 p-8 text-center">
       {Icon ? (
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
           <Icon className="h-5 w-5" />
         </div>
       ) : null}
@@ -33,4 +33,3 @@ export function EmptyState({
     </Card>
   );
 }
-

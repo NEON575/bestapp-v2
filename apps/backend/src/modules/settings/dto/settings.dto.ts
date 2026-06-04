@@ -109,3 +109,29 @@ export class CreateSystemOptionDto {
 }
 
 export class UpdateSystemOptionDto extends PartialType(CreateSystemOptionDto) {}
+
+export class CreateUnitDto {
+  @ApiProperty({ example: 'list' })
+  @IsString()
+  value!: string;
+
+  @ApiProperty({ example: 'List' })
+  @IsString()
+  labelAz!: string;
+
+  @ApiProperty({ example: 'Лист' })
+  @IsString()
+  labelRu!: string;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateUnitDto extends PartialType(CreateUnitDto) {}

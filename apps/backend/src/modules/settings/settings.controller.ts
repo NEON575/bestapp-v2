@@ -2,9 +2,11 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from '@nest
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import {
+  CreateUnitDto,
   CreateSystemOptionDto,
   UpdateAppPreferencesDto,
   UpdateCompanySettingsDto,
+  UpdateUnitDto,
   UpdateSystemOptionDto
 } from './dto/settings.dto';
 import { SettingsService } from './settings.service';
@@ -48,6 +50,36 @@ export class SettingsController {
   @Roles('super_admin', 'owner', 'manager', 'accountant')
   getUnits() {
     return this.settingsService.listUnits();
+  }
+
+  @Post('units')
+  @Roles('super_admin', 'owner')
+  createUnit(@Body() dto: CreateUnitDto) {
+    return this.settingsService.createUnit(dto);
+  }
+
+  @Patch('units/:id')
+  @Roles('super_admin', 'owner')
+  updateUnit(@Param('id') id: string, @Body() dto: UpdateUnitDto) {
+    return this.settingsService.updateUnit(id, dto);
+  }
+
+  @Post('units/:id/activate')
+  @Roles('super_admin', 'owner')
+  activateUnit(@Param('id') id: string) {
+    return this.settingsService.activateUnit(id);
+  }
+
+  @Post('units/:id/deactivate')
+  @Roles('super_admin', 'owner')
+  deactivateUnit(@Param('id') id: string) {
+    return this.settingsService.deactivateUnit(id);
+  }
+
+  @Delete('units/:id')
+  @Roles('super_admin', 'owner')
+  removeUnit(@Param('id') id: string) {
+    return this.settingsService.removeUnit(id);
   }
 
   @Get('references')

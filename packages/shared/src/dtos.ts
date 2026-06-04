@@ -440,3 +440,13 @@ export interface CreateSystemOptionDto {
 }
 
 export interface UpdateSystemOptionDto extends Partial<CreateSystemOptionDto> {}
+
+export interface CreateUnitDto {
+  value: string;
+  labelAz: string;
+  labelRu: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateUnitDto extends Partial<CreateUnitDto> {}

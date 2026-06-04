@@ -1,9 +1,11 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
+  CreateUnitDto,
   CreateSystemOptionDto,
   UpdateAppPreferencesDto,
   UpdateCompanySettingsDto,
+  UpdateUnitDto,
   UpdateSystemOptionDto
 } from './dto/settings.dto';
 import { mergeAppPreferences, normalizeAppLanguage } from '../../common/business/app-preferences';
@@ -59,52 +61,74 @@ const DEFAULT_REFERENCE_GROUPS: Array<{
   }
 ];
 
-const DEFAULT_UNITS = [
-  'ədəd',
-  'list',
-  'bağlama',
-  'palet',
-  'kg',
-  'qutu',
-  'litr',
-  'metr',
-  'rulon',
-  'banka',
-  'dəst',
-  'digər'
+const DEFAULT_UNITS: Array<{ value: string; labelAz: string; labelRu: string }> = [
+  { value: 'ədəd', labelAz: 'Ədəd', labelRu: 'Штука' },
+  { value: 'list', labelAz: 'List', labelRu: 'Лист' },
+  { value: 'bağlama', labelAz: 'Bağlama', labelRu: 'Пачка' },
+  { value: 'palet', labelAz: 'Palet', labelRu: 'Паллет' },
+  { value: 'kg', labelAz: 'Kiloqram', labelRu: 'Килограмм' },
+  { value: 'qutu', labelAz: 'Qutu', labelRu: 'Коробка' },
+  { value: 'litr', labelAz: 'Litr', labelRu: 'Литр' },
+  { value: 'metr', labelAz: 'Metr', labelRu: 'Метр' },
+  { value: 'rulon', labelAz: 'Rulon', labelRu: 'Рулон' },
+  { value: 'banka', labelAz: 'Banka', labelRu: 'Банка' },
+  { value: 'dəst', labelAz: 'Dəst', labelRu: 'Комплект' },
+  { value: 'digər', labelAz: 'Digər', labelRu: 'Другое' }
 ];
 
 @Injectable()
 export class SettingsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  private async upsertOptionSeed(groupKey: string, value: string, labelAz: string, labelRu: string, sortOrder: number) {
+    await this.prisma.systemOption.upsert({
+      where: {
+        groupKey_value: {
+          groupKey,
+          value
+        }
+      },
+      update: {
+        labelAz,
+        labelRu,
+        sortOrder,
+        deletedAt: null
+      },
+      create: {
+        groupKey,
+        value,
+        labelAz,
+        labelRu,
+        sortOrder,
+        isActive: true
+      }
+    });
+  }
+
   private async ensureDefaultSystemOptions() {
     for (const group of DEFAULT_REFERENCE_GROUPS) {
       for (const [index, item] of group.items.entries()) {
-        await this.prisma.systemOption.upsert({
-          where: {
-            groupKey_value: {
-              groupKey: group.key,
-              value: item.value
-            }
-          },
-          update: {
-            labelAz: item.labelAz,
-            labelRu: item.labelRu,
-            sortOrder: index,
-            deletedAt: null
-          },
-          create: {
-            groupKey: group.key,
-            value: item.value,
-            labelAz: item.labelAz,
-            labelRu: item.labelRu,
-            sortOrder: index,
-            isActive: true
-          }
-        });
+        await this.upsertOptionSeed(group.key, item.value, item.labelAz, item.labelRu, index);
       }
     }
+  }
+
+  private async ensureDefaultUnits() {
+    for (const [index, item] of DEFAULT_UNITS.entries()) {
+      await this.upsertOptionSeed('units', item.value, item.labelAz, item.labelRu, index);
+    }
+  }
+
+  private async getUnitOrThrow(id: string) {
+    const existing = await this.prisma.systemOption.findFirst({
+      where: { id, groupKey: 'units', deletedAt: null }
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Unit not found');
+    }
+
+    return existing;
   }
 
   async getCompanySettings() {
@@ -161,24 +185,85 @@ export class SettingsService {
   async listSystemReferenceGroups() {
     await this.ensureDefaultSystemOptions();
     const rows = await this.prisma.systemOption.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, groupKey: { not: 'units' } },
       orderBy: [{ groupKey: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }]
     });
 
-    const groups = DEFAULT_REFERENCE_GROUPS.map((group) => ({
-      key: group.key,
-      label: group.label,
-      items: rows.filter((row) => row.groupKey === group.key)
-    }));
-
     return {
-      groups,
-      units: DEFAULT_UNITS
+      groups: DEFAULT_REFERENCE_GROUPS.map((group) => ({
+        key: group.key,
+        label: group.label,
+        items: rows.filter((row) => row.groupKey === group.key)
+      }))
     };
   }
 
-  listUnits() {
-    return DEFAULT_UNITS;
+  async listUnits() {
+    await this.ensureDefaultUnits();
+    return this.prisma.systemOption.findMany({
+      where: { deletedAt: null, groupKey: 'units' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+    });
+  }
+
+  async createUnit(dto: CreateUnitDto) {
+    await this.ensureDefaultUnits();
+    return this.prisma.systemOption.create({
+      data: {
+        groupKey: 'units',
+        value: dto.value.trim(),
+        labelAz: dto.labelAz.trim(),
+        labelRu: dto.labelRu.trim(),
+        sortOrder: dto.sortOrder ?? 0,
+        isActive: dto.isActive ?? true
+      }
+    });
+  }
+
+  async updateUnit(id: string, dto: UpdateUnitDto) {
+    await this.getUnitOrThrow(id);
+    return this.prisma.systemOption.update({
+      where: { id },
+      data: {
+        value: dto.value?.trim(),
+        labelAz: dto.labelAz?.trim(),
+        labelRu: dto.labelRu?.trim(),
+        sortOrder: dto.sortOrder,
+        isActive: dto.isActive
+      }
+    });
+  }
+
+  async activateUnit(id: string) {
+    await this.getUnitOrThrow(id);
+    return this.prisma.systemOption.update({
+      where: { id },
+      data: {
+        isActive: true,
+        deletedAt: null
+      }
+    });
+  }
+
+  async deactivateUnit(id: string) {
+    await this.getUnitOrThrow(id);
+    return this.prisma.systemOption.update({
+      where: { id },
+      data: {
+        isActive: false
+      }
+    });
+  }
+
+  async removeUnit(id: string) {
+    await this.getUnitOrThrow(id);
+    return this.prisma.systemOption.update({
+      where: { id },
+      data: {
+        isActive: false,
+        deletedAt: new Date()
+      }
+    });
   }
 
   async createSystemOption(dto: CreateSystemOptionDto) {

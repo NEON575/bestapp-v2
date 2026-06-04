@@ -26,6 +26,7 @@ import {
   generateMaterialCode,
   sanitizeMaterialMetadata
 } from '../src/common/business/material-catalog';
+import { buildPurchaseOrderBy, buildPurchaseWhere } from '../src/common/business/purchase-list';
 import { normalizeCreateOrderItem } from '../src/common/business/order-items';
 import {
   buildEmployeePlaceholderEmail,
@@ -289,6 +290,30 @@ test('purchase and supplier debt calculations are consistent', () => {
     paymentAmount: 140,
     remainingDebt: 260
   });
+});
+
+test('purchase list where clause keeps deleted rows hidden and respects day range', () => {
+  const where = buildPurchaseWhere({
+    search: 'kağız',
+    supplierId: 'supplier-1',
+    paymentType: 'hesab',
+    onlyDebtors: true,
+    dateFrom: '2026-06-01',
+    dateTo: '2026-06-04'
+  });
+
+  assert.equal(where.deletedAt, null);
+  assert.equal((where as any).supplierId, 'supplier-1');
+  assert.equal((where as any).paymentType, 'hesab');
+  assert.equal((where as any).remainingDebt.gt, 0);
+  assert.equal((where as any).date.gte.toISOString(), '2026-06-01T00:00:00.000Z');
+  assert.equal((where as any).date.lte.toISOString(), '2026-06-04T23:59:59.999Z');
+});
+
+test('purchase list ordering keeps newest rows first', () => {
+  assert.deepEqual(buildPurchaseOrderBy(), [{ date: 'desc' }, { createdAt: 'desc' }]);
+  assert.deepEqual(buildPurchaseOrderBy('createdAt', 'asc'), [{ createdAt: 'asc' }]);
+  assert.deepEqual(buildPurchaseOrderBy('amount', 'asc'), [{ amount: 'asc' }, { createdAt: 'desc' }]);
 });
 
 test('package quantity calculation supports packaging conversion', () => {

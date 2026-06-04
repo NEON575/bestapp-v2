@@ -1,11 +1,14 @@
 import type {
   AppPreferences,
   CompanySettings,
+  CreateUnitDto,
   CreateSystemOptionDto,
+  SettingUnitItem,
   SettingsReferenceGroup,
   SettingsReferenceOptions,
   UpdateAppPreferencesDto,
   UpdateCompanySettingsDto,
+  UpdateUnitDto,
   UpdateSystemOptionDto
 } from '@bestapp/shared';
 import { api } from './http';
@@ -37,12 +40,37 @@ export const settingsClient = {
   },
 
   async references() {
-    const { data } = await api.get<{ groups: SettingsReferenceGroup[]; units: string[] }>('/settings/references');
+    const { data } = await api.get<{ groups: SettingsReferenceGroup[] }>('/settings/references');
     return data;
   },
 
   async units() {
-    const { data } = await api.get<string[]>('/settings/units');
+    const { data } = await api.get<SettingUnitItem[]>('/settings/units');
+    return data;
+  },
+
+  async createUnit(dto: CreateUnitDto) {
+    const { data } = await api.post<SettingUnitItem>('/settings/units', dto);
+    return data;
+  },
+
+  async updateUnit(id: string, dto: UpdateUnitDto) {
+    const { data } = await api.patch<SettingUnitItem>(`/settings/units/${id}`, dto);
+    return data;
+  },
+
+  async activateUnit(id: string) {
+    const { data } = await api.post<SettingUnitItem>(`/settings/units/${id}/activate`);
+    return data;
+  },
+
+  async deactivateUnit(id: string) {
+    const { data } = await api.post<SettingUnitItem>(`/settings/units/${id}/deactivate`);
+    return data;
+  },
+
+  async removeUnit(id: string) {
+    const { data } = await api.delete<SettingUnitItem>(`/settings/units/${id}`);
     return data;
   },
 
