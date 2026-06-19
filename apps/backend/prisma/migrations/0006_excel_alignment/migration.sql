@@ -85,9 +85,9 @@ CREATE TABLE "papers" (
 -- CreateTable
 CREATE TABLE "sales_entries" (
     "id" TEXT NOT NULL,
-    "orderId" TEXT,
-    "customerId" TEXT NOT NULL,
-    "managerId" TEXT,
+    "orderId" UUID,
+    "customerId" UUID NOT NULL,
+    "managerId" UUID,
     "paperId" TEXT,
     "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "category" TEXT,
@@ -140,7 +140,7 @@ CREATE TABLE "sales_entries" (
 CREATE TABLE "purchase_entries" (
     "id" TEXT NOT NULL,
     "supplierId" TEXT NOT NULL,
-    "payableId" TEXT,
+    "payableId" UUID,
     "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "amount" DECIMAL(18,2) NOT NULL,
     "paymentAmount" DECIMAL(18,2) NOT NULL DEFAULT 0,

@@ -10,8 +10,8 @@ ALTER TABLE "materials"
   ADD COLUMN IF NOT EXISTS "lastMovementAt" TIMESTAMP(3);
 
 ALTER TABLE "purchase_entries"
-  ADD COLUMN IF NOT EXISTS "materialId" TEXT,
-  ADD COLUMN IF NOT EXISTS "warehouseId" TEXT,
+  ADD COLUMN IF NOT EXISTS "materialId" UUID,
+  ADD COLUMN IF NOT EXISTS "warehouseId" UUID,
   ADD COLUMN IF NOT EXISTS "stockUnit" TEXT,
   ADD COLUMN IF NOT EXISTS "packageUnit" TEXT,
   ADD COLUMN IF NOT EXISTS "unitsPerPackage" DECIMAL(18,4),
