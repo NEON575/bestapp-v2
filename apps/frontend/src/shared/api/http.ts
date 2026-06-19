@@ -2,8 +2,8 @@ import axios, { type AxiosError, type AxiosInstance } from 'axios';
 import { API_PREFIX } from '@bestapp/shared';
 
 const rawBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ??
   import.meta.env.VITE_API_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
   `http://localhost:3000${API_PREFIX}`;
 
 function normalizeBaseUrl(value: string) {
@@ -78,4 +78,3 @@ export function setAuthToken(token?: string | null) {
 export function getAuthToken() {
   return localStorage.getItem('bestapp.token');
 }
-

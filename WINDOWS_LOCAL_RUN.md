@@ -93,7 +93,7 @@ DATABASE_URL=postgresql://postgres:SENIN_SIFREN@localhost:5432/bestapp?schema=pu
 `apps/frontend/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:3000/api/v1
+VITE_API_URL=http://localhost:3000
 ```
 
 ## 6. Prisma client generate et

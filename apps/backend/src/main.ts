@@ -6,6 +6,19 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
+function parseCorsOrigins(value?: string) {
+  if (!value) {
+    return true;
+  }
+
+  const origins = value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return origins.length > 0 ? origins : true;
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
   const port = Number(process.env.PORT ?? 3000);
@@ -14,7 +27,7 @@ async function bootstrap() {
   app.setGlobalPrefix(globalPrefix);
   app.use(helmet());
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? true,
+    origin: parseCorsOrigins(process.env.CORS_ORIGIN),
     credentials: true
   });
   app.useGlobalPipes(

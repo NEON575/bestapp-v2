@@ -79,8 +79,8 @@ async function main() {
   }
 
   if (packageJson.name === '@bestapp/frontend') {
-    mergedEnv.VITE_API_BASE_URL ??= 'http://localhost:3000/api/v1';
-    mergedEnv.VITE_API_URL ??= mergedEnv.VITE_API_BASE_URL;
+    mergedEnv.VITE_API_URL ??= 'http://localhost:3000';
+    mergedEnv.VITE_API_BASE_URL ??= `${mergedEnv.VITE_API_URL.replace(/\/$/, '')}/api/v1`;
   }
 
   const npmArgs = ['run', scriptName, '-w', packageJson.name, ...(forwardedArgs.length > 0 ? ['--', ...forwardedArgs] : [])];

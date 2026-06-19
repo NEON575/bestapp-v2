@@ -45,7 +45,7 @@ async function main() {
           'NODE_ENV=development',
           ''
         ].join('\n')
-      : ['VITE_API_BASE_URL=http://localhost:3000/api/v1', ''].join('\n');
+      : ['VITE_API_URL=http://localhost:3000', ''].join('\n');
 
     const status = await ensureFileFromExample(target.example, target.output, fallbackContent);
     results.push(`${path.relative(rootDir, target.output)}: ${status}`);
