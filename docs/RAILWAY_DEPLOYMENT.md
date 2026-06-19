@@ -82,7 +82,7 @@ Backend service üçün aşağıdakı dəyərləri ver:
 ### Build command
 
 ```bash
-npm ci && npx prisma generate --schema apps/backend/prisma/schema.prisma && npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend
+npm run build:backend:railway
 ```
 
 ### Start command

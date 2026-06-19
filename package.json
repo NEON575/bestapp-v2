@@ -11,7 +11,7 @@
     "dev:frontend": "node scripts/run-workspace-command.mjs apps/frontend dev",
     "dev:all": "concurrently -n backend,frontend -c green,blue \"node scripts/run-workspace-command.mjs apps/backend dev\" \"node scripts/run-workspace-command.mjs apps/frontend dev\"",
     "build": "npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend && npm run build -w @bestapp/frontend",
-    "build:backend:railway": "npm ci && npx prisma generate --schema apps/backend/prisma/schema.prisma && npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend",
+    "build:backend:railway": "npx prisma generate --schema apps/backend/prisma/schema.prisma && npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend",
     "migrate:railway": "npx prisma migrate deploy --schema apps/backend/prisma/schema.prisma",
     "seed:railway": "npx prisma db seed --schema apps/backend/prisma/schema.prisma",
     "lint": "npm run lint -w @bestapp/backend && npm run lint -w @bestapp/frontend",
