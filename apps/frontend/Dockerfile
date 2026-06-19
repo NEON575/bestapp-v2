@@ -20,5 +20,5 @@ COPY --from=build /app/packages/shared/package.json /app/packages/shared/package
 COPY --from=build /app/packages/ui/package.json /app/packages/ui/package.json
 COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/apps/frontend/dist /app/apps/frontend/dist
-EXPOSE 5173
-CMD ["npm", "run", "preview", "-w", "@bestapp/frontend", "--", "--host", "0.0.0.0", "--port", "5173"]
+EXPOSE 4173
+CMD ["npm", "run", "start", "-w", "@bestapp/frontend"]
