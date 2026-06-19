@@ -82,7 +82,7 @@ Backend service üçün aşağıdakı dəyərləri ver:
 ### Build command
 
 ```bash
-npm ci && npm run prisma:generate -w @bestapp/backend && npm run build -w @bestapp/backend
+npm ci && npx prisma generate --schema apps/backend/prisma/schema.prisma && npm run build -w @bestapp/shared && npm run build -w @bestapp/ui && npm run build -w @bestapp/backend
 ```
 
 ### Start command
@@ -100,7 +100,7 @@ Railway-də migration-u deploy mərhələsində işə sal:
 ### Deploy / Pre-deploy command
 
 ```bash
-npm run prisma:migrate -w @bestapp/backend
+npx prisma migrate deploy --schema apps/backend/prisma/schema.prisma
 ```
 
 Bu komanda `prisma migrate deploy` işlədir.
@@ -160,7 +160,7 @@ VITE_API_URL=https://bestapp-backend.up.railway.app/api/v1
 Seed admin-i manual işlət:
 
 ```bash
-npm run prisma:seed -w @bestapp/backend
+npx prisma db seed --schema apps/backend/prisma/schema.prisma
 ```
 
 Bu komanda aşağıdakıları yaradır:
