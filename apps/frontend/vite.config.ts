@@ -15,7 +15,13 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
-    host: true
+    port: Number(process.env.PORT) || 5173,
+    host: true,
+    allowedHosts: ['bestappfrontend-production.up.railway.app', '.up.railway.app']
+  },
+  preview: {
+    port: Number(process.env.PORT) || 4173,
+    host: true,
+    allowedHosts: ['bestappfrontend-production.up.railway.app', '.up.railway.app']
   }
 });
