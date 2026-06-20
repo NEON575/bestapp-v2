@@ -60,7 +60,7 @@ export function OrderCreatePage() {
 
   const loadOptions = async () => {
     const [customersResponse, managersResponse] = await Promise.all([
-      customersClient.list({ page: 1, limit: 200 }),
+      customersClient.list({ page: 1, limit: 100 }),
       usersClient.listManagers()
     ]);
 
