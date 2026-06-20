@@ -72,7 +72,7 @@ export function CalculationsPage() {
       const [calculationResponse, customersResponse, parametersResponse] = await Promise.all([
         calculationsClient.list(apiQuery),
         customersClient.list({ page: 1, limit: 200 }),
-        calculationParametersClient.list({ page: 1, limit: 500, isActive: true })
+        calculationParametersClient.list({ page: 1, limit: 200, isActive: true })
       ]);
 
       setRows(calculationResponse.data);
