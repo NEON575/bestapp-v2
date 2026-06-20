@@ -1,4 +1,5 @@
 import {
+  CalculationStatus,
   DebtStatus,
   InvoiceStatus,
   OrderStatus,
@@ -39,6 +40,12 @@ const orderStatusLabels: Record<string, string> = {
   [OrderStatus.READY]: 'Hazır',
   [OrderStatus.DELIVERED]: 'Təhvil verilib',
   [OrderStatus.CANCELLED]: 'Ləğv edilib'
+};
+
+const calculationStatusLabels: Record<string, string> = {
+  [CalculationStatus.DRAFT]: 'Qaralama',
+  [CalculationStatus.APPROVED]: 'Təsdiqləndi',
+  [CalculationStatus.CONVERTED]: 'Sifarişə çevrildi'
 };
 
 const invoiceStatusLabels: Record<string, string> = {
@@ -102,6 +109,17 @@ export function getToneForOrderStatus(status?: string | null): Tone {
       return 'info';
     case OrderStatus.CANCELLED:
       return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+export function getToneForCalculationStatus(status?: string | null): Tone {
+  switch (normalize(status)) {
+    case CalculationStatus.APPROVED:
+      return 'info';
+    case CalculationStatus.CONVERTED:
+      return 'success';
     default:
       return 'neutral';
   }
@@ -200,10 +218,14 @@ export function getToneForDebtStatus(status?: string | null): Tone {
   }
 }
 
-export function getStatusLabel(kind: 'order' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom', status?: string | null) {
+export function getStatusLabel(
+  kind: 'order' | 'calculation' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom',
+  status?: string | null
+) {
   const normalized = normalize(status);
 
   if (kind === 'order') return orderStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
+  if (kind === 'calculation') return calculationStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
   if (kind === 'invoice') return invoiceStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
   if (kind === 'payment') return paymentStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
   if (kind === 'production') return productionStatusLabels[normalized] ?? (status ? titleCase(status) : '—');

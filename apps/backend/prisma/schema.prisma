@@ -17,6 +17,12 @@ enum OrderStatus {
   cancelled
 }
 
+enum CalculationStatus {
+  draft
+  approved
+  converted
+}
+
 enum OrderItemColorMode {
   cmyk
   rgb
@@ -170,7 +176,7 @@ model User {
   roles             UserRole[]
   createdOrders     Order[]             @relation("OrderCreatedBy")
   managedOrders     Order[]             @relation("OrderManager")
-  approvedCalculations CostCalculation[] @relation("CalculationApprovedBy")
+    approvedCalculations CostCalculation[] @relation("CalculationApprovedBy")
   approvedPriceVersions PriceVersion[]   @relation("PriceVersionApprovedBy")
   paymentsCreated   Payment[]           @relation("PaymentCreatedBy")
   paymentsReversed  Payment[]           @relation("PaymentReversedBy")
@@ -249,7 +255,8 @@ model Customer {
   deletedAt   DateTime?
   orders      Order[]
   receivables Receivable[]
-  salesEntries SalesEntry[]
+    salesEntries SalesEntry[]
+    calculations Calculation[]
 
   @@map("customers")
 }
@@ -396,7 +403,8 @@ model Order {
   stockReservations   StockReservation[]
   stockMovements      StockMovement[]
   paymentsIssued      Payment[]
-  salesEntry          SalesEntry?
+    salesEntry          SalesEntry?
+    calculation         Calculation?
 
   @@map("orders")
 }
@@ -729,6 +737,29 @@ model CostCalculation {
   priceVersions       PriceVersion[]
 
   @@map("cost_calculations")
+}
+
+model Calculation {
+  id           String             @id @default(uuid())
+  number       String             @unique
+  customerId   String
+  productName  String
+  quantity     Decimal            @db.Decimal(18, 4)
+  note         String?
+  status       CalculationStatus  @default(draft)
+  salePrice    Decimal            @default(0) @db.Decimal(18, 2)
+  costPrice    Decimal            @default(0) @db.Decimal(18, 2)
+  profit       Decimal            @default(0) @db.Decimal(18, 2)
+  sections     Json
+  orderId      String?            @unique
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  deletedAt    DateTime?
+
+  customer     Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order        Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@map("calculations")
 }
 
 model CostCalculationLine {

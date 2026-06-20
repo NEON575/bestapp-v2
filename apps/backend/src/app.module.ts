@@ -7,6 +7,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { CalculationsModule } from './modules/calculations/calculations.module';
 import { DebtsModule } from './modules/debts/debts.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { ImportModule } from './modules/import/import.module';
@@ -44,6 +45,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     SettingsModule,
     RolesModule,
     CustomersModule,
+    CalculationsModule,
     OrdersModule,
     SalesModule,
     PricingModule,

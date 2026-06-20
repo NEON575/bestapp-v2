@@ -5,6 +5,7 @@ import { ProtectedRoute } from './shared/routing/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { OrdersPage } from './pages/OrdersPage';
+import { CalculationsPage } from './pages/CalculationsPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderCreatePage } from './pages/OrderCreatePage';
 import { CustomersPage } from './pages/CustomersPage';
@@ -43,6 +44,7 @@ export function App() {
           <Route path="new" element={<OrderCreatePage />} />
           <Route path=":id" element={<OrderDetailPage />} />
         </Route>
+        <Route path="calculations" element={<CalculationsPage />} />
         <Route path="sales" element={<SalesPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />

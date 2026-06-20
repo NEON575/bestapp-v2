@@ -18,6 +18,12 @@ export enum OrderStatus {
   CANCELLED = 'cancelled'
 }
 
+export enum CalculationStatus {
+  DRAFT = 'draft',
+  APPROVED = 'approved',
+  CONVERTED = 'converted'
+}
+
 export enum OrderItemColorMode {
   CMYK = 'cmyk',
   RGB = 'rgb',

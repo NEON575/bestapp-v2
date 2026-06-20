@@ -1,5 +1,6 @@
 import { Badge } from '@bestapp/ui';
 import {
+  getToneForCalculationStatus,
   getStatusLabel,
   getToneForDebtStatus,
   getToneForInvoiceStatus,
@@ -13,7 +14,7 @@ import {
 
 type StatusBadgeProps = {
   status?: string | null;
-  kind?: 'order' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom';
+  kind?: 'order' | 'calculation' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom';
   label?: string;
   tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
 };
@@ -23,6 +24,8 @@ export function StatusBadge({ status, kind = 'custom', label, tone }: StatusBadg
     tone ??
     (kind === 'order'
       ? getToneForOrderStatus(status)
+      : kind === 'calculation'
+        ? getToneForCalculationStatus(status)
       : kind === 'invoice'
         ? getToneForInvoiceStatus(status)
         : kind === 'payment'
@@ -43,4 +46,3 @@ export function StatusBadge({ status, kind = 'custom', label, tone }: StatusBadg
     </Badge>
   );
 }
-

@@ -366,6 +366,98 @@ export interface CostCalculationItem {
   lines?: CostCalculationLineItem[];
 }
 
+export type CalculationSectionType = 'paper' | 'printing' | 'form' | 'extra_work' | 'other_costs';
+
+export interface CalculationRowItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  total: number;
+  note?: string | null;
+  paperName?: string | null;
+  format?: string | null;
+  gramaj?: string | null;
+  baseQuantity?: number | null;
+  fire?: number | null;
+  totalQuantity?: number | null;
+  price?: number | null;
+  printType?: string | null;
+  printSide?: string | null;
+  color?: string | null;
+  printCount?: number | null;
+  printPrice?: number | null;
+  formCount?: number | null;
+  formPrice?: number | null;
+  extraWorkType?: string | null;
+}
+
+export interface CalculationSectionItem {
+  id: string;
+  key: CalculationSectionType;
+  title: string;
+  total: number;
+  rows: CalculationRowItem[];
+}
+
+export interface CalculationCustomerSummary {
+  id: string;
+  name: string;
+  companyName?: string | null;
+}
+
+export interface CalculationOrderSummary {
+  id: string;
+  number: string;
+  status: string;
+  totalAmount?: number;
+}
+
+export interface CalculationItem {
+  id: string;
+  number: string;
+  status: 'draft' | 'approved' | 'converted';
+  customerId: string;
+  customer?: CalculationCustomerSummary | null;
+  productName: string;
+  quantity: number;
+  note?: string | null;
+  salePrice: number;
+  costPrice: number;
+  profit: number;
+  saleUnitPrice?: number;
+  orderId?: string | null;
+  order?: CalculationOrderSummary | null;
+  sections: CalculationSectionItem[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CalculationListItem extends CalculationItem {}
+
+export interface CalculationListQueryDto extends PaginationQuery {
+  status?: 'draft' | 'approved' | 'converted';
+  customerId?: string;
+}
+
+export interface CreateCalculationDto {
+  customerId: string;
+  productName: string;
+  quantity: number;
+  note?: string;
+  status?: 'draft' | 'approved' | 'converted';
+  salePrice?: number;
+  sections: CalculationSectionItem[];
+}
+
+export interface UpdateCalculationDto extends Partial<CreateCalculationDto> {}
+
+export interface ConvertCalculationToOrderResult {
+  calculation: CalculationItem;
+  order: CalculationOrderSummary;
+}
+
 export interface ProductionOperationItem {
   id: string;
   name: string;
