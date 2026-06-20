@@ -1,8 +1,9 @@
 import type {
   CalculationConvertResult,
-  CalculationFormValues,
+  CalculationCreateDto,
+  CalculationListItem,
   CalculationListQuery,
-  CalculationRecord,
+  CalculationUpdateDto,
   PaginatedResponse
 } from '@bestapp/shared';
 import { api } from './http';
@@ -10,24 +11,24 @@ import { buildQueryParams } from './query';
 
 export const calculationsClient = {
   async list(query: CalculationListQuery = {}) {
-    const { data } = await api.get<PaginatedResponse<CalculationRecord>>('/calculations', {
+    const { data } = await api.get<PaginatedResponse<CalculationListItem>>('/calculations', {
       params: buildQueryParams(query)
     });
     return data;
   },
 
   async get(id: string) {
-    const { data } = await api.get<CalculationRecord>(`/calculations/${id}`);
+    const { data } = await api.get<CalculationListItem>(`/calculations/${id}`);
     return data;
   },
 
-  async create(dto: CalculationFormValues) {
-    const { data } = await api.post<CalculationRecord>('/calculations', dto);
+  async create(dto: CalculationCreateDto) {
+    const { data } = await api.post<CalculationListItem>('/calculations', dto);
     return data;
   },
 
-  async update(id: string, dto: CalculationFormValues) {
-    const { data } = await api.patch<CalculationRecord>(`/calculations/${id}`, dto);
+  async update(id: string, dto: CalculationUpdateDto) {
+    const { data } = await api.patch<CalculationListItem>(`/calculations/${id}`, dto);
     return data;
   },
 

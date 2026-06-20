@@ -1,65 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  CALCULATION_TEMPLATES,
-  CalculationFormValues,
-  CalculationListQuery,
-  CalculationRecord,
-  CustomerListItem,
-  defaultCalculationValues,
-  type CalculationConvertResult
-} from '@bestapp/shared';
+import type { CalculationConvertResult, CalculationCreateDto, CalculationListItem, CalculationListQuery, CalculationParameterItem, CustomerListItem } from '@bestapp/shared';
 import { Button, Card } from '@bestapp/ui';
+import { calculationParametersClient } from '../shared/api/calculation-parameters';
 import { calculationsClient } from '../shared/api/calculations';
 import { customersClient } from '../shared/api/customers';
 import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Modal, PageHeader, Pagination, SearchInput, StatusBadge } from '../shared/components';
-import { formatCurrency, formatDateOnly } from '../shared/lib/format';
+import { formatCurrency, formatDateOnly, formatNumber } from '../shared/lib/format';
 import { useToast } from '../shared/toast/toast-context';
-import { CalculationEditorForm, mapCalculationToForm } from './CalculationEditorForm';
+import { CalculationEditorForm, createCalculationForm, mapCalculationToForm, type CalculationFormState } from './CalculationEditorForm';
 
 type QueryState = CalculationListQuery & {
   customerId: string;
   status: string;
 };
 
-function mapFormToDto(form: CalculationFormValues) {
+function mapFormToDto(form: CalculationFormState): CalculationCreateDto {
   return {
-    templateKey: form.templateKey,
-    customerId: form.customerId,
-    productName: form.productName,
-    quantity: form.quantity,
-    readySize: form.readySize || undefined,
-    sheetFormat: form.sheetFormat,
-    sheetFormatCustom: form.sheetFormatCustom || undefined,
-    sheetPlacementCount: form.sheetPlacementCount,
-    a1ConversionFactor: form.a1ConversionFactor,
-    paperType: form.paperType || undefined,
-    paperGram: form.paperGram || undefined,
-    paperPurchasePrice: form.paperPurchasePrice,
-    color: form.color,
-    printSide: form.printSide,
-    prilotka: form.prilotka,
-    formCount: form.formCount,
-    formPrice: form.formPrice,
-    printPricingMode: form.printPricingMode,
-    printCount: form.printCount,
-    printUnitPrice: form.printUnitPrice,
-    printFixedPrice: form.printFixedPrice,
-    extraCosts: form.extraCosts.map((item) => ({
-      id: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      unit: item.unit,
-      unitPrice: item.unitPrice,
-      total: item.total,
-      note: item.note || undefined
-    })),
-    catalog: {
-      ...form.catalog
-    },
-    salePrice: form.salePrice,
-    note: form.note || undefined,
-    status: form.status
+    ...form,
+    rows: form.rows.map((row) => ({
+      ...row,
+      variants: row.variants.map((variant) => ({ ...variant }))
+    }))
   };
 }
 
@@ -74,8 +36,9 @@ function nextPageFromPatch(current: QueryState, patch: Partial<QueryState>) {
 export function CalculationsPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const [rows, setRows] = useState<CalculationRecord[]>([]);
+  const [rows, setRows] = useState<CalculationListItem[]>([]);
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
+  const [parameters, setParameters] = useState<CalculationParameterItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [query, setQuery] = useState<QueryState>({
     page: 1,
@@ -89,8 +52,8 @@ export function CalculationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [activeCalculation, setActiveCalculation] = useState<CalculationRecord | null>(null);
-  const [form, setForm] = useState<CalculationFormValues>(defaultCalculationValues());
+  const [activeCalculation, setActiveCalculation] = useState<CalculationListItem | null>(null);
+  const [form, setForm] = useState<CalculationFormState>(createCalculationForm());
   const [saving, setSaving] = useState(false);
   const [converting, setConverting] = useState(false);
   const [confirmConvertOpen, setConfirmConvertOpen] = useState(false);
@@ -106,14 +69,16 @@ export function CalculationsPage() {
         customerId: nextQuery.customerId || undefined
       };
 
-      const [calculationResponse, customersResponse] = await Promise.all([
+      const [calculationResponse, customersResponse, parametersResponse] = await Promise.all([
         calculationsClient.list(apiQuery),
-        customersClient.list({ page: 1, limit: 200 })
+        customersClient.list({ page: 1, limit: 200 }),
+        calculationParametersClient.list({ page: 1, limit: 500, isActive: true })
       ]);
 
       setRows(calculationResponse.data);
       setMeta(calculationResponse.meta);
       setCustomers(customersResponse.data);
+      setParameters(parametersResponse.data);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Hesablamalar yüklənmədi');
     } finally {
@@ -134,11 +99,11 @@ export function CalculationsPage() {
 
   const openCreate = () => {
     setActiveCalculation(null);
-    setForm(defaultCalculationValues('certificate_sheet'));
+    setForm(createCalculationForm());
     setEditorOpen(true);
   };
 
-  const openEdit = (calculation: CalculationRecord) => {
+  const openEdit = (calculation: CalculationListItem) => {
     setActiveCalculation(calculation);
     setForm(mapCalculationToForm(calculation));
     setEditorOpen(true);
@@ -147,7 +112,8 @@ export function CalculationsPage() {
   const closeEditor = () => {
     setEditorOpen(false);
     setActiveCalculation(null);
-    setForm(defaultCalculationValues('certificate_sheet'));
+    setForm(createCalculationForm());
+    setConfirmConvertOpen(false);
   };
 
   const persist = async () => {
@@ -165,7 +131,8 @@ export function CalculationsPage() {
     try {
       const saved = await persist();
       toast.success('Hesablama saxlanıldı', saved.number);
-      closeEditor();
+      setActiveCalculation(saved);
+      setForm(mapCalculationToForm(saved));
       await load(query);
       return saved;
     } catch (saveError) {
@@ -185,8 +152,12 @@ export function CalculationsPage() {
         const saved = await persist();
         if (!saved) return;
         calculationId = saved.id;
+        setActiveCalculation(saved);
+        setForm(mapCalculationToForm(saved));
       } else {
-        await calculationsClient.update(calculationId, mapFormToDto(form));
+        const saved = await calculationsClient.update(calculationId, mapFormToDto(form));
+        setActiveCalculation(saved);
+        setForm(mapCalculationToForm(saved));
       }
 
       const result: CalculationConvertResult = await calculationsClient.convertToOrder(calculationId);
@@ -205,7 +176,7 @@ export function CalculationsPage() {
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Hesablamalar" description="Çevik print hesablama modulu." />
+        <PageHeader title="Hesablamalar" description="Parametr əsaslı print hesablama modulu." />
         <LoadingState rows={4} />
       </div>
     );
@@ -219,7 +190,7 @@ export function CalculationsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Hesablamalar"
-        description="Print işi parametrlərini daxil edin, sistem kağız, çap və əlavə işləri avtomatik hesablasın."
+        description="Parametrləri seçin, qiymətlər avtomatik hesablansın və lazım olduqda sifarişə çevirin."
         actions={<Button onClick={openCreate}>Yeni hesablama</Button>}
       />
 
@@ -228,10 +199,10 @@ export function CalculationsPage() {
           <SearchInput value={query.search ?? ''} onChange={(value) => updateQuery({ search: value, page: 1 })} placeholder="Nömrə, məhsul və ya müştəri üzrə axtar" />
         </div>
 
-        <div className="w-full lg:w-48">
+        <div className="w-full lg:w-44">
           <select
             value={query.status ?? ''}
-            onChange={(event) => updateQuery({ status: event.target.value as QueryState['status'], page: 1 })}
+            onChange={(event) => updateQuery({ status: event.target.value, page: 1 })}
             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
           >
             <option value="">Bütün statuslar</option>
@@ -272,11 +243,6 @@ export function CalculationsPage() {
             )
           },
           {
-            key: 'template',
-            header: 'Şablon',
-            render: (row) => CALCULATION_TEMPLATES.find((template) => template.key === row.templateKey)?.label ?? row.templateKey
-          },
-          {
             key: 'customer',
             header: 'Müştəri',
             render: (row) => row.customer?.name ?? '—'
@@ -287,6 +253,11 @@ export function CalculationsPage() {
             render: (row) => row.productName
           },
           {
+            key: 'quantity',
+            header: 'Tiraj',
+            render: (row) => formatNumber(row.quantity, 0)
+          },
+          {
             key: 'status',
             header: 'Status',
             render: (row) => <StatusBadge kind="calculation" status={row.status} />
@@ -294,17 +265,17 @@ export function CalculationsPage() {
           {
             key: 'sale',
             header: 'Satış',
-            render: (row) => formatCurrency(row.summary.salePrice)
+            render: (row) => formatCurrency(row.salePrice)
           },
           {
             key: 'cost',
             header: 'Maya',
-            render: (row) => formatCurrency(row.summary.costPrice)
+            render: (row) => formatCurrency(row.costPrice)
           },
           {
             key: 'profit',
             header: 'Qazanc',
-            render: (row) => formatCurrency(row.summary.profit)
+            render: (row) => formatCurrency(row.profit)
           },
           {
             key: 'order',
@@ -339,7 +310,7 @@ export function CalculationsPage() {
         emptyState={
           <EmptyState
             title="Hesablama yoxdur"
-            description="İlk print hesablamanı yaradın."
+            description="İlk parametrlərə əsaslanan hesablamanı yaradın."
             actionLabel="Yeni hesablama"
             onAction={openCreate}
           />
@@ -355,13 +326,14 @@ export function CalculationsPage() {
       <Modal
         open={editorOpen}
         title={activeCalculation ? `Hesablama ${activeCalculation.number}` : 'Yeni hesablama'}
-        description="Şablonu seçin, parametrləri doldurun və nəticəni avtomatik görün."
+        description="Kateqoriya seçin, parametrlər avtomatik qiymətlənsin və nəticəni saxlayın."
         onClose={closeEditor}
-        widthClassName="max-w-6xl"
+        widthClassName="max-w-7xl"
       >
         <CalculationEditorForm
           value={form}
           customers={customers}
+          parameters={parameters}
           onChange={setForm}
           onClose={closeEditor}
           onSave={() => void saveCalculation()}
@@ -375,7 +347,7 @@ export function CalculationsPage() {
       <ConfirmDialog
         open={confirmConvertOpen}
         title="Sifarişə çevir"
-        description="Bu hesablamadan order yaradılacaq. Sonradan hesablamanı dəyişsəniz, order avtomatik yenilənməyəcək."
+        description="Bu hesablama əsasında order yaradılacaq. Sonradan hesablama dəyişsə, order avtomatik yenilənməyəcək."
         confirmLabel="Davam et"
         cancelLabel="Bağla"
         loading={converting}

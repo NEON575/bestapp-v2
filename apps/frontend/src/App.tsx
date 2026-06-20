@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { CalculationsPage } from './pages/CalculationsPage';
+import { CalculationParametersPage } from './pages/CalculationParametersPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderCreatePage } from './pages/OrderCreatePage';
 import { CustomersPage } from './pages/CustomersPage';
@@ -45,6 +46,7 @@ export function App() {
           <Route path=":id" element={<OrderDetailPage />} />
         </Route>
         <Route path="calculations" element={<CalculationsPage />} />
+        <Route path="calculation-parameters" element={<CalculationParametersPage />} />
         <Route path="sales" element={<SalesPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />

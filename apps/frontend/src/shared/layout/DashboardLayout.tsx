@@ -36,11 +36,12 @@ type NavItem = {
   roles?: string[];
 };
 
-const navItems: NavItem[] = [
+  const navItems: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, end: true },
   { to: '/orders', labelKey: 'nav.orders', icon: FileSpreadsheet },
   { to: '/sales', labelKey: 'nav.sales', icon: ReceiptText },
   { to: '/calculations', labelKey: 'nav.calculations', icon: Calculator },
+  { to: '/calculation-parameters', labelKey: 'nav.calculationParameters', icon: Calculator },
   { to: '/customers', labelKey: 'nav.customers', icon: Users2 },
   { to: '/production', labelKey: 'nav.production', icon: Factory, roles: ['super_admin', 'owner', 'manager', 'production'] },
   { to: '/inventory', labelKey: 'nav.inventory', icon: Boxes, roles: ['super_admin', 'owner', 'manager', 'warehouse'] },

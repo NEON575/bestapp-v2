@@ -762,6 +762,23 @@ model Calculation {
   @@map("calculations")
 }
 
+model CalculationParameter {
+  id          String   @id @default(uuid())
+  category    String
+  name        String
+  variants    Json?
+  unit        String
+  price       Decimal  @default(0) @db.Decimal(18, 2)
+  isActive    Boolean  @default(true)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@index([category, isActive])
+  @@map("calculation_parameters")
+}
+
 model CostCalculationLine {
   id                 String      @id @default(uuid())
   costCalculationId  String

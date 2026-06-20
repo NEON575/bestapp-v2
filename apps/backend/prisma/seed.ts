@@ -507,6 +507,62 @@ async function main() {
       isActive: true
     }
   });
+
+  const calculationParameterSeeds = [
+    { category: 'paper', name: 'Ofset 80qr A1', variants: ['A1'], unit: 'A1', price: 0.18, note: 'seed:calculation-parameter' },
+    { category: 'paper', name: 'Melovka 170qr A1', variants: ['A1'], unit: 'A1', price: 0.42, note: 'seed:calculation-parameter' },
+    { category: 'paper', name: 'Karton 250qr A1', variants: ['A1'], unit: 'A1', price: 0.62, note: 'seed:calculation-parameter' },
+    { category: 'paper', name: 'Karton 300qr A1', variants: ['A1'], unit: 'A1', price: 0.8, note: 'seed:calculation-parameter' },
+    { category: 'printing', name: '4+0 çap', variants: ['standart'], unit: 'vərəq', price: 0.12, note: 'seed:calculation-parameter' },
+    { category: 'printing', name: '4+4 çap', variants: ['standart'], unit: 'vərəq', price: 0.2, note: 'seed:calculation-parameter' },
+    { category: 'printing', name: '1+0 çap', variants: ['standart'], unit: 'vərəq', price: 0.08, note: 'seed:calculation-parameter' },
+    { category: 'printing', name: '1+1 çap', variants: ['standart'], unit: 'vərəq', price: 0.14, note: 'seed:calculation-parameter' },
+    { category: 'form', name: '1 forma', variants: ['standart'], unit: 'forma', price: 8, note: 'seed:calculation-parameter' },
+    { category: 'form', name: '2 forma', variants: ['standart'], unit: 'forma', price: 12, note: 'seed:calculation-parameter' },
+    { category: 'form', name: '4 forma', variants: ['standart'], unit: 'forma', price: 18, note: 'seed:calculation-parameter' },
+    { category: 'lamination', name: 'Mat laminasiya', variants: ['standart'], unit: 'ədəd', price: 0.22, note: 'seed:calculation-parameter' },
+    { category: 'lamination', name: 'Parlaq laminasiya', variants: ['standart'], unit: 'ədəd', price: 0.25, note: 'seed:calculation-parameter' },
+    { category: 'cutting', name: 'Kəsim standart', variants: ['standart'], unit: 'iş', price: 5, note: 'seed:calculation-parameter' },
+    { category: 'creasing', name: 'Beqovka standart', variants: ['standart'], unit: 'iş', price: 4, note: 'seed:calculation-parameter' },
+    { category: 'folding', name: 'Qatlama standart', variants: ['standart'], unit: 'iş', price: 4, note: 'seed:calculation-parameter' },
+    { category: 'thermal_glue', name: 'Termokley standart', variants: ['standart'], unit: 'iş', price: 6, note: 'seed:calculation-parameter' },
+    { category: 'stapling', name: 'Tikiş / Stepler standart', variants: ['standart'], unit: 'iş', price: 3, note: 'seed:calculation-parameter' },
+    { category: 'punching', name: 'Deşmə standart', variants: ['standart'], unit: 'iş', price: 2, note: 'seed:calculation-parameter' },
+    { category: 'manual_work', name: 'Əl işi standart', variants: ['standart'], unit: 'iş', price: 7, note: 'seed:calculation-parameter' },
+    { category: 'packaging', name: 'Qablaşdırma standart', variants: ['standart'], unit: 'iş', price: 1.5, note: 'seed:calculation-parameter' },
+    { category: 'other_cost', name: 'Digər xərc standart', variants: ['standart'], unit: 'iş', price: 1, note: 'seed:calculation-parameter' }
+  ];
+
+  for (const parameter of calculationParameterSeeds) {
+    const existing = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM calculation_parameters
+      WHERE category = ${parameter.category}
+        AND name = ${parameter.name}
+        AND "deletedAt" IS NULL
+      LIMIT 1
+    `;
+
+    if (existing[0]?.id) {
+      await prisma.$executeRaw`
+        UPDATE calculation_parameters
+        SET variants = ${JSON.stringify(parameter.variants)}::jsonb,
+            unit = ${parameter.unit},
+            price = ${parameter.price},
+            "isActive" = true,
+            note = ${parameter.note},
+            "updatedAt" = NOW(),
+            "deletedAt" = NULL
+        WHERE id = ${existing[0].id}
+      `;
+    } else {
+      await prisma.$executeRaw`
+        INSERT INTO calculation_parameters (id, category, name, variants, unit, price, "isActive", note, "createdAt", "updatedAt")
+        VALUES (gen_random_uuid(), ${parameter.category}, ${parameter.name}, ${JSON.stringify(parameter.variants)}::jsonb, ${parameter.unit}, ${parameter.price}, true, ${parameter.note}, NOW(), NOW())
+      `;
+    }
+  }
+
   const admin = await prisma.user.upsert({
     where: { email: 'admin@bestapp.local' },
     update: {
