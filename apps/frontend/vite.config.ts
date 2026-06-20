@@ -9,8 +9,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@bestapp/shared': path.resolve(rootDir, '../../packages/shared/src'),
-      '@bestapp/ui': path.resolve(rootDir, '../../packages/ui/src'),
+      '@bestapp/shared': path.resolve(rootDir, '../../packages/shared/src/index.ts'),
+      '@bestapp/ui': path.resolve(rootDir, '../../packages/ui/src/index.tsx'),
       '@': path.resolve(rootDir, './src')
     }
   },

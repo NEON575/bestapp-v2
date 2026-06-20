@@ -5,16 +5,43 @@ import { OrderStatusDto } from '../orders/dto/order.dto';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
-import { normalizeCalculationInput } from '../../common/business/calculation';
-import { CreateCalculationDto, CalculationListQueryDto, UpdateCalculationDto } from './dto/calculation.dto';
+import {
+  calculateCalculation,
+  defaultCalculationValues,
+  type CalculationConvertResult,
+  type CalculationFormValues,
+  type CalculationRecord,
+  type CalculationStoredPayload
+} from '../../common/business/calculation-engine';
+import { CalculationListQueryDto, CreateCalculationDto, UpdateCalculationDto } from './dto/calculation.dto';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
   return typeof value === 'number' ? value : Number(value.toString());
 }
 
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
+function mapCalculationStatus(status: CalculationFormValues['status']) {
+  if (status === 'approved') {
+    return CalculationStatus.approved;
+  }
+
+  if (status === 'converted') {
+    return CalculationStatus.converted;
+  }
+
+  return CalculationStatus.draft;
+}
+
+function parseStoredPayload(raw: Prisma.JsonValue | null | undefined): CalculationStoredPayload {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return calculateCalculation(defaultCalculationValues('custom')).stored;
+  }
+
+  const input = raw as Partial<CalculationStoredPayload> & { templateKey?: CalculationFormValues['templateKey'] };
+  return calculateCalculation({
+    ...defaultCalculationValues((input.templateKey ?? 'custom') as CalculationFormValues['templateKey']),
+    ...input
+  }).stored;
 }
 
 @Injectable()
@@ -59,19 +86,19 @@ export class CalculationsService {
     };
   }
 
-  private serializeCalculation(calculation: any) {
+  private serializeCalculation(calculation: any): CalculationRecord | null {
     if (!calculation) {
       return null;
     }
 
-    const sections = Array.isArray(calculation.sections) ? calculation.sections : [];
-    const salePrice = toNumber(calculation.salePrice);
-    const quantity = toNumber(calculation.quantity);
+    const payload = parseStoredPayload(calculation.sections);
+    const summary = payload.summary ?? calculateCalculation(payload).summary;
 
     return {
       id: calculation.id,
       number: calculation.number,
       status: calculation.status,
+      templateKey: payload.templateKey,
       customerId: calculation.customerId,
       customer: calculation.customer
         ? {
@@ -81,12 +108,33 @@ export class CalculationsService {
           }
         : null,
       productName: calculation.productName,
-      quantity,
+      quantity: toNumber(calculation.quantity),
+      readySize: payload.readySize,
+      sheetFormat: payload.sheetFormat,
+      sheetFormatCustom: payload.sheetFormatCustom,
+      sheetPlacementCount: payload.sheetPlacementCount,
+      a1ConversionFactor: payload.a1ConversionFactor,
+      paperType: payload.paperType,
+      paperGram: payload.paperGram,
+      paperPurchasePrice: payload.paperPurchasePrice,
+      color: payload.color,
+      printSide: payload.printSide,
+      prilotka: payload.prilotka,
+      formCount: payload.formCount,
+      formPrice: payload.formPrice,
+      printPricingMode: payload.printPricingMode,
+      printCount: payload.printCount,
+      printUnitPrice: payload.printUnitPrice,
+      printFixedPrice: payload.printFixedPrice,
+      extraCosts: payload.extraCosts,
+      catalog: payload.catalog,
+      salePrice: summary.salePrice,
       note: calculation.note,
-      salePrice,
       costPrice: toNumber(calculation.costPrice),
+      saleUnitPrice: summary.saleUnitPrice,
       profit: toNumber(calculation.profit),
-      saleUnitPrice: quantity > 0 ? roundMoney(salePrice / quantity) : 0,
+      profitPercent: summary.profitPercent,
+      summary,
       orderId: calculation.orderId,
       order: calculation.order
         ? {
@@ -96,7 +144,6 @@ export class CalculationsService {
             totalAmount: toNumber(calculation.order.totalAmount)
           }
         : null,
-      sections,
       createdAt: calculation.createdAt.toISOString(),
       updatedAt: calculation.updatedAt.toISOString()
     };
@@ -167,21 +214,48 @@ export class CalculationsService {
   }
 
   async create(dto: CreateCalculationDto) {
-    const normalized = normalizeCalculationInput(dto as any);
+    const normalized = calculateCalculation({
+      templateKey: dto.templateKey,
+      customerId: dto.customerId,
+      productName: dto.productName,
+      quantity: dto.quantity,
+      readySize: dto.readySize,
+      sheetFormat: dto.sheetFormat,
+      sheetFormatCustom: dto.sheetFormatCustom,
+      sheetPlacementCount: dto.sheetPlacementCount,
+      a1ConversionFactor: dto.a1ConversionFactor,
+      paperType: dto.paperType,
+      paperGram: dto.paperGram,
+      paperPurchasePrice: dto.paperPurchasePrice,
+      color: dto.color,
+      printSide: dto.printSide,
+      prilotka: dto.prilotka,
+      formCount: dto.formCount,
+      formPrice: dto.formPrice,
+      printPricingMode: dto.printPricingMode,
+      printCount: dto.printCount,
+      printUnitPrice: dto.printUnitPrice,
+      printFixedPrice: dto.printFixedPrice,
+      extraCosts: dto.extraCosts as any,
+      catalog: dto.catalog as any,
+      salePrice: dto.salePrice,
+      note: dto.note,
+      status: dto.status
+    });
     const number = await this.nextCalculationNumber();
 
     const created = await this.prisma.calculation.create({
       data: {
         number,
-        customerId: normalized.customerId,
-        productName: normalized.productName,
-        quantity: normalized.quantity,
-        note: normalized.note,
-        status: normalized.status,
-        salePrice: normalized.salePrice,
-        costPrice: normalized.costPrice,
-        profit: normalized.profit,
-        sections: normalized.sections as unknown as Prisma.InputJsonValue
+        customerId: normalized.stored.customerId,
+        productName: normalized.stored.productName,
+        quantity: normalized.stored.quantity,
+        note: normalized.stored.note || null,
+        status: mapCalculationStatus(normalized.stored.status),
+        salePrice: normalized.stored.salePrice,
+        costPrice: normalized.stored.costPrice,
+        profit: normalized.stored.profit,
+        sections: normalized.stored as unknown as Prisma.InputJsonValue
       },
       include: {
         customer: true,
@@ -195,7 +269,8 @@ export class CalculationsService {
       entityId: created.id,
       afterData: created,
       metadata: {
-        number: created.number
+        number: created.number,
+        templateKey: normalized.stored.templateKey
       }
     });
 
@@ -212,28 +287,53 @@ export class CalculationsService {
       throw new NotFoundException('Calculation not found');
     }
 
-    const normalized = normalizeCalculationInput({
-      customerId: dto.customerId ?? existing.customerId,
-      productName: dto.productName ?? existing.productName,
-      quantity: dto.quantity ?? toNumber(existing.quantity),
-      note: dto.note ?? existing.note ?? undefined,
-      status: dto.status ?? existing.status,
-      salePrice: dto.salePrice ?? toNumber(existing.salePrice),
-      sections: (dto.sections ?? (existing.sections as unknown[])) as any
-    } as any);
+    const current = parseStoredPayload(existing.sections);
+    const normalized = calculateCalculation({
+      ...current,
+      ...dto,
+      extraCosts: (dto.extraCosts as any) ?? current.extraCosts,
+      catalog: {
+        ...current.catalog,
+        ...(dto.catalog ?? {})
+      },
+      templateKey: dto.templateKey ?? current.templateKey,
+      customerId: dto.customerId ?? current.customerId,
+      productName: dto.productName ?? current.productName,
+      quantity: dto.quantity ?? current.quantity,
+      readySize: dto.readySize ?? current.readySize,
+      sheetFormat: dto.sheetFormat ?? current.sheetFormat,
+      sheetFormatCustom: dto.sheetFormatCustom ?? current.sheetFormatCustom,
+      sheetPlacementCount: dto.sheetPlacementCount ?? current.sheetPlacementCount,
+      a1ConversionFactor: dto.a1ConversionFactor ?? current.a1ConversionFactor,
+      paperType: dto.paperType ?? current.paperType,
+      paperGram: dto.paperGram ?? current.paperGram,
+      paperPurchasePrice: dto.paperPurchasePrice ?? current.paperPurchasePrice,
+      color: dto.color ?? current.color,
+      printSide: dto.printSide ?? current.printSide,
+      prilotka: dto.prilotka ?? current.prilotka,
+      formCount: dto.formCount ?? current.formCount,
+      formPrice: dto.formPrice ?? current.formPrice,
+      printPricingMode: dto.printPricingMode ?? current.printPricingMode,
+      printCount: dto.printCount ?? current.printCount,
+      printUnitPrice: dto.printUnitPrice ?? current.printUnitPrice,
+      printFixedPrice: dto.printFixedPrice ?? current.printFixedPrice,
+      salePrice: dto.salePrice ?? current.salePrice,
+      note: dto.note ?? current.note,
+      status: dto.status ?? current.status
+    });
 
     const updated = await this.prisma.calculation.update({
       where: { id },
       data: {
-        customerId: normalized.customerId,
-        productName: normalized.productName,
-        quantity: normalized.quantity,
-        note: normalized.note,
-        status: normalized.status,
-        salePrice: normalized.salePrice,
-        costPrice: normalized.costPrice,
-        profit: normalized.profit,
-        sections: normalized.sections as unknown as Prisma.InputJsonValue
+        customerId: normalized.stored.customerId,
+        productName: normalized.stored.productName,
+        quantity: normalized.stored.quantity,
+        note: normalized.stored.note || null,
+        status: mapCalculationStatus(normalized.stored.status),
+        salePrice: normalized.stored.salePrice,
+        costPrice: normalized.stored.costPrice,
+        profit: normalized.stored.profit,
+        sections: normalized.stored as unknown as Prisma.InputJsonValue
       },
       include: {
         customer: true,
@@ -252,7 +352,7 @@ export class CalculationsService {
     return this.serializeCalculation(updated)!;
   }
 
-  async convertToOrder(id: string) {
+  async convertToOrder(id: string): Promise<CalculationConvertResult> {
     const calculation = await this.prisma.calculation.findFirst({
       where: { id, deletedAt: null },
       include: { customer: true, order: true }
@@ -265,48 +365,54 @@ export class CalculationsService {
     if (calculation.orderId) {
       return {
         calculation: this.serializeCalculation(calculation)!,
-        order: this.serializeOrderSummary(
-          calculation.order ?? (await this.prisma.order.findFirst({ where: { id: calculation.orderId } }))
-        )
+        order:
+          this.serializeOrderSummary(
+            calculation.order ?? (await this.prisma.order.findFirst({ where: { id: calculation.orderId } }))
+          )!
       };
     }
 
-    const quantity = toNumber(calculation.quantity);
-    const salePrice = toNumber(calculation.salePrice);
-    const unitPrice = quantity > 0 ? roundMoney(salePrice / quantity) : 0;
-    const unitCost = quantity > 0 ? roundMoney(toNumber(calculation.costPrice) / quantity) : 0;
+    const payload = parseStoredPayload(calculation.sections);
+    const recalculated = calculateCalculation({
+      ...payload,
+      customerId: calculation.customerId,
+      productName: calculation.productName,
+      quantity: toNumber(calculation.quantity),
+      salePrice: toNumber(calculation.salePrice),
+      note: calculation.note ?? payload.note
+    });
 
     const order = await this.ordersService.create({
-      customerId: calculation.customerId,
+      customerId: recalculated.stored.customerId,
       status: OrderStatusDto.draft,
-      comment: calculation.note ?? undefined,
+      comment: recalculated.stored.note || undefined,
       items: [
         {
-          name: calculation.productName,
-          productType: 'calculation',
-          quantity,
+          name: recalculated.stored.productName,
+          productType: recalculated.stored.templateKey,
+          quantity: recalculated.stored.quantity,
           width: 0,
           height: 0,
-          unitPrice,
-          totalPrice: salePrice,
-          unitCost,
-          totalCost: toNumber(calculation.costPrice)
+          unitPrice: recalculated.stored.saleUnitPrice,
+          totalPrice: recalculated.stored.summary.salePrice,
+          unitCost: recalculated.stored.summary.unitCost,
+          totalCost: recalculated.stored.summary.costPrice
         }
       ]
     });
 
-    const costPrice = toNumber(calculation.costPrice);
-    const profit = roundMoney(salePrice - costPrice);
-    const marginPercent = salePrice > 0 ? roundMoney((profit / salePrice) * 100) : 0;
+    const costPrice = recalculated.stored.summary.costPrice;
+    const profit = recalculated.stored.summary.profit;
+    const marginPercent = recalculated.stored.summary.profitPercent;
 
     const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data: {
-        totalAmount: salePrice,
+        totalAmount: recalculated.stored.summary.salePrice,
         costAmount: costPrice,
         profitAmount: profit,
         marginPercent,
-        customerDebtAmount: salePrice
+        customerDebtAmount: recalculated.stored.summary.salePrice
       }
     });
 
@@ -314,7 +420,11 @@ export class CalculationsService {
       where: { id },
       data: {
         status: CalculationStatus.converted,
-        orderId: order.id
+        orderId: order.id,
+        salePrice: recalculated.stored.summary.salePrice,
+        costPrice,
+        profit,
+        sections: recalculated.stored as unknown as Prisma.InputJsonValue
       },
       include: {
         customer: true,
@@ -329,13 +439,14 @@ export class CalculationsService {
       beforeData: calculation,
       afterData: updatedCalculation,
       metadata: {
-        orderId: order.id
+        orderId: order.id,
+        templateKey: recalculated.stored.templateKey
       }
     });
 
     return {
       calculation: this.serializeCalculation(updatedCalculation)!,
-      order: this.serializeOrderSummary(updatedOrder)
+      order: this.serializeOrderSummary(updatedOrder)!
     };
   }
 }
