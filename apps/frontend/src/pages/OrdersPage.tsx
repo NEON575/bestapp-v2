@@ -12,22 +12,24 @@ import {
   ErrorState,
   FilterBar,
   LoadingState,
+  Modal,
   PageHeader,
   Pagination,
   SearchInput,
   StatusBadge
 } from '../shared/components';
 import { formatCurrency, formatDateOnly } from '../shared/lib/format';
+import { OrderCreateForm } from './OrderCreateForm';
 
 const orderStatusOptions = [
-  { value: '', label: 'Все статусы' },
-  { value: OrderStatus.DRAFT, label: 'Черновик' },
-  { value: OrderStatus.CALCULATED, label: 'Рассчитан' },
-  { value: OrderStatus.APPROVED, label: 'Утвержден' },
-  { value: OrderStatus.IN_PRODUCTION, label: 'В производстве' },
-  { value: OrderStatus.READY, label: 'Готов' },
-  { value: OrderStatus.DELIVERED, label: 'Выдан' },
-  { value: OrderStatus.CANCELLED, label: 'Отменен' }
+  { value: '', label: 'Bütün statuslar' },
+  { value: OrderStatus.DRAFT, label: 'Qaralama' },
+  { value: OrderStatus.CALCULATED, label: 'Hesablanıb' },
+  { value: OrderStatus.APPROVED, label: 'Təsdiqlənib' },
+  { value: OrderStatus.IN_PRODUCTION, label: 'İstehsalda' },
+  { value: OrderStatus.READY, label: 'Hazır' },
+  { value: OrderStatus.DELIVERED, label: 'Təhvil verilib' },
+  { value: OrderStatus.CANCELLED, label: 'Ləğv olunub' }
 ];
 
 const transitions: Record<string, string[]> = {
@@ -71,6 +73,7 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
 
   const load = async (nextQuery = query) => {
     setLoading(true);
@@ -85,7 +88,7 @@ export function OrdersPage() {
       setMeta(ordersResponse.meta);
       setCustomers(customersResponse.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить заказы');
+      setError(e instanceof Error ? e.message : 'Sifarişlər yüklənmədi');
     } finally {
       setLoading(false);
     }
@@ -123,7 +126,7 @@ export function OrdersPage() {
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Заказы" description="Список заказов типографии с фильтрами и быстрыми действиями." />
+        <PageHeader title="Sifarişlər" description="Sifariş siyahısı, filtrlər və sürətli əməliyyatlar." />
         <LoadingState rows={4} />
       </div>
     );
@@ -136,9 +139,9 @@ export function OrdersPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Заказы"
-        description="Полный список заказов: статус, клиент, менеджер, суммы, долг и дедлайн."
-        actions={<Button onClick={() => navigate('/orders/new')}>Создать заказ</Button>}
+        title="Sifarişlər"
+        description="Sifarişlərin tam siyahısı: status, müştəri, menecer, məbləğ və təhvil tarixi."
+        actions={<Button onClick={() => setCreateOrderOpen(true)}>Yeni sifariş</Button>}
       />
 
       <FilterBar>
@@ -146,7 +149,7 @@ export function OrdersPage() {
           <SearchInput
             value={query.search ?? ''}
             onChange={(value) => updateQuery({ search: value, page: 1 })}
-            placeholder="Поиск по номеру, клиенту, менеджеру"
+            placeholder="Nömrə, müştəri və ya menecer üzrə axtar"
           />
         </div>
 
@@ -170,7 +173,7 @@ export function OrdersPage() {
             onChange={(event) => updateQuery({ customerId: event.target.value, page: 1 })}
             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
           >
-            <option value="">Все клиенты</option>
+            <option value="">Bütün müştərilər</option>
             {customerOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -180,21 +183,21 @@ export function OrdersPage() {
         </div>
 
         <div className="w-full lg:w-44">
-          <Input value={query.managerId} onChange={(event) => updateQuery({ managerId: event.target.value, page: 1 })} placeholder="ID менеджера" />
+          <Input value={query.managerId} onChange={(event) => updateQuery({ managerId: event.target.value, page: 1 })} placeholder="Menecer ID-si" />
         </div>
 
         <div className="flex flex-wrap gap-3 text-sm text-slate-600">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={query.hasDebt} onChange={(event) => updateQuery({ hasDebt: event.target.checked, page: 1 })} />
-            Есть долг
+            Borcu var
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={query.inProduction} onChange={(event) => updateQuery({ inProduction: event.target.checked, page: 1 })} />
-            В производстве
+            İstehsaldadır
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={query.overdue} onChange={(event) => updateQuery({ overdue: event.target.checked, page: 1 })} />
-            Просроченные
+            Gecikmişlər
           </label>
         </div>
 
@@ -210,7 +213,7 @@ export function OrdersPage() {
         columns={[
           {
             key: 'number',
-            header: 'Номер',
+            header: 'Nömrə',
             render: (row) => (
               <div>
                 <div className="font-semibold text-slate-950">{row.number}</div>
@@ -220,7 +223,7 @@ export function OrdersPage() {
           },
           {
             key: 'customer',
-            header: 'Клиент',
+            header: 'Müştəri',
             render: (row) => (
               <div>
                 <div className="font-medium text-slate-950">{row.customer?.name ?? '—'}</div>
@@ -230,42 +233,42 @@ export function OrdersPage() {
           },
           {
             key: 'manager',
-            header: 'Менеджер',
+            header: 'Menecer',
             render: (row) => row.manager?.fullName ?? '—'
           },
           {
             key: 'status',
-            header: 'Статус',
+            header: 'Status',
             render: (row) => <StatusBadge kind="order" status={row.status} />
           },
           {
             key: 'sum',
-            header: 'Сумма',
+            header: 'Məbləğ',
             render: (row) => formatCurrency(row.totalAmount)
           },
           {
             key: 'paid',
-            header: 'Оплачено',
+            header: 'Ödənilib',
             render: (row) => formatCurrency(row.paidAmount)
           },
           {
             key: 'debt',
-            header: 'Долг',
+            header: 'Borc',
             render: (row) => formatCurrency(row.customerDebtAmount)
           },
           {
             key: 'deadline',
-            header: 'Дедлайн',
+            header: 'Təhvil tarixi',
             render: (row) => formatDateOnly(row.deadlineAt)
           },
           {
             key: 'actions',
-            header: 'Действия',
+            header: 'Əməliyyatlar',
             className: 'w-[260px]',
             render: (row) => (
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="secondary" onClick={() => navigate(`/orders/${row.id}`)}>
-                  Открыть
+                  Aç
                 </Button>
                 <select
                   value=""
@@ -274,7 +277,7 @@ export function OrdersPage() {
                   onChange={(event) => void changeStatus(row, event.target.value)}
                   className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
                 >
-                  <option value="">{savingId === row.id ? 'Сохраняем...' : 'Изменить статус'}</option>
+                  <option value="">{savingId === row.id ? 'Yadda saxlanılır...' : 'Statusu dəyiş'}</option>
                   {transitions[row.status]?.map((status) => (
                     <option key={status} value={status}>
                       {getOrderStatusLabel(status)}
@@ -287,19 +290,30 @@ export function OrdersPage() {
         ]}
         emptyState={
           <EmptyState
-            title="Заказов нет"
-            description="Создайте первый заказ, чтобы увидеть поток работы типографии."
-            actionLabel="Создать заказ"
-            onAction={() => navigate('/orders/new')}
+            title="Sifariş yoxdur"
+            description="İlk sifarişi yaradın və iş axınını burada izləməyə başlayın."
+            actionLabel="Yeni sifariş"
+            onAction={() => setCreateOrderOpen(true)}
           />
         }
       />
 
       <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => updateQuery({ page })} />
       <Card className="border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-        Всего: <span className="font-semibold text-slate-950">{meta.total}</span>
+        Cəmi: <span className="font-semibold text-slate-950">{meta.total}</span>
       </Card>
+
+      <Modal open={createOrderOpen} title="Yeni sifariş" onClose={() => setCreateOrderOpen(false)} widthClassName="max-w-5xl">
+        <OrderCreateForm
+          submitLabel="Yadda saxla"
+          cancelLabel="Bağla"
+          onCancel={() => setCreateOrderOpen(false)}
+          onCreated={async () => {
+            setCreateOrderOpen(false);
+            await load(query);
+          }}
+        />
+      </Modal>
     </div>
   );
 }
-

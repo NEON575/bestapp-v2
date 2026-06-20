@@ -8,8 +8,8 @@ type ErrorStateProps = {
 };
 
 export function ErrorState({
-  title = 'Не удалось загрузить данные',
-  description = 'Проверьте соединение с backend и повторите попытку.',
+  title = 'Məlumatlar yüklənmədi',
+  description = 'Bağlantını yoxlayın və yenidən cəhd edin.',
   onRetry
 }: ErrorStateProps) {
   return (
@@ -23,7 +23,7 @@ export function ErrorState({
           <p className="mt-1 text-sm leading-6 text-rose-700">{description}</p>
           {onRetry ? (
             <div className="mt-4">
-              <Button onClick={onRetry}>Повторить</Button>
+              <Button onClick={onRetry}>Təkrar et</Button>
             </div>
           ) : null}
         </div>
@@ -31,4 +31,3 @@ export function ErrorState({
     </Card>
   );
 }
-
