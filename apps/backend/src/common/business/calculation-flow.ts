@@ -44,6 +44,7 @@ export interface CalculationRow {
   parameterName: string;
   parameterVariant?: string | null;
   variants: CalculationParameterVariantItem[];
+  details: Record<string, unknown>;
   unit: string;
   quantity: number;
   unitPrice: number;
@@ -52,6 +53,11 @@ export interface CalculationRow {
 }
 
 export interface CalculationSummary {
+  paperAmount: number;
+  formAmount: number;
+  laminationAmount: number;
+  otherCostAmount: number;
+  printRevenue: number;
   costPrice: number;
   salePrice: number;
   saleUnitPrice: number;
@@ -178,6 +184,7 @@ export function createEmptyCalculationRow(category: CalculationParameterCategory
     parameterName: '',
     parameterVariant: null,
     variants: [],
+    details: {},
     unit: '',
     quantity: 1,
     unitPrice: 0,
@@ -199,6 +206,7 @@ export function normalizeCalculationRow(row: Partial<CalculationRow> & { categor
           value: toText(variant.value)
         }))
       : [],
+    details: row.details && typeof row.details === 'object' ? { ...row.details } : {},
     unit: toText(row.unit),
     quantity: Math.max(toNumber(row.quantity, 1), 0),
     unitPrice: Math.max(toNumber(row.unitPrice, 0), 0),
@@ -208,7 +216,30 @@ export function normalizeCalculationRow(row: Partial<CalculationRow> & { categor
 }
 
 export function calculateCalculationSummary(input: { salePrice: number; quantity: number; rows: CalculationRow[] }): CalculationSummary {
-  const costPrice = roundMoney(input.rows.reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0));
+  const paperAmount = roundMoney(
+    input.rows.filter((row) => row.category === 'paper').reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0)
+  );
+  const formAmount = roundMoney(
+    input.rows.filter((row) => row.category === 'form').reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0)
+  );
+  const laminationAmount = roundMoney(
+    input.rows.filter((row) => row.category === 'lamination').reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0)
+  );
+  const otherCostAmount = roundMoney(
+    input.rows
+      .filter(
+        (row) =>
+          row.category !== 'paper' &&
+          row.category !== 'form' &&
+          row.category !== 'lamination' &&
+          row.category !== 'printing'
+      )
+      .reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0)
+  );
+  const printRevenue = roundMoney(
+    input.rows.filter((row) => row.category === 'printing').reduce((sum, row) => sum + roundMoney(row.quantity * row.unitPrice), 0)
+  );
+  const costPrice = roundMoney(paperAmount + formAmount + laminationAmount + otherCostAmount);
   const salePrice = roundMoney(toNumber(input.salePrice, 0));
   const quantity = Math.max(toNumber(input.quantity, 0), 0);
   const saleUnitPrice = quantity > 0 ? roundMoney(salePrice / quantity) : 0;
@@ -217,6 +248,11 @@ export function calculateCalculationSummary(input: { salePrice: number; quantity
   const profitPercent = salePrice > 0 ? roundMoney((profit / salePrice) * 100) : 0;
 
   return {
+    paperAmount,
+    formAmount,
+    laminationAmount,
+    otherCostAmount,
+    printRevenue,
     costPrice,
     salePrice,
     saleUnitPrice,

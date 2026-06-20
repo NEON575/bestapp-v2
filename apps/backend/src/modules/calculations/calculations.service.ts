@@ -115,6 +115,7 @@ function legacySectionsToStored(raw: unknown, fallback?: Partial<CalculationHead
         parameterName: row?.parameterName ?? row?.name ?? section?.title ?? category,
         parameterVariant: row?.parameterVariant ?? null,
         variants: [],
+        details: row?.details && typeof row.details === 'object' ? (row.details as Record<string, unknown>) : {},
         unit:
           row?.unit ??
           (category === 'paper'
@@ -334,6 +335,7 @@ export class CalculationsService {
           parameterName: row.parameterName,
           parameterVariant: row.parameterVariant ?? null,
           variants: normalizeVariantItems(row.variants),
+          details: row.details && typeof row.details === 'object' ? row.details : {},
           unit: row.unit,
           quantity: row.quantity,
           unitPrice: row.unitPrice,
@@ -412,6 +414,7 @@ export class CalculationsService {
           parameterName: row.parameterName,
           parameterVariant: row.parameterVariant ?? null,
           variants: normalizeVariantItems(row.variants),
+          details: row.details && typeof row.details === 'object' ? row.details : {},
           unit: row.unit,
           quantity: row.quantity,
           unitPrice: row.unitPrice,

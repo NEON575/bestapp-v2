@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/query/pagination.dto';
 import {
   CALCULATION_PARAMETER_CATEGORIES,
@@ -44,6 +44,11 @@ export class CalculationRowDto {
   @IsOptional()
   @IsArray()
   variants?: string[];
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  details?: Record<string, unknown>;
 
   @ApiProperty()
   @IsString()
