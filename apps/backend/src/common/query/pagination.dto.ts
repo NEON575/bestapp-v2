@@ -24,10 +24,10 @@ export class PaginationQueryDto {
   @Min(1)
   page = 1;
 
-  @ApiPropertyOptional({ example: 20, default: 20, maximum: 100 })
+  @ApiPropertyOptional({ example: 20, default: 20, maximum: 200 })
   @Transform(({ value }) => toNumber(value, 20))
   @Min(1)
-  @Max(100)
+  @Max(200)
   limit = 20;
 
   @ApiPropertyOptional({ example: 'paper' })
