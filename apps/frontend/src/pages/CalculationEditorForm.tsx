@@ -81,9 +81,13 @@ type PaperDetails = {
   paperType: string;
   paperGram: string;
   paperForm: string;
+  paperA1FormatOption: string;
+  paperA1FormatCustom: string;
   paperA1UnitPrice: number;
   paperA1UnitPriceOverridden: boolean;
 };
+
+const PAPER_A1_FORMAT_OPTIONS = ['64x90', '70x100', '72x102', '60x84', 'A1', 'custom'] as const;
 
 type PrintDetails = {
   printType: '4+0' | '4+4' | '1+0' | '1+1';
@@ -268,6 +272,8 @@ function createPaperDetails(): PaperDetails {
     paperType: '',
     paperGram: '',
     paperForm: '',
+    paperA1FormatOption: 'A1',
+    paperA1FormatCustom: '',
     paperA1UnitPrice: 0,
     paperA1UnitPriceOverridden: false
   };
@@ -334,6 +340,8 @@ function getPaperDetails(row: CalculationRowValues): PaperDetails {
     paperType: typeof details.paperType === 'string' ? details.paperType : '',
     paperGram: typeof details.paperGram === 'string' ? details.paperGram : '',
     paperForm: typeof details.paperForm === 'string' ? details.paperForm : '',
+    paperA1FormatOption: typeof details.paperA1FormatOption === 'string' ? details.paperA1FormatOption : 'A1',
+    paperA1FormatCustom: typeof details.paperA1FormatCustom === 'string' ? details.paperA1FormatCustom : '',
     paperA1UnitPrice: Math.max(toNumber(details.paperA1UnitPrice, row.unitPrice), 0),
     paperA1UnitPriceOverridden: Boolean(details.paperA1UnitPriceOverridden ?? row.isPriceOverridden)
   };
@@ -639,7 +647,7 @@ export function CalculationEditorForm({
     });
   };
 
-  const addRow = (category = value.rows[0]?.category ?? 'paper') => {
+  const addRow = (category = 'other_cost' as CalculationRowValues['category']) => {
     onChange({
       ...value,
       rows: syncRows(
@@ -1070,32 +1078,40 @@ function PaperFields({
           </select>
         </Field>
         <Field label="Kağız qramı">
-          <select
-            value={details.paperGram}
-            onChange={(event) => onDetailsChange({ paperGram: event.target.value })}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-          >
-            <option value="">Seçin</option>
-            {catalog.gramOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <Input value={details.paperGram} onChange={(event) => onDetailsChange({ paperGram: event.target.value })} />
         </Field>
-        <Field label="Kağız forma">
+        <Field label="A1 kağız formatı">
           <select
-            value={details.paperForm}
-            onChange={(event) => onDetailsChange({ paperForm: event.target.value })}
+            value={details.paperA1FormatOption}
+            onChange={(event) => {
+              const option = event.target.value;
+              onDetailsChange({
+                paperA1FormatOption: option,
+                paperForm: option === 'custom' ? details.paperA1FormatCustom : option,
+                paperA1FormatCustom: option === 'custom' ? details.paperA1FormatCustom : ''
+              });
+            }}
             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
           >
-            <option value="">Seçin</option>
-            {catalog.formOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
+            {PAPER_A1_FORMAT_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
               </option>
             ))}
           </select>
+          {details.paperA1FormatOption === 'custom' ? (
+            <Input
+              className="mt-2"
+              value={details.paperA1FormatCustom}
+              onChange={(event) =>
+                onDetailsChange({
+                  paperA1FormatCustom: event.target.value,
+                  paperForm: event.target.value
+                })
+              }
+              placeholder="A1 formatını daxil edin"
+            />
+          ) : null}
         </Field>
         <Field label="Ədəd qiyməti">
           <Input
