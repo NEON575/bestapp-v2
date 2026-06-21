@@ -108,6 +108,11 @@ type LaminationDetails = {
   laminationPriceOverridden: boolean;
 };
 
+type PaperParameterMatch = {
+  parameter: CalculationParameterItem;
+  paperA1UnitPrice: number;
+};
+
 function uid() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -131,6 +136,38 @@ function toNumber(value: unknown, fallback = 0) {
 
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePaperLookupText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[\s,./_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findPaperParameterMatch(parameters: CalculationParameterItem[], row: CalculationRowValues): PaperParameterMatch | null {
+  const details = normalizeDetails(row) as Partial<PaperDetails>;
+  const tokens = [details.paperType, details.paperGram, details.paperForm]
+    .map((value) => normalizePaperLookupText(String(value ?? '')))
+    .filter(Boolean);
+
+  if (!tokens.length) {
+    return null;
+  }
+
+  const candidates = parameters.filter((parameter) => parameter.category === 'paper' && parameter.isActive);
+  for (const parameter of candidates) {
+    const haystack = normalizePaperLookupText([parameter.name, parameter.unit, ...parameter.variants.map((variant) => variant.label), ...parameter.variants.map((variant) => variant.value)].join(' '));
+    if (tokens.every((token) => haystack.includes(token))) {
+      return {
+        parameter,
+        paperA1UnitPrice: parameter.price
+      };
+    }
+  }
+
+  return null;
 }
 
 function pickTariff(brackets: TariffBracket[], quantity: number) {
@@ -222,9 +259,13 @@ function getPaperDetails(row: CalculationRowValues): PaperDetails {
   return {
     ...createPaperDetails(),
     ...details,
+    paperFormatText: typeof details.paperFormatText === 'string' ? details.paperFormatText : '',
     paperPerFormatCount: Math.max(toNumber(details.paperPerFormatCount, 1), 1),
     paperBrakaCount: Math.max(toNumber(details.paperBrakaCount, 0), 0),
     paperA1PerFormatCount: Math.max(toNumber(details.paperA1PerFormatCount, 1), 1),
+    paperType: typeof details.paperType === 'string' ? details.paperType : '',
+    paperGram: typeof details.paperGram === 'string' ? details.paperGram : '',
+    paperForm: typeof details.paperForm === 'string' ? details.paperForm : '',
     paperA1UnitPrice: Math.max(toNumber(details.paperA1UnitPrice, row.unitPrice), 0),
     paperA1UnitPriceOverridden: Boolean(details.paperA1UnitPriceOverridden ?? row.isPriceOverridden)
   };
@@ -466,17 +507,43 @@ export function CalculationEditorForm({
   };
 
   const updateRowDetails = (rowId: string, patch: Record<string, unknown>) => {
-    const nextRows = value.rows.map((row) =>
-      row.id === rowId
-        ? {
+    const nextRows = value.rows.map((row) => {
+      if (row.id !== rowId) {
+        return row;
+      }
+
+      const nextDetails = {
+        ...(row.details && typeof row.details === 'object' ? row.details : {}),
+        ...patch
+      };
+
+      if (row.category === 'paper') {
+        const nextRow: CalculationRowValues = {
+          ...row,
+          details: nextDetails
+        };
+        const match = findPaperParameterMatch(parameters, nextRow);
+        if (match) {
+          const manuallyOverridden = Boolean(nextDetails.paperA1UnitPriceOverridden ?? row.isPriceOverridden);
+          nextDetails.paperA1UnitPrice = manuallyOverridden ? toNumber(nextDetails.paperA1UnitPrice, row.unitPrice) : match.paperA1UnitPrice;
+          nextDetails.paperA1UnitPriceOverridden = manuallyOverridden;
+          return {
             ...row,
-            details: {
-              ...(row.details && typeof row.details === 'object' ? row.details : {}),
-              ...patch
-            }
-          }
-        : row
-    );
+            parameterId: row.parameterId ?? match.parameter.id,
+            parameterName: row.parameterName || match.parameter.name,
+            unit: row.unit || match.parameter.unit || 'A1',
+            unitPrice: manuallyOverridden ? row.unitPrice : match.paperA1UnitPrice,
+            isPriceOverridden: manuallyOverridden,
+            details: nextDetails
+          };
+        }
+      }
+
+      return {
+        ...row,
+        details: nextDetails
+      };
+    });
     onChange({
       ...value,
       rows: syncRows(nextRows, value.quantity)
@@ -871,7 +938,7 @@ function PaperFields({
   return (
     <div className="mt-4 space-y-4 rounded-2xl border border-dashed border-slate-200 bg-white p-4">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Field label="Kağızın çap formatı">
+        <Field label="Çap formatı">
           <select
             value={details.paperFormatText}
             onChange={(event) => onDetailsChange({ paperFormatText: event.target.value })}
@@ -885,7 +952,7 @@ function PaperFields({
             ))}
           </select>
         </Field>
-        <Field label="Çap formatına düşən say">
+        <Field label="Çapa düşən say">
           <Input
             type="number"
             min={1}
@@ -893,7 +960,7 @@ function PaperFields({
             onChange={(event) => onDetailsChange({ paperPerFormatCount: Math.max(toNumber(event.target.value, 1), 1) })}
           />
         </Field>
-        <Field label="Braka istifadə olunan say">
+        <Field label="Brak">
           <Input
             type="number"
             min={0}
@@ -901,7 +968,7 @@ function PaperFields({
             onChange={(event) => onDetailsChange({ paperBrakaCount: Math.max(toNumber(event.target.value, 0), 0) })}
           />
         </Field>
-        <Field label="A1 formatına düşən çap formatı sayı">
+        <Field label="A1-ə düşən çap formatı sayı">
           <Input
             type="number"
             min={1}
@@ -918,7 +985,7 @@ function PaperFields({
         <Field label="Kağız forma">
           <Input value={details.paperForm} onChange={(event) => onDetailsChange({ paperForm: event.target.value })} />
         </Field>
-        <Field label="A1 kağız ədəd qiyməti">
+        <Field label="Ədəd qiyməti">
           <Input
             type="number"
             min={0}
@@ -934,14 +1001,17 @@ function PaperFields({
         </Field>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Field label="Çap formatı sayı">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Field label="Çap sayı">
           <Input value={formatNumber(printFormatCount, 2)} readOnly />
         </Field>
-        <Field label="Cəmi istifadə olunan A1 kağız sayı">
+        <Field label="Ümumi çap sayı">
+          <Input value={formatNumber(totalPrintFormatCount, 2)} readOnly />
+        </Field>
+        <Field label="İstifadə olunan A1 sayı">
           <Input value={formatNumber(totalA1Count, 2)} readOnly />
         </Field>
-        <Field label="Cəmi kağız məbləği">
+        <Field label="Kağız cəmi">
           <Input value={formatCurrency(rowTotalFromCount(totalA1Count, details.paperA1UnitPrice))} readOnly />
         </Field>
       </div>
