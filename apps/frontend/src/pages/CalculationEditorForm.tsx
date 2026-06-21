@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Button, Card, Input } from '@bestapp/ui';
 import {
@@ -113,6 +114,17 @@ type PaperParameterMatch = {
   paperA1UnitPrice: number;
 };
 
+type PaperCatalogOption = {
+  value: string;
+  label: string;
+};
+
+type PaperParameterCatalog = {
+  typeOptions: PaperCatalogOption[];
+  gramOptions: PaperCatalogOption[];
+  formOptions: PaperCatalogOption[];
+};
+
 function uid() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -146,20 +158,76 @@ function normalizePaperLookupText(value: string) {
     .trim();
 }
 
+function extractPaperParameterParts(parameter: CalculationParameterItem) {
+  const normalizedName = normalizePaperLookupText(parameter.name);
+  const gramMatch = normalizedName.match(/\b\d{2,3}\s*(?:qr|g)\b/);
+  const formMatch = normalizedName.match(/\b(?:a[1-4]|[0-9]{2}x[0-9]{2}|[0-9]{2}x[0-9]{3}|70x100|64x90|64x45|70x50|50x35|45x32)\b/);
+  const paperGram = gramMatch?.[0] ?? '';
+  const paperForm = formMatch?.[0]?.toUpperCase() ?? '';
+  const paperType = normalizePaperLookupText(
+    normalizedName
+      .replace(gramMatch?.[0] ?? '', '')
+      .replace(formMatch?.[0] ?? '', '')
+      .replace(/\b(?:paper|kağız)\b/g, '')
+  );
+
+  return {
+    paperType,
+    paperGram,
+    paperForm
+  };
+}
+
+function buildPaperParameterCatalog(parameters: CalculationParameterItem[]): PaperParameterCatalog {
+  const paperParameters = parameters.filter((parameter) => parameter.category === 'paper' && parameter.isActive);
+  const typeMap = new Map<string, string>();
+  const gramMap = new Map<string, string>();
+  const formMap = new Map<string, string>();
+
+  for (const parameter of paperParameters) {
+    const parts = extractPaperParameterParts(parameter);
+    if (parts.paperType) {
+      typeMap.set(parts.paperType, parts.paperType);
+    }
+    if (parts.paperGram) {
+      gramMap.set(parts.paperGram, parts.paperGram);
+    }
+    if (parts.paperForm) {
+      formMap.set(parts.paperForm, parts.paperForm);
+    }
+  }
+
+  const fallbackTypeOptions = paperParameters.map((parameter) => normalizePaperLookupText(parameter.name)).filter(Boolean);
+
+  return {
+    typeOptions: Array.from(typeMap.keys()).length
+      ? Array.from(typeMap.keys()).map((value) => ({ value, label: value }))
+      : Array.from(new Set(fallbackTypeOptions)).map((value) => ({ value, label: value })),
+    gramOptions: Array.from(gramMap.keys()).map((value) => ({ value, label: value.toUpperCase() })),
+    formOptions: Array.from(formMap.keys()).map((value) => ({ value, label: value }))
+  };
+}
+
 function findPaperParameterMatch(parameters: CalculationParameterItem[], row: CalculationRowValues): PaperParameterMatch | null {
   const details = normalizeDetails(row) as Partial<PaperDetails>;
-  const tokens = [details.paperType, details.paperGram, details.paperForm]
-    .map((value) => normalizePaperLookupText(String(value ?? '')))
-    .filter(Boolean);
+  const target = {
+    paperType: normalizePaperLookupText(String(details.paperType ?? '')),
+    paperGram: normalizePaperLookupText(String(details.paperGram ?? '')),
+    paperForm: normalizePaperLookupText(String(details.paperForm ?? ''))
+  };
 
-  if (!tokens.length) {
+  if (!target.paperType && !target.paperGram && !target.paperForm) {
     return null;
   }
 
   const candidates = parameters.filter((parameter) => parameter.category === 'paper' && parameter.isActive);
   for (const parameter of candidates) {
-    const haystack = normalizePaperLookupText([parameter.name, parameter.unit, ...parameter.variants.map((variant) => variant.label), ...parameter.variants.map((variant) => variant.value)].join(' '));
-    if (tokens.every((token) => haystack.includes(token))) {
+    const parts = extractPaperParameterParts(parameter);
+    if (
+      (!target.paperType || parts.paperType === target.paperType) &&
+      (!target.paperGram || normalizePaperLookupText(parts.paperGram) === target.paperGram) &&
+      (!target.paperForm || normalizePaperLookupText(parts.paperForm) === target.paperForm)
+    ) {
       return {
         parameter,
         paperA1UnitPrice: parameter.price
@@ -302,16 +370,15 @@ function getLaminationDetails(row: CalculationRowValues): LaminationDetails {
   const details = normalizeDetails(row);
   const laminationType = (details.laminationType as LaminationDetails['laminationType']) ?? 'mat';
   const laminationSide = (details.laminationSide as LaminationDetails['laminationSide']) ?? '1+0';
-  const tariff = pickTariff(LAMINATION_TARIFFS[laminationType]?.[laminationSide] ?? LAMINATION_TARIFFS.mat['1+0'], row.quantity || toNumber(details.laminationFormatCount, 1));
   return {
     ...createLaminationDetails(),
     ...details,
     laminationType,
     laminationSide,
     laminationFormatCount: Math.max(toNumber(details.laminationFormatCount, 1), 1),
-    laminationTariffRange: typeof details.laminationTariffRange === 'string' ? details.laminationTariffRange : tariff.range,
-    laminationPrice: Math.max(toNumber(details.laminationPrice, row.unitPrice), 0),
-    laminationPriceOverridden: Boolean(details.laminationPriceOverridden ?? row.isPriceOverridden)
+    laminationTariffRange: '',
+    laminationPrice: laminationSide === '1+1' ? 0.16 : 0.1,
+    laminationPriceOverridden: false
   };
 }
 
@@ -343,19 +410,21 @@ function calculatePaperDerivedValues(row: CalculationRowValues, tiraj: number) {
   } satisfies CalculationRowValues;
 }
 
-function calculatePrintDerivedValues(row: CalculationRowValues, tiraj: number) {
+function calculatePrintDerivedValues(row: CalculationRowValues, sharedPrintCount: number, tiraj: number) {
   const details = getPrintDetails(row);
   const tariff = pickTariff(PRINT_TARIFFS[details.printType] ?? PRINT_TARIFFS['4+0'], tiraj);
   const price = details.printPriceOverridden ? row.unitPrice : tariff.price;
+  const quantity = Math.max(toNumber(sharedPrintCount, tiraj || details.printFormatCount || 1), 1);
 
   return {
     ...row,
     unit: row.unit || 'iş',
-    quantity: 1,
+    quantity,
     unitPrice: price,
     isPriceOverridden: details.printPriceOverridden,
     details: {
       ...details,
+      printFormatCount: quantity,
       printTariffRange: tariff.range,
       printPrice: price,
       printPriceOverridden: details.printPriceOverridden
@@ -385,22 +454,22 @@ function calculateFormDerivedValues(row: CalculationRowValues) {
   } satisfies CalculationRowValues;
 }
 
-function calculateLaminationDerivedValues(row: CalculationRowValues, tiraj: number) {
+function calculateLaminationDerivedValues(row: CalculationRowValues, sharedPrintCount: number) {
   const details = getLaminationDetails(row);
-  const tariff = pickTariff(LAMINATION_TARIFFS[details.laminationType]?.[details.laminationSide] ?? LAMINATION_TARIFFS.mat['1+0'], tiraj);
-  const price = details.laminationPriceOverridden ? row.unitPrice : tariff.price;
+  const quantity = Math.max(toNumber(sharedPrintCount, row.quantity || 1), 1);
+  const price = details.laminationSide === '1+1' ? 0.16 : 0.1;
 
   return {
     ...row,
     unit: row.unit || 'iş',
-    quantity: 1,
+    quantity,
     unitPrice: price,
-    isPriceOverridden: details.laminationPriceOverridden,
+    isPriceOverridden: false,
     details: {
       ...details,
-      laminationTariffRange: tariff.range,
+      laminationFormatCount: quantity,
       laminationPrice: price,
-      laminationPriceOverridden: details.laminationPriceOverridden
+      laminationPriceOverridden: false
     }
   } satisfies CalculationRowValues;
 }
@@ -414,11 +483,18 @@ function calculateGenericDerivedValues(row: CalculationRowValues) {
 }
 
 function syncRows(rows: CalculationRowValues[], tiraj: number) {
-  return rows.map((row) => {
-    if (row.category === 'paper') return calculatePaperDerivedValues(row, tiraj);
-    if (row.category === 'printing') return calculatePrintDerivedValues(row, tiraj);
+  const paperDerivedRows = rows.map((row) => (row.category === 'paper' ? calculatePaperDerivedValues(row, tiraj) : row));
+  const paperRow = paperDerivedRows.find((row) => row.category === 'paper');
+  const sharedPrintCount = Math.max(
+    toNumber((paperRow?.details as Record<string, unknown> | undefined)?.paperDerivedPrintFormatCount, tiraj),
+    1
+  );
+
+  return paperDerivedRows.map((row) => {
+    if (row.category === 'paper') return row;
+    if (row.category === 'printing') return calculatePrintDerivedValues(row, sharedPrintCount, tiraj);
     if (row.category === 'form') return calculateFormDerivedValues(row);
-    if (row.category === 'lamination') return calculateLaminationDerivedValues(row, tiraj);
+    if (row.category === 'lamination') return calculateLaminationDerivedValues(row, sharedPrintCount);
     return calculateGenericDerivedValues(row);
   });
 }
@@ -485,6 +561,12 @@ export function CalculationEditorForm({
     ...category,
     parameters: parameters.filter((parameter) => parameter.category === category.value && parameter.isActive)
   }));
+  const paperCatalog = useMemo(() => buildPaperParameterCatalog(parameters), [parameters]);
+  const paperRow = value.rows.find((row) => row.category === 'paper');
+  const sharedPrintCount = Math.max(
+    toNumber((paperRow?.details as Record<string, unknown> | undefined)?.paperDerivedPrintFormatCount, value.quantity),
+    1
+  );
 
   const update = (patch: Partial<CalculationFormState>) => {
     const next = {
@@ -654,7 +736,7 @@ export function CalculationEditorForm({
       ) : null}
 
       <Card className="border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Tarix">
             <Input type="date" value={value.date} onChange={(event) => update({ date: event.target.value })} />
           </Field>
@@ -691,15 +773,6 @@ export function CalculationEditorForm({
             />
           </Field>
 
-          <Field label="Satış qiyməti">
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              value={value.salePrice}
-              onChange={(event) => update({ salePrice: Math.max(toNumber(event.target.value, 0), 0) })}
-            />
-          </Field>
         </div>
 
         <Field label="Qeyd" className="mt-4">
@@ -741,7 +814,8 @@ export function CalculationEditorForm({
                   </Button>
                 </div>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                {row.category !== 'paper' && row.category !== 'printing' && row.category !== 'form' && row.category !== 'lamination' ? (
+                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                   <Field label="Kateqoriya">
                     <select
                       value={row.category}
@@ -821,7 +895,8 @@ export function CalculationEditorForm({
                       </button>
                     ) : null}
                   </Field>
-                </div>
+                  </div>
+                ) : null}
 
                 {row.category === 'paper' ? (
                   <PaperFields
@@ -829,6 +904,7 @@ export function CalculationEditorForm({
                     onDetailsChange={(patch) => updateRowDetails(row.id, patch)}
                     onNoteChange={(note) => updateRow(row.id, { note })}
                     tiraj={value.quantity}
+                    catalog={paperCatalog}
                   />
                 ) : null}
                 {row.category === 'printing' ? (
@@ -836,6 +912,7 @@ export function CalculationEditorForm({
                     row={row}
                     onDetailsChange={(patch) => updateRowDetails(row.id, patch)}
                     onNoteChange={(note) => updateRow(row.id, { note })}
+                    sharedCount={sharedPrintCount}
                     tiraj={value.quantity}
                   />
                 ) : null}
@@ -851,7 +928,7 @@ export function CalculationEditorForm({
                     row={row}
                     onDetailsChange={(patch) => updateRowDetails(row.id, patch)}
                     onNoteChange={(note) => updateRow(row.id, { note })}
-                    tiraj={value.quantity}
+                    sharedCount={sharedPrintCount}
                   />
                 ) : null}
 
@@ -923,12 +1000,14 @@ function PaperFields({
   row,
   onDetailsChange,
   onNoteChange,
-  tiraj
+  tiraj,
+  catalog
 }: {
   row: CalculationRowValues;
   onDetailsChange: (patch: Record<string, unknown>) => void;
   onNoteChange: (value: string) => void;
   tiraj: number;
+  catalog: PaperParameterCatalog;
 }) {
   const details = getPaperDetails(row);
   const printFormatCount = roundMoney(tiraj / details.paperPerFormatCount);
@@ -977,13 +1056,46 @@ function PaperFields({
           />
         </Field>
         <Field label="Kağız növü">
-          <Input value={details.paperType} onChange={(event) => onDetailsChange({ paperType: event.target.value })} />
+          <select
+            value={details.paperType}
+            onChange={(event) => onDetailsChange({ paperType: event.target.value })}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+          >
+            <option value="">Seçin</option>
+            {catalog.typeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Kağız qramı">
-          <Input value={details.paperGram} onChange={(event) => onDetailsChange({ paperGram: event.target.value })} />
+          <select
+            value={details.paperGram}
+            onChange={(event) => onDetailsChange({ paperGram: event.target.value })}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+          >
+            <option value="">Seçin</option>
+            {catalog.gramOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Kağız forma">
-          <Input value={details.paperForm} onChange={(event) => onDetailsChange({ paperForm: event.target.value })} />
+          <select
+            value={details.paperForm}
+            onChange={(event) => onDetailsChange({ paperForm: event.target.value })}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+          >
+            <option value="">Seçin</option>
+            {catalog.formOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Ədəd qiyməti">
           <Input
@@ -1023,15 +1135,17 @@ function PrintFields({
   row,
   onDetailsChange,
   onNoteChange,
+  sharedCount,
   tiraj
 }: {
   row: CalculationRowValues;
   onDetailsChange: (patch: Record<string, unknown>) => void;
   onNoteChange: (value: string) => void;
+  sharedCount: number;
   tiraj: number;
 }) {
   const details = getPrintDetails(row);
-  const tariff = pickTariff(PRINT_TARIFFS[details.printType] ?? PRINT_TARIFFS['4+0'], tiraj);
+  const price = details.printPriceOverridden ? row.unitPrice : pickTariff(PRINT_TARIFFS[details.printType] ?? PRINT_TARIFFS['4+0'], tiraj).price;
 
   return (
     <div className="mt-4 space-y-4 rounded-2xl border border-dashed border-slate-200 bg-white p-4">
@@ -1049,23 +1163,15 @@ function PrintFields({
             ))}
           </select>
         </Field>
-        <Field label="Çap formatı sayı">
-          <Input
-            type="number"
-            min={1}
-            value={details.printFormatCount}
-            onChange={(event) => onDetailsChange({ printFormatCount: Math.max(toNumber(event.target.value, 1), 1) })}
-          />
-        </Field>
-        <Field label="Tarif aralığı">
-          <Input value={tariff.range} readOnly />
+        <Field label="Çap sayı">
+          <Input value={formatNumber(sharedCount, 2)} readOnly />
         </Field>
         <Field label="Çap qiyməti">
           <Input
             type="number"
             min={0}
             step="0.01"
-            value={details.printPrice}
+            value={price}
             onChange={(event) =>
               onDetailsChange({
                 printPrice: Math.max(toNumber(event.target.value, 0), 0),
@@ -1074,12 +1180,12 @@ function PrintFields({
             }
           />
         </Field>
+        <Field label="Çap / qazanc">
+          <Input value={formatCurrency(price)} readOnly />
+        </Field>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Çap / qazanc">
-          <Input value={formatCurrency(details.printPrice)} readOnly />
-        </Field>
         <Field label="Qeyd">
           <Input value={row.note} onChange={(event) => onNoteChange(event.target.value)} />
         </Field>
@@ -1087,7 +1193,6 @@ function PrintFields({
     </div>
   );
 }
-
 function FormFields({
   row,
   onDetailsChange,
@@ -1140,36 +1245,23 @@ function LaminationFields({
   row,
   onDetailsChange,
   onNoteChange,
-  tiraj
+  sharedCount
 }: {
   row: CalculationRowValues;
   onDetailsChange: (patch: Record<string, unknown>) => void;
   onNoteChange: (value: string) => void;
-  tiraj: number;
+  sharedCount: number;
 }) {
   const details = getLaminationDetails(row);
-  const tariff = pickTariff(LAMINATION_TARIFFS[details.laminationType]?.[details.laminationSide] ?? LAMINATION_TARIFFS.mat['1+0'], tiraj);
+  const price = details.laminationSide === '1+1' ? 0.16 : 0.1;
 
   return (
     <div className="mt-4 space-y-4 rounded-2xl border border-dashed border-slate-200 bg-white p-4">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Field label="Laminasiya tərəfi">
-          <select
-            value={details.laminationSide}
-            onChange={(event) => onDetailsChange({ laminationSide: event.target.value, laminationPriceOverridden: false })}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-          >
-            {['1+0', '1+1'].map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </Field>
         <Field label="Laminasiya növü">
           <select
             value={details.laminationType}
-            onChange={(event) => onDetailsChange({ laminationType: event.target.value, laminationPriceOverridden: false })}
+            onChange={(event) => onDetailsChange({ laminationType: event.target.value })}
             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
           >
             {['mat', 'parlaq'].map((item) => (
@@ -1179,42 +1271,37 @@ function LaminationFields({
             ))}
           </select>
         </Field>
-        <Field label="Çap formatı sayı">
-          <Input
-            type="number"
-            min={1}
-            value={details.laminationFormatCount}
-            onChange={(event) => onDetailsChange({ laminationFormatCount: Math.max(toNumber(event.target.value, 1), 1) })}
-          />
+        <Field label="Laminasiya üzü">
+          <select
+            value={details.laminationSide}
+            onChange={(event) => onDetailsChange({ laminationSide: event.target.value })}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+          >
+            {['1+0', '1+1'].map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </Field>
-        <Field label="Tarif aralığı">
-          <Input value={tariff.range} readOnly />
+        <Field label="Laminasiya sayı">
+          <Input value={formatNumber(sharedCount, 2)} readOnly />
         </Field>
-        <Field label="Laminasiya qiyməti">
-          <Input
-            type="number"
-            min={0}
-            step="0.01"
-            value={details.laminationPrice}
-            onChange={(event) =>
-              onDetailsChange({
-                laminationPrice: Math.max(toNumber(event.target.value, 0), 0),
-                laminationPriceOverridden: true
-              })
-            }
-          />
-        </Field>
-        <Field label="Laminasiya məbləği">
-          <Input value={formatCurrency(details.laminationPrice)} readOnly />
+        <Field label="Ədəd qiyməti">
+          <Input value={formatCurrency(price)} readOnly />
         </Field>
       </div>
-      <Field label="Qeyd">
-        <Input value={row.note} onChange={(event) => onNoteChange(event.target.value)} />
-      </Field>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Laminasiya məbləği">
+          <Input value={formatCurrency(roundMoney(sharedCount * price))} readOnly />
+        </Field>
+        <Field label="Qeyd">
+          <Input value={row.note} onChange={(event) => onNoteChange(event.target.value)} />
+        </Field>
+      </div>
     </div>
   );
 }
-
 function rowTotalFromCount(quantity: number, unitPrice: number) {
   return formatCurrency(roundMoney(quantity * unitPrice));
 }
