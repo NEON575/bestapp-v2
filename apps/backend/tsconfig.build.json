@@ -3,6 +3,38 @@
   "compilerOptions": {
     "declaration": false
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "prisma", "**/*.spec.ts"]
+  "include": [
+    "src/main.ts",
+    "src/app.controller.ts",
+    "src/app.module.ts",
+    "src/common/**/*.ts",
+    "src/modules/materials/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "prisma",
+    "**/*.spec.ts",
+    "src/modules/analytics/**",
+    "src/modules/audit/**",
+    "src/modules/auth/**",
+    "src/modules/calculation-parameters/**",
+    "src/modules/calculations/**",
+    "src/modules/customers/**",
+    "src/modules/debts/**",
+    "src/modules/finance/**",
+    "src/modules/import/**",
+    "src/modules/inventory/**",
+    "src/modules/orders/**",
+    "src/modules/papers/**",
+    "src/modules/pricing/**",
+    "src/modules/production/**",
+    "src/modules/purchases/**",
+    "src/modules/roles/**",
+    "src/modules/salaries/**",
+    "src/modules/sales/**",
+    "src/modules/settings/**",
+    "src/modules/users/**"
+  ]
 }

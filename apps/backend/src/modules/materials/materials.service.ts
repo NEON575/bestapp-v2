@@ -175,7 +175,7 @@ export class MaterialsService {
       return tx.material.create({
         data: {
           sku: materialNo,
-          categoryId: category.id,
+          category: { connect: { id: category.id } },
           name: dto.name.trim(),
           unit: dto.unit,
           gram: parsedThickness,
@@ -231,7 +231,7 @@ export class MaterialsService {
     const updated = await this.prisma.material.update({
       where: { id },
       data: {
-        categoryId,
+        category: categoryId ? { connect: { id: categoryId } } : undefined,
         name: dto.name?.trim() ?? existing.name,
         unit: dto.unit ?? existing.unit,
         gram: parsedThickness,
