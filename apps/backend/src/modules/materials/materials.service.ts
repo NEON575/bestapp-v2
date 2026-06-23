@@ -171,28 +171,30 @@ export class MaterialsService {
       const parsedThickness = parseThickness(dto.gramThickness);
       const purchasePrice = dto.purchasePrice ?? 0;
       const aznPrice = dto.aznPrice ?? dto.purchasePrice ?? 0;
+      const createData = {
+        materialNo,
+        sku: materialNo,
+        category: { connect: { id: category.id } },
+        name: dto.name.trim(),
+        unit: dto.unit,
+        gram: parsedThickness,
+        size: dto.formatSize?.trim() || null,
+        unitCost: purchasePrice,
+        costPrice: aznPrice,
+        isActive: dto.isActive ?? true,
+        notes: dto.notes?.trim() || null,
+        metadata: {
+          materialType: dto.materialType?.trim() || category.name,
+          gramThickness: dto.gramThickness?.trim() || null,
+          formatSize: dto.formatSize?.trim() || null,
+          currencyCode: dto.currencyCode?.trim() || 'AZN',
+          purchasePrice,
+          aznPrice
+        }
+      } as unknown as Prisma.MaterialCreateInput;
 
       return tx.material.create({
-        data: {
-          sku: materialNo,
-          category: { connect: { id: category.id } },
-          name: dto.name.trim(),
-          unit: dto.unit,
-          gram: parsedThickness,
-          size: dto.formatSize?.trim() || null,
-          unitCost: purchasePrice,
-          costPrice: aznPrice,
-          isActive: dto.isActive ?? true,
-          notes: dto.notes?.trim() || null,
-          metadata: {
-            materialType: dto.materialType?.trim() || category.name,
-            gramThickness: dto.gramThickness?.trim() || null,
-            formatSize: dto.formatSize?.trim() || null,
-            currencyCode: dto.currencyCode?.trim() || 'AZN',
-            purchasePrice,
-            aznPrice
-          }
-        },
+        data: createData,
         include: { category: true }
       });
     });
