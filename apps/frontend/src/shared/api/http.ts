@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance } from 'axios';
-import { API_PREFIX } from '@bestapp/shared';
+
+const API_PREFIX = '/api/v1';
 
 const rawBaseUrl =
   import.meta.env.VITE_API_URL ??
@@ -47,10 +48,7 @@ api.interceptors.response.use(
   (error: AxiosError<Record<string, unknown>>) => {
     const status = error.response?.status;
     const payload = error.response?.data;
-    const message =
-      (payload && (payload.message as string)) ||
-      error.message ||
-      'Произошла ошибка при обращении к серверу';
+    const message = (payload && (payload.message as string)) || error.message || 'Sorğu zamanı xəta baş verdi';
 
     if (status === 401) {
       localStorage.removeItem('bestapp.session');

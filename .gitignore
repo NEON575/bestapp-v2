@@ -1,5 +1,6 @@
 node_modules
 dist
+.local/
 .env
 .env.*
 !.env.example
@@ -11,3 +12,4 @@ apps/backend/prisma/migrations/*/steps.json
 apps/backend/prisma/seed.js
 apps/frontend/dist
 packages/*/dist
+packages/shared/src/*.js

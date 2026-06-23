@@ -453,34 +453,41 @@ model MaterialCategory {
 }
 
 model Material {
-  id              String          @id @default(uuid())
-  categoryId      String?
-  supplierId      String?
-  name            String
-  sku             String?         @unique
-  unit            String
-  stockUnit       String          @default("ədəd")
-  packageUnit     String?
+  id                  String           @id @default(uuid())
+  materialNo          String           @unique
+  categoryId          String?
+  supplierId          String?
+  name                String
+  materialType        String?
+  gramThickness       String?
+  formatSize          String?
+  unit                String
+  currencyCode        String           @default("AZN")
+  purchasePrice       Decimal          @default(0) @db.Decimal(18, 2)
+  aznPrice            Decimal          @default(0) @db.Decimal(18, 2)
+  sku                 String?          @unique
+  stockUnit           String           @default("ədəd")
+  packageUnit         String?
   defaultUnitsPerPackage Int?
-  gram            Decimal?        @db.Decimal(10, 2)
-  size            String?
-  packPrice       Decimal         @default(0) @db.Decimal(18, 2)
-  quantityInPack  Int             @default(1)
-  unitCost        Decimal         @default(0) @db.Decimal(18, 4)
-  lastPurchasePrice Decimal       @default(0) @db.Decimal(18, 4)
-  averageCost     Decimal         @default(0) @db.Decimal(18, 4)
-  vatIncluded     Boolean         @default(false)
-  metadata        Json?
-  isActive        Boolean         @default(true)
-  minStockLevel   Decimal         @default(0) @db.Decimal(18, 4)
-  stockQuantity   Decimal         @default(0) @db.Decimal(18, 4)
-  reservedQuantity Decimal        @default(0) @db.Decimal(18, 4)
-  costPrice       Decimal         @default(0) @db.Decimal(18, 4)
-  lastMovementAt  DateTime?
-  notes           String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  deletedAt       DateTime?
+  gram                Decimal?         @db.Decimal(10, 2)
+  size                String?
+  packPrice           Decimal          @default(0) @db.Decimal(18, 2)
+  quantityInPack      Int              @default(1)
+  unitCost            Decimal          @default(0) @db.Decimal(18, 4)
+  lastPurchasePrice   Decimal          @default(0) @db.Decimal(18, 4)
+  averageCost         Decimal          @default(0) @db.Decimal(18, 4)
+  vatIncluded         Boolean          @default(false)
+  metadata            Json?
+  isActive            Boolean          @default(true)
+  minStockLevel       Decimal          @default(0) @db.Decimal(18, 4)
+  stockQuantity       Decimal          @default(0) @db.Decimal(18, 4)
+  reservedQuantity    Decimal          @default(0) @db.Decimal(18, 4)
+  costPrice           Decimal          @default(0) @db.Decimal(18, 4)
+  lastMovementAt      DateTime?
+  notes               String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
   category        MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   stockLevels     StockLevel[]
