@@ -11,8 +11,6 @@ interface PaginatedResponse<T> {
   };
 }
 
-type MaterialDetail = MaterialListItem;
-
 function buildQueryParams(query: Record<string, unknown>) {
   return Object.entries(query).reduce<Record<string, string | number | boolean>>((acc, [key, value]) => {
     if (value === undefined || value === null || value === '') {
@@ -24,22 +22,6 @@ function buildQueryParams(query: Record<string, unknown>) {
   }, {});
 }
 
-export interface CreateMaterialDto {
-  categoryCode: MaterialCategoryCode;
-  name: string;
-  materialType?: string;
-  gramThickness?: string;
-  formatSize?: string;
-  unit: MaterialUnitValue;
-  currencyCode?: string;
-  purchasePrice?: number;
-  aznPrice?: number;
-  isActive?: boolean;
-  notes?: string;
-}
-
-export interface UpdateMaterialDto extends Partial<CreateMaterialDto> {}
-
 export const materialsClient = {
   async list(query: MaterialListQueryDto = {}) {
     const { data } = await api.get<PaginatedResponse<MaterialListItem>>('/materials', {
@@ -49,22 +31,23 @@ export const materialsClient = {
   },
 
   async get(id: string) {
-    const { data } = await api.get<MaterialDetail>(`/materials/${id}`);
+    const { data } = await api.get<MaterialListItem>(`/materials/${id}`);
     return data;
   },
 
   async create(dto: CreateMaterialDto) {
-    const { data } = await api.post<MaterialDetail>('/materials', dto);
+    const { data } = await api.post<MaterialListItem>('/materials', dto);
     return data;
   },
 
   async update(id: string, dto: UpdateMaterialDto) {
-    const { data } = await api.patch<MaterialDetail>(`/materials/${id}`, dto);
+    const { data } = await api.patch<MaterialListItem>(`/materials/${id}`, dto);
     return data;
   },
 
   async remove(id: string) {
-    const { data } = await api.delete<MaterialDetail>(`/materials/${id}`);
+    const { data } = await api.delete<MaterialListItem>(`/materials/${id}`);
     return data;
   }
 };
+

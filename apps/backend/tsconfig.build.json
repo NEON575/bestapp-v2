@@ -8,7 +8,8 @@
     "src/app.controller.ts",
     "src/app.module.ts",
     "src/common/**/*.ts",
-    "src/modules/materials/**/*.ts"
+    "src/modules/materials/**/*.ts",
+    "src/modules/material-categories/**/*.ts"
   ],
   "exclude": [
     "node_modules",

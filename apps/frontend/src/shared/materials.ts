@@ -22,6 +22,36 @@ export type MaterialCategoryCode = (typeof MATERIAL_CATEGORIES)[number]['code'];
 export type MaterialUnitValue = (typeof MATERIAL_UNITS)[number]['value'];
 export type MaterialStatusFilter = 'all' | 'active' | 'inactive';
 
+export interface MaterialCategoryItem {
+  id: string;
+  code: string;
+  name: string;
+  codePrefix?: string;
+  description?: string | null;
+  isActive?: boolean;
+}
+
+export interface MaterialCategoryParameterValueItem {
+  id: string;
+  parameterId: string;
+  value: string;
+  sortOrder: number;
+  isActive: boolean;
+  notes?: string | null;
+}
+
+export interface MaterialCategoryParameterItem {
+  id: string;
+  categoryId: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  notes?: string | null;
+  values: MaterialCategoryParameterValueItem[];
+}
+
+export type MaterialMetadata = Record<string, string>;
+
 export interface MaterialListItem {
   id: string;
   materialNo: string;
@@ -37,6 +67,7 @@ export interface MaterialListItem {
   aznPrice: number;
   isActive: boolean;
   notes?: string | null;
+  metadata?: MaterialMetadata | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,7 +92,7 @@ export interface CreateMaterialDto {
   aznPrice?: number;
   isActive?: boolean;
   notes?: string;
+  metadata?: MaterialMetadata;
 }
 
 export interface UpdateMaterialDto extends Partial<CreateMaterialDto> {}
-

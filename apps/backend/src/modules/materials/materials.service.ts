@@ -11,6 +11,7 @@ type MaterialMetadata = {
   currencyCode?: string;
   purchasePrice?: number;
   aznPrice?: number;
+  [key: string]: unknown;
 };
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
@@ -21,12 +22,42 @@ function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   return Number(value.toString());
 }
 
-function parseMetadata(value: Prisma.JsonValue | null | undefined): MaterialMetadata {
+function parseMetadata(value: unknown): MaterialMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
 
   return value as MaterialMetadata;
+}
+
+function readMetadataString(metadata: MaterialMetadata, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function resolveTextField(
+  explicitValue: string | undefined,
+  metadata: MaterialMetadata,
+  keys: string[],
+  fallback?: string | null
+) {
+  const trimmed = explicitValue?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  const metadataValue = readMetadataString(metadata, keys);
+  if (metadataValue) {
+    return metadataValue;
+  }
+
+  return fallback ?? null;
 }
 
 function parseThickness(value?: string) {
@@ -58,19 +89,20 @@ function mapMaterial(material: Material & { category?: MaterialCategory | null }
 
   return {
     id: material.id,
-    materialNo: material.sku ?? material.id,
+    materialNo: material.materialNo,
     categoryCode: category.categoryCode,
     categoryLabel: category.categoryLabel,
     name: material.name,
-    materialType: metadata.materialType ?? material.category?.name ?? null,
-    gramThickness: metadata.gramThickness ?? (material.gram != null ? `${toNumber(material.gram)} qr` : null),
-    formatSize: metadata.formatSize ?? material.size ?? null,
+    materialType: readMetadataString(metadata, ['materialType', 'Növ', 'Tip']) ?? material.category?.name ?? null,
+    gramThickness: readMetadataString(metadata, ['gramThickness', 'Qram', 'Qalınlıq']) ?? (material.gram != null ? `${toNumber(material.gram)} qr` : null),
+    formatSize: readMetadataString(metadata, ['formatSize', 'Ölçü', 'Ölçü / ölçü']) ?? material.size ?? null,
     unit: material.unit,
-    currencyCode: metadata.currencyCode ?? 'AZN',
-    purchasePrice: metadata.purchasePrice ?? toNumber(material.unitCost),
-    aznPrice: metadata.aznPrice ?? toNumber(material.costPrice),
+    currencyCode: (typeof metadata.currencyCode === 'string' ? metadata.currencyCode : undefined) ?? 'AZN',
+    purchasePrice: typeof metadata.purchasePrice === 'number' ? metadata.purchasePrice : toNumber(material.unitCost),
+    aznPrice: typeof metadata.aznPrice === 'number' ? metadata.aznPrice : toNumber(material.costPrice),
     isActive: material.isActive,
     notes: material.notes,
+    metadata,
     createdAt: material.createdAt.toISOString(),
     updatedAt: material.updatedAt.toISOString()
   };
@@ -171,6 +203,10 @@ export class MaterialsService {
       const parsedThickness = parseThickness(dto.gramThickness);
       const purchasePrice = dto.purchasePrice ?? 0;
       const aznPrice = dto.aznPrice ?? dto.purchasePrice ?? 0;
+      const incomingMetadata = parseMetadata(dto.metadata);
+      const materialType = resolveTextField(dto.materialType, incomingMetadata, ['materialType', 'Tip', 'Növ'], category.name);
+      const gramThickness = resolveTextField(dto.gramThickness, incomingMetadata, ['gramThickness', 'Qram', 'Qalınlıq']);
+      const formatSize = resolveTextField(dto.formatSize, incomingMetadata, ['formatSize', 'Ölçü']);
       const createData = {
         materialNo,
         sku: materialNo,
@@ -184,14 +220,15 @@ export class MaterialsService {
         isActive: dto.isActive ?? true,
         notes: dto.notes?.trim() || null,
         metadata: {
-          materialType: dto.materialType?.trim() || category.name,
-          gramThickness: dto.gramThickness?.trim() || null,
-          formatSize: dto.formatSize?.trim() || null,
+          ...incomingMetadata,
+          materialType,
+          gramThickness,
+          formatSize,
           currencyCode: dto.currencyCode?.trim() || 'AZN',
           purchasePrice,
           aznPrice
         }
-      } as unknown as Prisma.MaterialCreateInput;
+      };
 
       return tx.material.create({
         data: createData,
@@ -227,8 +264,23 @@ export class MaterialsService {
 
     const existingMetadata = parseMetadata(existing.metadata);
     const parsedThickness = dto.gramThickness === undefined ? existing.gram : parseThickness(dto.gramThickness);
-    const purchasePrice = dto.purchasePrice ?? existingMetadata.purchasePrice ?? toNumber(existing.unitCost);
-    const aznPrice = dto.aznPrice ?? existingMetadata.aznPrice ?? toNumber(existing.costPrice);
+    const purchasePrice =
+      dto.purchasePrice ?? (typeof existingMetadata.purchasePrice === 'number' ? existingMetadata.purchasePrice : toNumber(existing.unitCost));
+    const aznPrice = dto.aznPrice ?? (typeof existingMetadata.aznPrice === 'number' ? existingMetadata.aznPrice : toNumber(existing.costPrice));
+    const nextMetadata = parseMetadata(dto.metadata);
+    const materialType = resolveTextField(dto.materialType, { ...existingMetadata, ...nextMetadata }, ['materialType', 'Tip', 'Növ'], existing.category?.name);
+    const gramThickness = resolveTextField(dto.gramThickness, { ...existingMetadata, ...nextMetadata }, ['gramThickness', 'Qram', 'Qalınlıq'], existingMetadata.gramThickness ?? null);
+    const formatSize = resolveTextField(dto.formatSize, { ...existingMetadata, ...nextMetadata }, ['formatSize', 'Ölçü'], existingMetadata.formatSize ?? existing.size ?? null);
+    const mergedMetadata = {
+      ...existingMetadata,
+      ...nextMetadata,
+      materialType,
+      gramThickness,
+      formatSize,
+      currencyCode: dto.currencyCode?.trim() ?? existingMetadata.currencyCode ?? 'AZN',
+      purchasePrice,
+      aznPrice
+    };
 
     const updated = await this.prisma.material.update({
       where: { id },
@@ -242,15 +294,7 @@ export class MaterialsService {
         costPrice: aznPrice,
         isActive: dto.isActive ?? existing.isActive,
         notes: dto.notes === undefined ? existing.notes : dto.notes?.trim() || null,
-        metadata: {
-          ...(existingMetadata ?? {}),
-          materialType: dto.materialType === undefined ? existingMetadata.materialType ?? existing.category?.name : dto.materialType?.trim() || null,
-          gramThickness: dto.gramThickness === undefined ? existingMetadata.gramThickness ?? null : dto.gramThickness?.trim() || null,
-          formatSize: dto.formatSize === undefined ? existingMetadata.formatSize ?? existing.size ?? null : dto.formatSize?.trim() || null,
-          currencyCode: dto.currencyCode?.trim() ?? existingMetadata.currencyCode ?? 'AZN',
-          purchasePrice,
-          aznPrice
-        }
+        metadata: mergedMetadata
       },
       include: { category: true }
     });

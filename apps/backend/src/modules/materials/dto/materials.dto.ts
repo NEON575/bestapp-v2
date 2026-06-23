@@ -99,6 +99,10 @@ export class CreateMaterialDto {
   @IsString()
   @Length(0, 1000)
   notes?: string;
+
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true })
+  @IsOptional()
+  metadata?: Record<string, unknown>;
 }
 
 export class UpdateMaterialDto extends PartialType(CreateMaterialDto) {}

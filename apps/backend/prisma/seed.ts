@@ -39,8 +39,134 @@ async function main() {
   });
 
   const paperCategory = await prisma.materialCategory.findUnique({ where: { code: 'kagiz' } });
+  const vinylCategory = await prisma.materialCategory.findUnique({ where: { code: 'diger_material' } });
+  const bannerCategory = await prisma.materialCategory.findUnique({ where: { code: 'diger_material' } });
   const laminationCategory = await prisma.materialCategory.findUnique({ where: { code: 'laminasiya' } });
   const formCategory = await prisma.materialCategory.findUnique({ where: { code: 'forma' } });
+
+  const parameterSeeds = [
+    {
+      categoryId: paperCategory?.id,
+      name: 'Qram',
+      sortOrder: 1,
+      values: ['80 qr', '90 qr', '115 qr', '130 qr', '170 qr', '250 qr', '300 qr']
+    },
+    {
+      categoryId: paperCategory?.id,
+      name: 'Ölçü',
+      sortOrder: 2,
+      values: ['64x90', '70x100', 'A4', 'A3', 'A2']
+    },
+    {
+      categoryId: paperCategory?.id,
+      name: 'Tip',
+      sortOrder: 3,
+      values: ['Ofset', 'Melovka', 'Karton', 'Kraft']
+    },
+    {
+      categoryId: vinylCategory?.id,
+      name: 'Növ',
+      sortOrder: 1,
+      values: ['Mat', 'Parlaq', 'Şəffaf', 'Perforasiya']
+    },
+    {
+      categoryId: vinylCategory?.id,
+      name: 'Ölçü',
+      sortOrder: 2,
+      values: ['100 sm', '120 sm', '152 sm']
+    },
+    {
+      categoryId: vinylCategory?.id,
+      name: 'Yapışqan',
+      sortOrder: 3,
+      values: ['Ağ yapışqan', 'Boz yapışqan']
+    },
+    {
+      categoryId: bannerCategory?.id,
+      name: 'Qalınlıq',
+      sortOrder: 1,
+      values: ['440 qr', '510 qr']
+    },
+    {
+      categoryId: bannerCategory?.id,
+      name: 'Tip',
+      sortOrder: 2,
+      values: ['Ön işıqlı', 'Arxa işıqlı', 'Mesh']
+    },
+    {
+      categoryId: laminationCategory?.id,
+      name: 'Qalınlıq',
+      sortOrder: 1,
+      values: ['24 mikron', '32 mikron', '75 mikron', '125 mikron']
+    },
+    {
+      categoryId: laminationCategory?.id,
+      name: 'Tip',
+      sortOrder: 2,
+      values: ['Mat', 'Parlaq']
+    }
+  ];
+
+  for (const parameterSeed of parameterSeeds) {
+    if (!parameterSeed.categoryId) continue;
+
+    const existing = await prisma.materialCategoryParameter.findFirst({
+      where: {
+        categoryId: parameterSeed.categoryId,
+        name: parameterSeed.name,
+        deletedAt: null
+      }
+    });
+
+    const parameter = existing
+      ? await prisma.materialCategoryParameter.update({
+          where: { id: existing.id },
+          data: {
+            sortOrder: parameterSeed.sortOrder,
+            isActive: true,
+            deletedAt: null
+          }
+        })
+      : await prisma.materialCategoryParameter.create({
+          data: {
+            category: { connect: { id: parameterSeed.categoryId } },
+            name: parameterSeed.name,
+            sortOrder: parameterSeed.sortOrder,
+            isActive: true
+          }
+        });
+
+    for (let index = 0; index < parameterSeed.values.length; index += 1) {
+      const valueText = parameterSeed.values[index];
+      const existingValue = await prisma.materialCategoryParameterValue.findFirst({
+        where: {
+          parameterId: parameter.id,
+          value: valueText,
+          deletedAt: null
+        }
+      });
+
+      if (existingValue) {
+        await prisma.materialCategoryParameterValue.update({
+          where: { id: existingValue.id },
+          data: {
+            sortOrder: index + 1,
+            isActive: true,
+            deletedAt: null
+          }
+        });
+      } else {
+        await prisma.materialCategoryParameterValue.create({
+          data: {
+            parameter: { connect: { id: parameter.id } },
+            value: valueText,
+            sortOrder: index + 1,
+            isActive: true
+          }
+        });
+      }
+    }
+  }
 
   const seedMaterials = [
     {

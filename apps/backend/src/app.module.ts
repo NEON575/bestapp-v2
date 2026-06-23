@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'path';
 import { AppController } from './app.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { MaterialCategoriesModule } from './modules/material-categories/material-categories.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { MaterialsModule } from './modules/materials/materials.module';
       ]
     }),
     PrismaModule,
+    MaterialCategoriesModule,
     MaterialsModule
   ]
 })

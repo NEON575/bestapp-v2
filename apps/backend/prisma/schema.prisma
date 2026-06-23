@@ -448,8 +448,45 @@ model MaterialCategory {
   updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?
   materials   Material[]
+  parameters  MaterialCategoryParameter[]
 
   @@map("material_categories")
+}
+
+model MaterialCategoryParameter {
+  id          String    @id @default(uuid())
+  categoryId  String
+  name        String
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  category    MaterialCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values      MaterialCategoryParameterValue[]
+
+  @@index([categoryId, sortOrder])
+  @@map("material_category_parameters")
+}
+
+model MaterialCategoryParameterValue {
+  id           String    @id @default(uuid())
+  parameterId  String
+  value        String
+  sortOrder    Int       @default(0)
+  isActive     Boolean   @default(true)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  parameter    MaterialCategoryParameter @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+
+  @@unique([parameterId, value])
+  @@index([parameterId, sortOrder])
+  @@map("material_category_parameter_values")
 }
 
 model Material {
