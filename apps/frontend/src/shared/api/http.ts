@@ -8,12 +8,31 @@ const rawBaseUrl =
   `http://localhost:3000${API_PREFIX}`;
 
 function normalizeBaseUrl(value: string) {
-  const trimmed = value.replace(/\/$/, '');
+  const trimmed = value.trim().replace(/\/+$/, '');
+
+  if (!trimmed) {
+    return API_PREFIX;
+  }
+
   if (trimmed.endsWith(API_PREFIX)) {
     return trimmed;
   }
 
   return `${trimmed}${API_PREFIX}`;
+}
+
+function buildRequestUrl(baseURL: string | undefined, url?: string) {
+  if (!url) {
+    return baseURL ?? '';
+  }
+
+  if (/^https?:\/\//i.test(url) || url.startsWith('//')) {
+    return url;
+  }
+
+  const normalizedBase = baseURL?.replace(/\/+$/, '') ?? '';
+  const normalizedPath = url.startsWith('/') ? url : `/${url}`;
+  return `${normalizedBase}${normalizedPath}`;
 }
 
 export class ApiError extends Error {
@@ -40,6 +59,16 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
+  if (import.meta.env.DEV) {
+    const fullUrl = buildRequestUrl(config.baseURL ?? api.defaults.baseURL, config.url);
+    console.debug('[API request]', {
+      method: config.method?.toUpperCase(),
+      baseURL: config.baseURL ?? api.defaults.baseURL,
+      url: config.url,
+      fullUrl
+    });
+  }
+
   return config;
 });
 
@@ -49,6 +78,18 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const payload = error.response?.data;
     const message = (payload && (payload.message as string)) || error.message || 'Sorğu zamanı xəta baş verdi';
+    const requestConfig = error.config;
+    const fullUrl = requestConfig ? buildRequestUrl(requestConfig.baseURL ?? api.defaults.baseURL, requestConfig.url) : undefined;
+
+    console.error('[API error]', {
+      method: requestConfig?.method?.toUpperCase(),
+      baseURL: requestConfig?.baseURL ?? api.defaults.baseURL,
+      url: requestConfig?.url,
+      fullUrl,
+      status,
+      message,
+      payload
+    });
 
     if (status === 401) {
       localStorage.removeItem('bestapp.session');
