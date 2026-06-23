@@ -9,7 +9,8 @@ export function App() {
       <Route path="/" element={<DashboardLayout />}>
         <Route index element={<Navigate to="/materials" replace />} />
         <Route path="materials" element={<MaterialsPage />} />
-        <Route path="materials/category-parameters" element={<CategoryParametersPage />} />
+        <Route path="material-category-parameters" element={<CategoryParametersPage />} />
+        <Route path="materials/category-parameters" element={<Navigate to="/material-category-parameters" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/materials" replace />} />
     </Routes>
