@@ -296,10 +296,12 @@ async function main() {
       where: { sku: material.sku },
       update: {
         ...material,
+        materialNo: material.sku,
         categoryId: material.categoryId ?? undefined
       },
       create: {
         ...material,
+        materialNo: material.sku,
         categoryId: material.categoryId ?? undefined
       }
     });
