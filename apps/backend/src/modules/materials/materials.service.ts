@@ -99,9 +99,9 @@ function resolvePackagingForCreate(dto: CreateMaterialDto): MaterialPackaging {
   const stockUnit = dto.stockUnit?.trim() || dto.unit;
   const packageUnit = dto.packageUnit?.trim() || null;
   const defaultUnitsPerPackage = parseOptionalNumber(dto.defaultUnitsPerPackage);
-  const palletUnit = dto.palletUnit?.trim() || 'palet';
+  const palletUnit = dto.palletUnit?.trim() || null;
   const packagesPerPallet = parseOptionalNumber(dto.packagesPerPallet);
-  const defaultUnitsPerPallet = computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet);
+  const defaultUnitsPerPallet = palletUnit ? computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet) : null;
 
   return {
     stockUnit,
@@ -109,7 +109,7 @@ function resolvePackagingForCreate(dto: CreateMaterialDto): MaterialPackaging {
     defaultUnitsPerPackage,
     palletUnit,
     packagesPerPallet,
-    defaultUnitsPerPallet: defaultUnitsPerPallet ?? parseOptionalNumber(dto.defaultUnitsPerPallet)
+    defaultUnitsPerPallet: defaultUnitsPerPallet ?? (palletUnit ? parseOptionalNumber(dto.defaultUnitsPerPallet) : null)
   };
 }
 
@@ -118,13 +118,13 @@ function resolvePackagingForUpdate(existing: Material, dto: UpdateMaterialDto): 
   const packageUnit = dto.packageUnit === undefined ? existing.packageUnit ?? null : dto.packageUnit?.trim() || null;
   const defaultUnitsPerPackage =
     dto.defaultUnitsPerPackage === undefined ? (existing.defaultUnitsPerPackage == null ? null : toNumber(existing.defaultUnitsPerPackage)) : parseOptionalNumber(dto.defaultUnitsPerPackage);
-  const palletUnit = dto.palletUnit === undefined ? existing.palletUnit ?? 'palet' : dto.palletUnit?.trim() || null;
+  const palletUnit = dto.palletUnit === undefined ? existing.palletUnit ?? null : dto.palletUnit?.trim() || null;
   const packagesPerPallet =
     dto.packagesPerPallet === undefined ? (existing.packagesPerPallet == null ? null : toNumber(existing.packagesPerPallet)) : parseOptionalNumber(dto.packagesPerPallet);
   const defaultUnitsPerPallet =
-    computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet) ??
+    (palletUnit ? computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet) : null) ??
     (dto.defaultUnitsPerPallet === undefined
-      ? existing.defaultUnitsPerPallet == null
+      ? existing.defaultUnitsPerPallet == null || !palletUnit
         ? null
         : toNumber(existing.defaultUnitsPerPallet)
       : parseOptionalNumber(dto.defaultUnitsPerPallet));
@@ -173,7 +173,7 @@ function mapMaterial(material: Material & { category?: MaterialCategory | null }
     stockUnit: material.stockUnit,
     packageUnit: material.packageUnit,
     defaultUnitsPerPackage,
-    palletUnit: material.palletUnit ?? 'palet',
+    palletUnit: material.palletUnit,
     packagesPerPallet,
     defaultUnitsPerPallet,
     unit: material.unit,

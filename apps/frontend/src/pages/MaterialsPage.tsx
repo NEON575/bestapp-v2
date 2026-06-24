@@ -11,8 +11,34 @@ import {
   type MaterialCategoryParameterItem,
   type MaterialListItem,
   type MaterialMetadata,
-  type MaterialStatusFilter
+  type MaterialStatusFilter,
+  type MaterialUnitValue
 } from '../shared/materials';
+
+const PACKAGE_UNIT_OPTIONS = [
+  { value: 'bağlama', label: 'bağlama' },
+  { value: 'rulon', label: 'rulon' },
+  { value: 'qutu', label: 'qutu' },
+  { value: 'bidon', label: 'bidon' },
+  { value: 'kisə', label: 'kisə' },
+  { value: 'paket', label: 'paket' }
+] as const;
+
+const PALLET_UNIT_OPTIONS = [
+  { value: 'palet', label: 'palet' },
+  { value: '', label: 'yoxdur' }
+] as const;
+
+const CATEGORY_PACKAGING_DEFAULTS: Record<string, { stockUnit: MaterialUnitValue; packageUnit: string; palletUnit: string }> = {
+  kagiz: { stockUnit: 'vərəq', packageUnit: 'bağlama', palletUnit: 'palet' },
+  laminasiya: { stockUnit: 'metr', packageUnit: 'rulon', palletUnit: '' },
+  vinil: { stockUnit: 'metr', packageUnit: 'rulon', palletUnit: '' },
+  boya: { stockUnit: 'litr', packageUnit: 'bidon', palletUnit: '' },
+  forma: { stockUnit: 'ədəd', packageUnit: 'qutu', palletUnit: '' },
+  diger_material: { stockUnit: 'ədəd', packageUnit: 'paket', palletUnit: '' }
+};
+
+const STOCK_UNIT_OPTIONS = MATERIAL_UNITS;
 
 type MaterialFormState = {
   categoryCode: string;
@@ -20,7 +46,7 @@ type MaterialFormState = {
   materialType: string;
   gramThickness: string;
   formatSize: string;
-  stockUnit: (typeof MATERIAL_UNITS)[number]['value'];
+  stockUnit: MaterialUnitValue;
   packageUnit: string;
   defaultUnitsPerPackage: string;
   palletUnit: string;
@@ -47,8 +73,8 @@ const defaultFormState: MaterialFormState = {
   materialType: '',
   gramThickness: '',
   formatSize: '',
-  stockUnit: MATERIAL_UNITS[0].value,
-  packageUnit: '',
+  stockUnit: 'vərəq',
+  packageUnit: 'bağlama',
   defaultUnitsPerPackage: '',
   palletUnit: 'palet',
   packagesPerPallet: '',
@@ -67,6 +93,26 @@ const defaultQuery: QueryState = {
   categoryCode: '',
   status: 'all'
 };
+
+function getPackagingDefaults(categoryCode: string) {
+  return CATEGORY_PACKAGING_DEFAULTS[categoryCode] ?? CATEGORY_PACKAGING_DEFAULTS.kagiz;
+}
+
+function applyCategoryDefaults(categoryCode: string, current?: MaterialFormState) {
+  const defaults = getPackagingDefaults(categoryCode);
+  const palletUnit = current?.palletUnit ?? defaults.palletUnit;
+
+  return {
+    ...(current ?? defaultFormState),
+    categoryCode,
+    stockUnit: current?.stockUnit || defaults.stockUnit,
+    packageUnit: current?.packageUnit || defaults.packageUnit,
+    palletUnit,
+    packagesPerPallet: palletUnit ? current?.packagesPerPallet ?? '' : '',
+    defaultUnitsPerPackage: current?.defaultUnitsPerPackage ?? '',
+    metadata: current?.metadata ?? {}
+  };
+}
 
 function toNumber(value: string) {
   const parsed = Number(value);
@@ -115,7 +161,11 @@ function stringifyMetadata(metadata?: MaterialMetadata | null) {
   return output;
 }
 
-function computeDefaultUnitsPerPallet(defaultUnitsPerPackage: string, packagesPerPallet: string) {
+function computeDefaultUnitsPerPallet(defaultUnitsPerPackage: string, packagesPerPallet: string, palletUnit: string) {
+  if (!palletUnit.trim()) {
+    return null;
+  }
+
   const packageCount = parseOptionalNumber(defaultUnitsPerPackage);
   const palletCount = parseOptionalNumber(packagesPerPallet);
 
@@ -156,10 +206,10 @@ function createFormState(material?: MaterialListItem): MaterialFormState {
     materialType: material.materialType ?? '',
     gramThickness: material.gramThickness ?? '',
     formatSize: material.formatSize ?? '',
-    stockUnit: (material.stockUnit ?? material.unit) as (typeof MATERIAL_UNITS)[number]['value'],
+    stockUnit: (material.stockUnit ?? material.unit) as MaterialUnitValue,
     packageUnit: material.packageUnit ?? '',
     defaultUnitsPerPackage: material.defaultUnitsPerPackage == null ? '' : String(material.defaultUnitsPerPackage),
-    palletUnit: material.palletUnit ?? 'palet',
+    palletUnit: material.palletUnit ?? '',
     packagesPerPallet: material.packagesPerPallet == null ? '' : String(material.packagesPerPallet),
     currencyCode: material.currencyCode ?? 'AZN',
     purchasePrice: String(material.purchasePrice ?? ''),
@@ -186,9 +236,9 @@ function buildMaterialPayload(form: MaterialFormState, parameters: MaterialCateg
     }
   }
 
-  const defaultUnitsPerPallet = computeDefaultUnitsPerPallet(form.defaultUnitsPerPackage, form.packagesPerPallet);
+  const defaultUnitsPerPallet = computeDefaultUnitsPerPallet(form.defaultUnitsPerPackage, form.packagesPerPallet, form.palletUnit);
 
-  const payload: CreateMaterialDto = {
+  return {
     categoryCode: form.categoryCode,
     name: form.name.trim(),
     materialType: form.materialType.trim() || undefined,
@@ -207,23 +257,25 @@ function buildMaterialPayload(form: MaterialFormState, parameters: MaterialCateg
     isActive: form.isActive,
     notes: form.notes.trim() || undefined,
     metadata
-  };
-
-  return payload;
+  } satisfies CreateMaterialDto;
 }
 
-function PackagingSummary({ item }: { item: MaterialListItem }) {
+function formatPackagingSummary(item: MaterialListItem) {
   const baseUnit = item.stockUnit ?? item.unit;
-  const packageUnit = item.packageUnit ?? 'qablaşdırma';
-  const palletUnit = item.palletUnit ?? 'palet';
+  const packageUnit = item.packageUnit ?? '—';
+  const palletUnit = item.palletUnit ?? '';
 
-  return (
-    <div className="space-y-1 text-sm text-slate-700">
-      <div>{item.defaultUnitsPerPackage != null ? `${formatInteger(item.defaultUnitsPerPackage)} ${baseUnit} / ${packageUnit}` : '—'}</div>
-      <div>{item.packagesPerPallet != null ? `${formatInteger(item.packagesPerPallet)} ${packageUnit} / ${palletUnit}` : '—'}</div>
-      <div>{item.defaultUnitsPerPallet != null ? `${formatInteger(item.defaultUnitsPerPallet)} ${baseUnit}` : '—'}</div>
-    </div>
-  );
+  const packageSummary =
+    item.defaultUnitsPerPackage != null && item.packageUnit
+      ? `${formatInteger(item.defaultUnitsPerPackage)} ${baseUnit} / ${packageUnit}`
+      : '—';
+  const palletSummary =
+    item.packagesPerPallet != null && item.palletUnit
+      ? `${formatInteger(item.packagesPerPallet)} ${packageUnit} / ${palletUnit}`
+      : '—';
+  const totalSummary = item.defaultUnitsPerPallet != null ? `${formatInteger(item.defaultUnitsPerPallet)} ${baseUnit}` : '—';
+
+  return { packageSummary, palletSummary, totalSummary };
 }
 
 function Modal({
@@ -299,10 +351,7 @@ export function MaterialsPage() {
           return current;
         }
 
-        return {
-          ...current,
-          categoryCode: rows[0].code
-        };
+        return applyCategoryDefaults(rows[0].code, current);
       });
     } catch (loadError) {
       toast.error('Kateqoriyalar yüklənmədi', loadError instanceof Error ? loadError.message : 'Xəta baş verdi');
@@ -363,10 +412,7 @@ export function MaterialsPage() {
   const openCreate = () => {
     const initialCategoryCode = categories[0]?.code ?? '';
     setEditingItem(null);
-    setFormState({
-      ...defaultFormState,
-      categoryCode: initialCategoryCode
-    });
+    setFormState(applyCategoryDefaults(initialCategoryCode, defaultFormState));
     setModalOpen(true);
   };
 
@@ -385,6 +431,16 @@ export function MaterialsPage() {
   const saveMaterial = async () => {
     if (!formState.categoryCode) {
       toast.warning('Kateqoriya seçin');
+      return;
+    }
+
+    if (!formState.stockUnit.trim()) {
+      toast.warning('Əsas vahidi seçin');
+      return;
+    }
+
+    if (!formState.packageUnit.trim()) {
+      toast.warning('Qablaşdırma vahidini seçin');
       return;
     }
 
@@ -592,31 +648,9 @@ export function MaterialsPage() {
                       <td className="px-4 py-3">{item.gramThickness || '—'}</td>
                       <td className="px-4 py-3">{item.formatSize || '—'}</td>
                       <td className="px-4 py-3">{item.stockUnit ?? item.unit}</td>
-                      <td className="px-4 py-3">
-                        {item.defaultUnitsPerPackage != null ? (
-                          <div className="space-y-1 text-sm text-slate-700">
-                            <div>
-                              {formatInteger(item.defaultUnitsPerPackage)} {item.stockUnit ?? item.unit} / {item.packageUnit ?? 'qablaşdırma'}
-                            </div>
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.packagesPerPallet != null ? (
-                          <div className="space-y-1 text-sm text-slate-700">
-                            <div>
-                              {formatInteger(item.packagesPerPallet)} {item.packageUnit ?? 'qablaşdırma'} / {item.palletUnit ?? 'palet'}
-                            </div>
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.defaultUnitsPerPallet != null ? `${formatInteger(item.defaultUnitsPerPallet)} ${item.stockUnit ?? item.unit}` : '—'}
-                      </td>
+                      <td className="px-4 py-3">{formatPackagingSummary(item).packageSummary}</td>
+                      <td className="px-4 py-3">{formatPackagingSummary(item).palletSummary}</td>
+                      <td className="px-4 py-3">{formatPackagingSummary(item).totalSummary}</td>
                       <td className="px-4 py-3">
                         <span
                           className={[
@@ -685,11 +719,7 @@ export function MaterialsPage() {
       )}
 
       {modalOpen ? (
-        <Modal
-          title={editingItem ? 'Materialı redaktə et' : 'Yeni material'}
-          onClose={closeModal}
-          footer={footer}
-        >
+        <Modal title={editingItem ? 'Materialı redaktə et' : 'Yeni material'} onClose={closeModal} footer={footer}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Material №">
               <Input value={editingItem?.materialNo ?? 'Avtomatik yaradılır'} disabled />
@@ -698,7 +728,7 @@ export function MaterialsPage() {
             <Field label="Kateqoriya">
               <select
                 value={formState.categoryCode}
-                onChange={(event) => setFormState((current) => ({ ...current, categoryCode: event.target.value }))}
+                onChange={(event) => setFormState((current) => applyCategoryDefaults(event.target.value, current))}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
               >
                 <option value="">Kateqoriya seçin</option>
@@ -741,10 +771,12 @@ export function MaterialsPage() {
             <Field label="Əsas vahid">
               <select
                 value={formState.stockUnit}
-                onChange={(event) => setFormState((current) => ({ ...current, stockUnit: event.target.value as MaterialFormState['stockUnit'] }))}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, stockUnit: event.target.value as MaterialUnitValue }))
+                }
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
               >
-                {MATERIAL_UNITS.map((unit) => (
+                {STOCK_UNIT_OPTIONS.map((unit) => (
                   <option key={unit.value} value={unit.value}>
                     {unit.label}
                   </option>
@@ -753,11 +785,18 @@ export function MaterialsPage() {
             </Field>
 
             <Field label="Qablaşdırma vahidi">
-              <Input
+              <select
                 value={formState.packageUnit}
                 onChange={(event) => setFormState((current) => ({ ...current, packageUnit: event.target.value }))}
-                placeholder="Məsələn: bağlama"
-              />
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
+              >
+                <option value="">Seçin</option>
+                {PACKAGE_UNIT_OPTIONS.map((unit) => (
+                  <option key={unit.value} value={unit.value}>
+                    {unit.label}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field label="1 qablaşdırmada neçə əsas vahid var">
@@ -771,11 +810,24 @@ export function MaterialsPage() {
             </Field>
 
             <Field label="Palet vahidi">
-              <Input
+              <select
                 value={formState.palletUnit}
-                onChange={(event) => setFormState((current) => ({ ...current, palletUnit: event.target.value }))}
-                placeholder="Məsələn: palet"
-              />
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    palletUnit: event.target.value,
+                    packagesPerPallet: event.target.value ? current.packagesPerPallet : '',
+                    defaultUnitsPerPackage: current.defaultUnitsPerPackage
+                  }))
+                }
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
+              >
+                {PALLET_UNIT_OPTIONS.map((unit) => (
+                  <option key={unit.value || 'none'} value={unit.value}>
+                    {unit.label}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field label="1 paletdə neçə qablaşdırma var">
@@ -791,14 +843,18 @@ export function MaterialsPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
               <div className="text-sm font-medium text-slate-700">1 paletdə ümumi əsas vahid sayı</div>
               <div className="mt-2 text-lg font-semibold text-slate-950">
-                {computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet) != null
-                  ? `${formatInteger(computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet))} ${formState.stockUnit}`
+                {computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet, formState.palletUnit) != null
+                  ? `${formatInteger(
+                      computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet, formState.palletUnit)
+                    )} ${formState.stockUnit}`
                   : '—'}
               </div>
               <div className="mt-2 text-sm text-slate-500">
-                {formState.defaultUnitsPerPackage && formState.packagesPerPallet
-                  ? `1 palet = ${formatInteger(computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet))} ${formState.stockUnit}`
-                  : 'Qablaşdırma və palet sayını daxil etdikdə hesablanacaq.'}
+                {formState.defaultUnitsPerPackage && formState.packagesPerPallet && formState.palletUnit
+                  ? `1 palet = ${formatInteger(
+                      computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet, formState.palletUnit)
+                    )} ${formState.stockUnit}`
+                  : 'Qablaşdırma və palet sayı daxil etdikdə hesablanacaq.'}
               </div>
             </div>
 
