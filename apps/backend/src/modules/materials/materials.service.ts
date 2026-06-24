@@ -14,6 +14,15 @@ type MaterialMetadata = {
   [key: string]: unknown;
 };
 
+type MaterialPackaging = {
+  stockUnit: string;
+  packageUnit: string | null;
+  defaultUnitsPerPackage: number | null;
+  palletUnit: string | null;
+  packagesPerPallet: number | null;
+  defaultUnitsPerPallet: number | null;
+};
+
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) {
     return 0;
@@ -69,6 +78,67 @@ function parseThickness(value?: string) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function parseOptionalNumber(value: number | string | null | undefined) {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function computeDefaultUnitsPerPallet(defaultUnitsPerPackage: number | null, packagesPerPallet: number | null) {
+  if (defaultUnitsPerPackage == null || packagesPerPallet == null) {
+    return null;
+  }
+
+  return Number((defaultUnitsPerPackage * packagesPerPallet).toFixed(4));
+}
+
+function resolvePackagingForCreate(dto: CreateMaterialDto): MaterialPackaging {
+  const stockUnit = dto.stockUnit?.trim() || dto.unit;
+  const packageUnit = dto.packageUnit?.trim() || null;
+  const defaultUnitsPerPackage = parseOptionalNumber(dto.defaultUnitsPerPackage);
+  const palletUnit = dto.palletUnit?.trim() || 'palet';
+  const packagesPerPallet = parseOptionalNumber(dto.packagesPerPallet);
+  const defaultUnitsPerPallet = computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet);
+
+  return {
+    stockUnit,
+    packageUnit,
+    defaultUnitsPerPackage,
+    palletUnit,
+    packagesPerPallet,
+    defaultUnitsPerPallet: defaultUnitsPerPallet ?? parseOptionalNumber(dto.defaultUnitsPerPallet)
+  };
+}
+
+function resolvePackagingForUpdate(existing: Material, dto: UpdateMaterialDto): MaterialPackaging {
+  const stockUnit = dto.stockUnit?.trim() || existing.stockUnit || dto.unit || existing.unit;
+  const packageUnit = dto.packageUnit === undefined ? existing.packageUnit ?? null : dto.packageUnit?.trim() || null;
+  const defaultUnitsPerPackage =
+    dto.defaultUnitsPerPackage === undefined ? (existing.defaultUnitsPerPackage == null ? null : toNumber(existing.defaultUnitsPerPackage)) : parseOptionalNumber(dto.defaultUnitsPerPackage);
+  const palletUnit = dto.palletUnit === undefined ? existing.palletUnit ?? 'palet' : dto.palletUnit?.trim() || null;
+  const packagesPerPallet =
+    dto.packagesPerPallet === undefined ? (existing.packagesPerPallet == null ? null : toNumber(existing.packagesPerPallet)) : parseOptionalNumber(dto.packagesPerPallet);
+  const defaultUnitsPerPallet =
+    computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet) ??
+    (dto.defaultUnitsPerPallet === undefined
+      ? existing.defaultUnitsPerPallet == null
+        ? null
+        : toNumber(existing.defaultUnitsPerPallet)
+      : parseOptionalNumber(dto.defaultUnitsPerPallet));
+
+  return {
+    stockUnit,
+    packageUnit,
+    defaultUnitsPerPackage,
+    palletUnit,
+    packagesPerPallet,
+    defaultUnitsPerPallet
+  };
+}
+
 function mapCategory(category: MaterialCategory | null | undefined) {
   if (!category) {
     return {
@@ -86,6 +156,10 @@ function mapCategory(category: MaterialCategory | null | undefined) {
 function mapMaterial(material: Material & { category?: MaterialCategory | null }) {
   const category = mapCategory(material.category);
   const metadata = parseMetadata(material.metadata);
+  const defaultUnitsPerPackage = material.defaultUnitsPerPackage == null ? null : toNumber(material.defaultUnitsPerPackage);
+  const packagesPerPallet = material.packagesPerPallet == null ? null : toNumber(material.packagesPerPallet);
+  const defaultUnitsPerPallet =
+    material.defaultUnitsPerPallet == null ? computeDefaultUnitsPerPallet(defaultUnitsPerPackage, packagesPerPallet) : toNumber(material.defaultUnitsPerPallet);
 
   return {
     id: material.id,
@@ -96,6 +170,12 @@ function mapMaterial(material: Material & { category?: MaterialCategory | null }
     materialType: readMetadataString(metadata, ['materialType', 'Növ', 'Tip']) ?? material.category?.name ?? null,
     gramThickness: readMetadataString(metadata, ['gramThickness', 'Qram', 'Qalınlıq']) ?? (material.gram != null ? `${toNumber(material.gram)} qr` : null),
     formatSize: readMetadataString(metadata, ['formatSize', 'Ölçü', 'Ölçü / ölçü']) ?? material.size ?? null,
+    stockUnit: material.stockUnit,
+    packageUnit: material.packageUnit,
+    defaultUnitsPerPackage,
+    palletUnit: material.palletUnit ?? 'palet',
+    packagesPerPallet,
+    defaultUnitsPerPallet,
     unit: material.unit,
     currencyCode: (typeof metadata.currencyCode === 'string' ? metadata.currencyCode : undefined) ?? 'AZN',
     purchasePrice: typeof metadata.purchasePrice === 'number' ? metadata.purchasePrice : toNumber(material.unitCost),
@@ -203,35 +283,41 @@ export class MaterialsService {
       const parsedThickness = parseThickness(dto.gramThickness);
       const purchasePrice = dto.purchasePrice ?? 0;
       const aznPrice = dto.aznPrice ?? dto.purchasePrice ?? 0;
+      const packaging = resolvePackagingForCreate(dto);
       const incomingMetadata = parseMetadata(dto.metadata);
       const materialType = resolveTextField(dto.materialType, incomingMetadata, ['materialType', 'Tip', 'Növ'], category.name);
       const gramThickness = resolveTextField(dto.gramThickness, incomingMetadata, ['gramThickness', 'Qram', 'Qalınlıq']);
       const formatSize = resolveTextField(dto.formatSize, incomingMetadata, ['formatSize', 'Ölçü']);
-      const createData = {
-        materialNo,
-        sku: materialNo,
-        category: { connect: { id: category.id } },
-        name: dto.name.trim(),
-        unit: dto.unit,
-        gram: parsedThickness,
-        size: dto.formatSize?.trim() || null,
-        unitCost: purchasePrice,
-        costPrice: aznPrice,
-        isActive: dto.isActive ?? true,
-        notes: dto.notes?.trim() || null,
-        metadata: {
-          ...incomingMetadata,
-          materialType,
-          gramThickness,
-          formatSize,
-          currencyCode: dto.currencyCode?.trim() || 'AZN',
-          purchasePrice,
-          aznPrice
-        }
-      };
 
       return tx.material.create({
-        data: createData,
+        data: {
+          materialNo,
+          sku: materialNo,
+          category: { connect: { id: category.id } },
+          name: dto.name.trim(),
+          unit: dto.unit,
+          stockUnit: packaging.stockUnit,
+          packageUnit: packaging.packageUnit,
+          defaultUnitsPerPackage: packaging.defaultUnitsPerPackage ?? undefined,
+          palletUnit: packaging.palletUnit,
+          packagesPerPallet: packaging.packagesPerPallet ?? undefined,
+          defaultUnitsPerPallet: packaging.defaultUnitsPerPallet ?? undefined,
+          gram: parsedThickness,
+          size: dto.formatSize?.trim() || null,
+          unitCost: purchasePrice,
+          costPrice: aznPrice,
+          isActive: dto.isActive ?? true,
+          notes: dto.notes?.trim() || null,
+          metadata: {
+            ...incomingMetadata,
+            materialType,
+            gramThickness,
+            formatSize,
+            currencyCode: dto.currencyCode?.trim() || 'AZN',
+            purchasePrice,
+            aznPrice
+          }
+        },
         include: { category: true }
       });
     });
@@ -267,20 +353,11 @@ export class MaterialsService {
     const purchasePrice =
       dto.purchasePrice ?? (typeof existingMetadata.purchasePrice === 'number' ? existingMetadata.purchasePrice : toNumber(existing.unitCost));
     const aznPrice = dto.aznPrice ?? (typeof existingMetadata.aznPrice === 'number' ? existingMetadata.aznPrice : toNumber(existing.costPrice));
+    const packaging = resolvePackagingForUpdate(existing, dto);
     const nextMetadata = parseMetadata(dto.metadata);
     const materialType = resolveTextField(dto.materialType, { ...existingMetadata, ...nextMetadata }, ['materialType', 'Tip', 'Növ'], existing.category?.name);
     const gramThickness = resolveTextField(dto.gramThickness, { ...existingMetadata, ...nextMetadata }, ['gramThickness', 'Qram', 'Qalınlıq'], existingMetadata.gramThickness ?? null);
     const formatSize = resolveTextField(dto.formatSize, { ...existingMetadata, ...nextMetadata }, ['formatSize', 'Ölçü'], existingMetadata.formatSize ?? existing.size ?? null);
-    const mergedMetadata = {
-      ...existingMetadata,
-      ...nextMetadata,
-      materialType,
-      gramThickness,
-      formatSize,
-      currencyCode: dto.currencyCode?.trim() ?? existingMetadata.currencyCode ?? 'AZN',
-      purchasePrice,
-      aznPrice
-    };
 
     const updated = await this.prisma.material.update({
       where: { id },
@@ -288,13 +365,28 @@ export class MaterialsService {
         category: categoryId ? { connect: { id: categoryId } } : undefined,
         name: dto.name?.trim() ?? existing.name,
         unit: dto.unit ?? existing.unit,
+        stockUnit: packaging.stockUnit,
+        packageUnit: packaging.packageUnit,
+        defaultUnitsPerPackage: packaging.defaultUnitsPerPackage ?? undefined,
+        palletUnit: packaging.palletUnit,
+        packagesPerPallet: packaging.packagesPerPallet ?? undefined,
+        defaultUnitsPerPallet: packaging.defaultUnitsPerPallet ?? undefined,
         gram: parsedThickness,
         size: dto.formatSize === undefined ? existing.size : dto.formatSize?.trim() || null,
         unitCost: purchasePrice,
         costPrice: aznPrice,
         isActive: dto.isActive ?? existing.isActive,
         notes: dto.notes === undefined ? existing.notes : dto.notes?.trim() || null,
-        metadata: mergedMetadata
+        metadata: {
+          ...existingMetadata,
+          ...nextMetadata,
+          materialType,
+          gramThickness,
+          formatSize,
+          currencyCode: dto.currencyCode?.trim() ?? existingMetadata.currencyCode ?? 'AZN',
+          purchasePrice,
+          aznPrice
+        }
       },
       include: { category: true }
     });

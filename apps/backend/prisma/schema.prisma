@@ -506,6 +506,9 @@ model Material {
   stockUnit           String           @default("ədəd")
   packageUnit         String?
   defaultUnitsPerPackage Int?
+  palletUnit          String?          @default("palet")
+  packagesPerPallet   Float?
+  defaultUnitsPerPallet Float?
   gram                Decimal?         @db.Decimal(10, 2)
   size                String?
   packPrice           Decimal          @default(0) @db.Decimal(18, 2)

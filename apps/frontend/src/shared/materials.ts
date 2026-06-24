@@ -61,6 +61,12 @@ export interface MaterialListItem {
   materialType?: string | null;
   gramThickness?: string | null;
   formatSize?: string | null;
+  stockUnit?: string | null;
+  packageUnit?: string | null;
+  defaultUnitsPerPackage?: number | null;
+  palletUnit?: string | null;
+  packagesPerPallet?: number | null;
+  defaultUnitsPerPallet?: number | null;
   unit: MaterialUnitValue;
   currencyCode: string;
   purchasePrice: number;
@@ -86,6 +92,12 @@ export interface CreateMaterialDto {
   materialType?: string;
   gramThickness?: string;
   formatSize?: string;
+  stockUnit?: string;
+  packageUnit?: string;
+  defaultUnitsPerPackage?: number;
+  palletUnit?: string;
+  packagesPerPallet?: number;
+  defaultUnitsPerPallet?: number;
   unit: MaterialUnitValue;
   currencyCode?: string;
   purchasePrice?: number;

@@ -39,8 +39,6 @@ async function main() {
   });
 
   const paperCategory = await prisma.materialCategory.findUnique({ where: { code: 'kagiz' } });
-  const vinylCategory = await prisma.materialCategory.findUnique({ where: { code: 'diger_material' } });
-  const bannerCategory = await prisma.materialCategory.findUnique({ where: { code: 'diger_material' } });
   const laminationCategory = await prisma.materialCategory.findUnique({ where: { code: 'laminasiya' } });
   const formCategory = await prisma.materialCategory.findUnique({ where: { code: 'forma' } });
 
@@ -62,36 +60,6 @@ async function main() {
       name: 'Tip',
       sortOrder: 3,
       values: ['Ofset', 'Melovka', 'Karton', 'Kraft']
-    },
-    {
-      categoryId: vinylCategory?.id,
-      name: 'Növ',
-      sortOrder: 1,
-      values: ['Mat', 'Parlaq', 'Şəffaf', 'Perforasiya']
-    },
-    {
-      categoryId: vinylCategory?.id,
-      name: 'Ölçü',
-      sortOrder: 2,
-      values: ['100 sm', '120 sm', '152 sm']
-    },
-    {
-      categoryId: vinylCategory?.id,
-      name: 'Yapışqan',
-      sortOrder: 3,
-      values: ['Ağ yapışqan', 'Boz yapışqan']
-    },
-    {
-      categoryId: bannerCategory?.id,
-      name: 'Qalınlıq',
-      sortOrder: 1,
-      values: ['440 qr', '510 qr']
-    },
-    {
-      categoryId: bannerCategory?.id,
-      name: 'Tip',
-      sortOrder: 2,
-      values: ['Ön işıqlı', 'Arxa işıqlı', 'Mesh']
     },
     {
       categoryId: laminationCategory?.id,
@@ -174,6 +142,12 @@ async function main() {
       categoryId: paperCategory?.id,
       name: 'Ofset 80 qr 64x90',
       unit: 'vərəq',
+      stockUnit: 'vərəq',
+      packageUnit: 'bağlama',
+      defaultUnitsPerPackage: 500,
+      palletUnit: 'palet',
+      packagesPerPallet: 24,
+      defaultUnitsPerPallet: 12000,
       gram: 80,
       size: '64x90',
       unitCost: 0.24,
@@ -194,6 +168,12 @@ async function main() {
       categoryId: paperCategory?.id,
       name: 'Melovka 170 qr 70x100',
       unit: 'vərəq',
+      stockUnit: 'vərəq',
+      packageUnit: 'bağlama',
+      defaultUnitsPerPackage: 250,
+      palletUnit: 'palet',
+      packagesPerPallet: 20,
+      defaultUnitsPerPallet: 5000,
       gram: 170,
       size: '70x100',
       unitCost: 0.45,
@@ -214,6 +194,12 @@ async function main() {
       categoryId: paperCategory?.id,
       name: 'Karton 300 qr 70x100',
       unit: 'vərəq',
+      stockUnit: 'vərəq',
+      packageUnit: 'bağlama',
+      defaultUnitsPerPackage: 125,
+      palletUnit: 'palet',
+      packagesPerPallet: 20,
+      defaultUnitsPerPallet: 2500,
       gram: 300,
       size: '70x100',
       unitCost: 0.72,
@@ -233,7 +219,13 @@ async function main() {
       sku: 'MAT-000004',
       categoryId: laminationCategory?.id,
       name: 'Mat laminasiya',
-      unit: 'rulon',
+      unit: 'metr',
+      stockUnit: 'metr',
+      packageUnit: 'rulon',
+      defaultUnitsPerPackage: 50,
+      palletUnit: null,
+      packagesPerPallet: null,
+      defaultUnitsPerPallet: null,
       gram: 30,
       size: '64 sm',
       unitCost: 18,
@@ -253,7 +245,13 @@ async function main() {
       sku: 'MAT-000005',
       categoryId: laminationCategory?.id,
       name: 'Parlaq laminasiya',
-      unit: 'rulon',
+      unit: 'metr',
+      stockUnit: 'metr',
+      packageUnit: 'rulon',
+      defaultUnitsPerPackage: 50,
+      palletUnit: null,
+      packagesPerPallet: null,
+      defaultUnitsPerPallet: null,
       gram: 30,
       size: '64 sm',
       unitCost: 19,
@@ -273,7 +271,13 @@ async function main() {
       sku: 'MAT-000006',
       categoryId: formCategory?.id,
       name: 'Ofset forma',
-      unit: 'ədəd',
+      unit: 'vərəq',
+      stockUnit: 'vərəq',
+      packageUnit: 'bağlama',
+      defaultUnitsPerPackage: 500,
+      palletUnit: 'palet',
+      packagesPerPallet: 24,
+      defaultUnitsPerPallet: 12000,
       gram: 1,
       size: '70x100',
       unitCost: 8,

@@ -17,7 +17,14 @@ import {
 type MaterialFormState = {
   categoryCode: string;
   name: string;
-  unit: (typeof MATERIAL_UNITS)[number]['value'];
+  materialType: string;
+  gramThickness: string;
+  formatSize: string;
+  stockUnit: (typeof MATERIAL_UNITS)[number]['value'];
+  packageUnit: string;
+  defaultUnitsPerPackage: string;
+  palletUnit: string;
+  packagesPerPallet: string;
   currencyCode: string;
   purchasePrice: string;
   aznPrice: string;
@@ -37,7 +44,14 @@ type QueryState = {
 const defaultFormState: MaterialFormState = {
   categoryCode: '',
   name: '',
-  unit: MATERIAL_UNITS[0].value,
+  materialType: '',
+  gramThickness: '',
+  formatSize: '',
+  stockUnit: MATERIAL_UNITS[0].value,
+  packageUnit: '',
+  defaultUnitsPerPackage: '',
+  palletUnit: 'palet',
+  packagesPerPallet: '',
   currencyCode: 'AZN',
   purchasePrice: '',
   aznPrice: '',
@@ -59,12 +73,30 @@ function toNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function formatMoney(value: number, currency = 'AZN') {
   return new Intl.NumberFormat('az-AZ', {
     style: 'currency',
     currency,
     maximumFractionDigits: 2
   }).format(value);
+}
+
+function formatInteger(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value).replace(/,/g, ' ');
 }
 
 function stringifyMetadata(metadata?: MaterialMetadata | null) {
@@ -81,6 +113,17 @@ function stringifyMetadata(metadata?: MaterialMetadata | null) {
   }
 
   return output;
+}
+
+function computeDefaultUnitsPerPallet(defaultUnitsPerPackage: string, packagesPerPallet: string) {
+  const packageCount = parseOptionalNumber(defaultUnitsPerPackage);
+  const palletCount = parseOptionalNumber(packagesPerPallet);
+
+  if (packageCount == null || palletCount == null) {
+    return null;
+  }
+
+  return packageCount * palletCount;
 }
 
 function createFormState(material?: MaterialListItem): MaterialFormState {
@@ -110,7 +153,14 @@ function createFormState(material?: MaterialListItem): MaterialFormState {
   return {
     categoryCode: material.categoryCode,
     name: material.name,
-    unit: material.unit,
+    materialType: material.materialType ?? '',
+    gramThickness: material.gramThickness ?? '',
+    formatSize: material.formatSize ?? '',
+    stockUnit: (material.stockUnit ?? material.unit) as (typeof MATERIAL_UNITS)[number]['value'],
+    packageUnit: material.packageUnit ?? '',
+    defaultUnitsPerPackage: material.defaultUnitsPerPackage == null ? '' : String(material.defaultUnitsPerPackage),
+    palletUnit: material.palletUnit ?? 'palet',
+    packagesPerPallet: material.packagesPerPallet == null ? '' : String(material.packagesPerPallet),
     currencyCode: material.currencyCode ?? 'AZN',
     purchasePrice: String(material.purchasePrice ?? ''),
     aznPrice: String(material.aznPrice ?? ''),
@@ -136,34 +186,64 @@ function buildMaterialPayload(form: MaterialFormState, parameters: MaterialCateg
     }
   }
 
-  const materialType = metadata.Tip ?? metadata.Növ ?? metadata.materialType;
-  const gramThickness = metadata.Qram ?? metadata.Qalınlıq ?? metadata.gramThickness;
-  const formatSize = metadata.Ölçü ?? metadata.formatSize;
+  const defaultUnitsPerPallet = computeDefaultUnitsPerPallet(form.defaultUnitsPerPackage, form.packagesPerPallet);
 
   const payload: CreateMaterialDto = {
     categoryCode: form.categoryCode,
     name: form.name.trim(),
-    unit: form.unit,
+    materialType: form.materialType.trim() || undefined,
+    gramThickness: form.gramThickness.trim() || undefined,
+    formatSize: form.formatSize.trim() || undefined,
+    stockUnit: form.stockUnit,
+    packageUnit: form.packageUnit.trim() || undefined,
+    defaultUnitsPerPackage: parseOptionalNumber(form.defaultUnitsPerPackage) ?? undefined,
+    palletUnit: form.palletUnit.trim() || undefined,
+    packagesPerPallet: parseOptionalNumber(form.packagesPerPallet) ?? undefined,
+    defaultUnitsPerPallet: defaultUnitsPerPallet ?? undefined,
+    unit: form.stockUnit,
     currencyCode: form.currencyCode.trim() || 'AZN',
     purchasePrice: form.purchasePrice ? toNumber(form.purchasePrice) : 0,
     aznPrice: form.aznPrice ? toNumber(form.aznPrice) : 0,
     isActive: form.isActive,
     notes: form.notes.trim() || undefined,
-    metadata,
-    materialType: materialType || undefined,
-    gramThickness: gramThickness || undefined,
-    formatSize: formatSize || undefined
+    metadata
   };
 
   return payload;
 }
 
-function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+function PackagingSummary({ item }: { item: MaterialListItem }) {
+  const baseUnit = item.stockUnit ?? item.unit;
+  const packageUnit = item.packageUnit ?? 'qablaşdırma';
+  const palletUnit = item.palletUnit ?? 'palet';
+
+  return (
+    <div className="space-y-1 text-sm text-slate-700">
+      <div>{item.defaultUnitsPerPackage != null ? `${formatInteger(item.defaultUnitsPerPackage)} ${baseUnit} / ${packageUnit}` : '—'}</div>
+      <div>{item.packagesPerPallet != null ? `${formatInteger(item.packagesPerPallet)} ${packageUnit} / ${palletUnit}` : '—'}</div>
+      <div>{item.defaultUnitsPerPallet != null ? `${formatInteger(item.defaultUnitsPerPallet)} ${baseUnit}` : '—'}</div>
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  footer,
+  onClose
+}: {
+  title: string;
+  children: ReactNode;
+  footer: ReactNode;
+  onClose: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+          </div>
           <button
             type="button"
             className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
@@ -172,7 +252,9 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
             Bağla
           </button>
         </div>
-        {children}
+
+        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+        <div className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4">{footer}</div>
       </div>
     </div>
   );
@@ -360,6 +442,22 @@ export function MaterialsPage() {
     }
   };
 
+  const footer = (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="text-sm text-slate-500">
+        {selectedCategory ? `Seçilmiş kateqoriya: ${selectedCategory.name}` : 'Kateqoriya seçilməyib'}
+      </div>
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={closeModal} disabled={saving}>
+          Ləğv et
+        </Button>
+        <Button onClick={() => void saveMaterial()} disabled={saving}>
+          {saving ? 'Yadda saxlanılır...' : 'Yadda saxla'}
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -461,16 +559,27 @@ export function MaterialsPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
-                    {['Material №', 'Kateqoriya', 'Material adı', 'Növ', 'Qram / qalınlıq', 'Format / ölçü', 'Ölçü vahidi', 'AZN qiyməti', 'Status', 'Əməliyyatlar'].map(
-                      (header) => (
-                        <th
-                          key={header}
-                          className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
-                        >
-                          {header}
-                        </th>
-                      )
-                    )}
+                    {[
+                      'Material №',
+                      'Kateqoriya',
+                      'Material adı',
+                      'Növ',
+                      'Qram / qalınlıq',
+                      'Format / ölçü',
+                      'Əsas vahid',
+                      'Qablaşdırma',
+                      'Palet',
+                      'Palet cəmi',
+                      'Status',
+                      'Əməliyyatlar'
+                    ].map((header) => (
+                      <th
+                        key={header}
+                        className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
+                      >
+                        {header}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -482,8 +591,32 @@ export function MaterialsPage() {
                       <td className="px-4 py-3">{item.materialType || '—'}</td>
                       <td className="px-4 py-3">{item.gramThickness || '—'}</td>
                       <td className="px-4 py-3">{item.formatSize || '—'}</td>
-                      <td className="px-4 py-3">{item.unit}</td>
-                      <td className="px-4 py-3">{formatMoney(item.aznPrice, item.currencyCode)}</td>
+                      <td className="px-4 py-3">{item.stockUnit ?? item.unit}</td>
+                      <td className="px-4 py-3">
+                        {item.defaultUnitsPerPackage != null ? (
+                          <div className="space-y-1 text-sm text-slate-700">
+                            <div>
+                              {formatInteger(item.defaultUnitsPerPackage)} {item.stockUnit ?? item.unit} / {item.packageUnit ?? 'qablaşdırma'}
+                            </div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.packagesPerPallet != null ? (
+                          <div className="space-y-1 text-sm text-slate-700">
+                            <div>
+                              {formatInteger(item.packagesPerPallet)} {item.packageUnit ?? 'qablaşdırma'} / {item.palletUnit ?? 'palet'}
+                            </div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.defaultUnitsPerPallet != null ? `${formatInteger(item.defaultUnitsPerPallet)} ${item.stockUnit ?? item.unit}` : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={[
@@ -552,8 +685,12 @@ export function MaterialsPage() {
       )}
 
       {modalOpen ? (
-        <Modal title={editingItem ? 'Materialı redaktə et' : 'Yeni material'}>
-          <div className="mt-1 grid gap-4 md:grid-cols-2">
+        <Modal
+          title={editingItem ? 'Materialı redaktə et' : 'Yeni material'}
+          onClose={closeModal}
+          footer={footer}
+        >
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Material №">
               <Input value={editingItem?.materialNo ?? 'Avtomatik yaradılır'} disabled />
             </Field>
@@ -577,10 +714,34 @@ export function MaterialsPage() {
               <Input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
             </Field>
 
-            <Field label="Ölçü vahidi">
+            <Field label="Növ">
+              <Input
+                value={formState.materialType}
+                onChange={(event) => setFormState((current) => ({ ...current, materialType: event.target.value }))}
+                placeholder="Məsələn: Ofset"
+              />
+            </Field>
+
+            <Field label="Qram / qalınlıq">
+              <Input
+                value={formState.gramThickness}
+                onChange={(event) => setFormState((current) => ({ ...current, gramThickness: event.target.value }))}
+                placeholder="Məsələn: 80 qr"
+              />
+            </Field>
+
+            <Field label="Format / ölçü">
+              <Input
+                value={formState.formatSize}
+                onChange={(event) => setFormState((current) => ({ ...current, formatSize: event.target.value }))}
+                placeholder="Məsələn: 64x90"
+              />
+            </Field>
+
+            <Field label="Əsas vahid">
               <select
-                value={formState.unit}
-                onChange={(event) => setFormState((current) => ({ ...current, unit: event.target.value as MaterialFormState['unit'] }))}
+                value={formState.stockUnit}
+                onChange={(event) => setFormState((current) => ({ ...current, stockUnit: event.target.value as MaterialFormState['stockUnit'] }))}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
               >
                 {MATERIAL_UNITS.map((unit) => (
@@ -590,6 +751,56 @@ export function MaterialsPage() {
                 ))}
               </select>
             </Field>
+
+            <Field label="Qablaşdırma vahidi">
+              <Input
+                value={formState.packageUnit}
+                onChange={(event) => setFormState((current) => ({ ...current, packageUnit: event.target.value }))}
+                placeholder="Məsələn: bağlama"
+              />
+            </Field>
+
+            <Field label="1 qablaşdırmada neçə əsas vahid var">
+              <Input
+                type="number"
+                step="0.01"
+                value={formState.defaultUnitsPerPackage}
+                onChange={(event) => setFormState((current) => ({ ...current, defaultUnitsPerPackage: event.target.value }))}
+                placeholder="Məsələn: 500"
+              />
+            </Field>
+
+            <Field label="Palet vahidi">
+              <Input
+                value={formState.palletUnit}
+                onChange={(event) => setFormState((current) => ({ ...current, palletUnit: event.target.value }))}
+                placeholder="Məsələn: palet"
+              />
+            </Field>
+
+            <Field label="1 paletdə neçə qablaşdırma var">
+              <Input
+                type="number"
+                step="0.01"
+                value={formState.packagesPerPallet}
+                onChange={(event) => setFormState((current) => ({ ...current, packagesPerPallet: event.target.value }))}
+                placeholder="Məsələn: 24"
+              />
+            </Field>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+              <div className="text-sm font-medium text-slate-700">1 paletdə ümumi əsas vahid sayı</div>
+              <div className="mt-2 text-lg font-semibold text-slate-950">
+                {computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet) != null
+                  ? `${formatInteger(computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet))} ${formState.stockUnit}`
+                  : '—'}
+              </div>
+              <div className="mt-2 text-sm text-slate-500">
+                {formState.defaultUnitsPerPackage && formState.packagesPerPallet
+                  ? `1 palet = ${formatInteger(computeDefaultUnitsPerPallet(formState.defaultUnitsPerPackage, formState.packagesPerPallet))} ${formState.stockUnit}`
+                  : 'Qablaşdırma və palet sayını daxil etdikdə hesablanacaq.'}
+              </div>
+            </div>
 
             <Field label="Valyuta">
               <Input value={formState.currencyCode} onChange={(event) => setFormState((current) => ({ ...current, currencyCode: event.target.value }))} />
@@ -669,18 +880,6 @@ export function MaterialsPage() {
                 placeholder="Əlavə məlumat"
               />
             </Field>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-slate-500">{selectedCategory ? `Seçilmiş kateqoriya: ${selectedCategory.name}` : 'Kateqoriya seçilməyib'}</div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={closeModal} disabled={saving}>
-                Ləğv et
-              </Button>
-              <Button onClick={() => void saveMaterial()} disabled={saving}>
-                {saving ? 'Yadda saxlanılır...' : 'Yadda saxla'}
-              </Button>
-            </div>
           </div>
         </Modal>
       ) : null}

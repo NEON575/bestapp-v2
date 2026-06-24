@@ -64,6 +64,45 @@ export class CreateMaterialDto {
   @Length(1, 120)
   formatSize?: string;
 
+  @ApiPropertyOptional({ example: 'vərəq' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  stockUnit?: string;
+
+  @ApiPropertyOptional({ example: 'bağlama' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  packageUnit?: string;
+
+  @ApiPropertyOptional({ example: 500, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  defaultUnitsPerPackage?: number;
+
+  @ApiPropertyOptional({ example: 'palet', default: 'palet' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  palletUnit?: string;
+
+  @ApiPropertyOptional({ example: 24 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  packagesPerPallet?: number;
+
+  @ApiPropertyOptional({ example: 12000, readOnly: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  defaultUnitsPerPallet?: number;
+
   @ApiProperty({ enum: materialUnitValues })
   @IsIn(materialUnitValues)
   unit!: MaterialUnitValue;
