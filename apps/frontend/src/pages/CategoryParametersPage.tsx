@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Input } from '@bestapp/ui';
-import { Plus, PencilLine, Trash2 } from 'lucide-react';
+import { PencilLine, Plus, Trash2 } from 'lucide-react';
+import { materialCategoriesClient, type CreateMaterialCategoryParameterDto, type CreateMaterialCategoryParameterValueDto } from '../shared/api/material-categories';
 import { PageHeader } from '../shared/components/PageHeader';
 import { useToast } from '../shared/toast/toast-context';
-import { materialCategoriesClient, type CreateMaterialCategoryParameterDto, type CreateMaterialCategoryParameterValueDto } from '../shared/api/material-categories';
 import type { MaterialCategoryItem, MaterialCategoryParameterItem, MaterialCategoryParameterValueItem } from '../shared/materials';
 
 type ParameterDraft = CreateMaterialCategoryParameterDto;
@@ -22,6 +22,37 @@ const emptyValueDraft: ValueDraft = {
   isActive: true,
   notes: ''
 };
+
+function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
+              onClick={onClose}
+            >
+              Bağla
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 export function CategoryParametersPage() {
   const toast = useToast();
@@ -109,7 +140,7 @@ export function CategoryParametersPage() {
   const saveParameter = async () => {
     if (!selectedCategory) return;
     if (!parameterDraft.name.trim()) {
-      toast.warning('Parametr adı daxil edin');
+      toast.warning('Parametr adını daxil edin');
       return;
     }
 
@@ -189,7 +220,7 @@ export function CategoryParametersPage() {
   };
 
   const removeValue = async (value: MaterialCategoryParameterValueItem) => {
-    if (!window.confirm(`"${value.value}" dəyəri silinsin?`)) return;
+    if (!window.confirm('Bu dəyər silinsin?')) return;
     try {
       await materialCategoriesClient.removeValue(value.id);
       toast.success('Dəyər silindi');
@@ -269,15 +300,23 @@ export function CategoryParametersPage() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {parameter.values.map((value) => (
-                  <button
-                    key={value.id}
-                    type="button"
-                    onClick={() => openEditValue(parameter, value)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100"
-                  >
-                    <span>{value.value}</span>
-                    <PencilLine className="h-3.5 w-3.5 text-slate-400" />
-                  </button>
+                  <div key={value.id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => openEditValue(parameter, value)}
+                      className="inline-flex items-center gap-2 rounded-full transition hover:text-slate-950"
+                    >
+                      <span>{value.value}</span>
+                      <PencilLine className="h-3.5 w-3.5 text-slate-400" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeValue(value)}
+                      className="rounded-full px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      Sil
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -367,30 +406,5 @@ export function CategoryParametersPage() {
         </Modal>
       ) : null}
     </div>
-  );
-}
-
-function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-          <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500" onClick={onClose}>
-            Bağla
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      {children}
-    </label>
   );
 }

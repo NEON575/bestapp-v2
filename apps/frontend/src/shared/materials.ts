@@ -98,9 +98,6 @@ export interface CreateMaterialDto {
   packagesPerPallet?: number;
   defaultUnitsPerPallet?: number;
   unit: MaterialUnitValue;
-  currencyCode?: string;
-  purchasePrice?: number;
-  aznPrice?: number;
   isActive?: boolean;
   notes?: string;
   metadata?: MaterialMetadata;

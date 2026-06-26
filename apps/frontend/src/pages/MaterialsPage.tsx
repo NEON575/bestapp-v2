@@ -51,9 +51,6 @@ type MaterialFormState = {
   defaultUnitsPerPackage: string;
   palletUnit: string;
   packagesPerPallet: string;
-  currencyCode: string;
-  purchasePrice: string;
-  aznPrice: string;
   isActive: boolean;
   notes: string;
   metadata: Record<string, string>;
@@ -78,9 +75,6 @@ const defaultFormState: MaterialFormState = {
   defaultUnitsPerPackage: '',
   palletUnit: 'palet',
   packagesPerPallet: '',
-  currencyCode: 'AZN',
-  purchasePrice: '',
-  aznPrice: '',
   isActive: true,
   notes: '',
   metadata: {}
@@ -112,11 +106,6 @@ function applyCategoryDefaults(categoryCode: string, current?: MaterialFormState
     defaultUnitsPerPackage: current?.defaultUnitsPerPackage ?? '',
     metadata: current?.metadata ?? {}
   };
-}
-
-function toNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function parseOptionalNumber(value: string) {
@@ -211,9 +200,6 @@ function createFormState(material?: MaterialListItem): MaterialFormState {
     defaultUnitsPerPackage: material.defaultUnitsPerPackage == null ? '' : String(material.defaultUnitsPerPackage),
     palletUnit: material.palletUnit ?? '',
     packagesPerPallet: material.packagesPerPallet == null ? '' : String(material.packagesPerPallet),
-    currencyCode: material.currencyCode ?? 'AZN',
-    purchasePrice: String(material.purchasePrice ?? ''),
-    aznPrice: String(material.aznPrice ?? ''),
     isActive: material.isActive,
     notes: material.notes ?? '',
     metadata
@@ -251,9 +237,6 @@ function buildMaterialPayload(form: MaterialFormState, parameters: MaterialCateg
     packagesPerPallet: parseOptionalNumber(form.packagesPerPallet) ?? undefined,
     defaultUnitsPerPallet: defaultUnitsPerPallet ?? undefined,
     unit: form.stockUnit,
-    currencyCode: form.currencyCode.trim() || 'AZN',
-    purchasePrice: form.purchasePrice ? toNumber(form.purchasePrice) : 0,
-    aznPrice: form.aznPrice ? toNumber(form.aznPrice) : 0,
     isActive: form.isActive,
     notes: form.notes.trim() || undefined,
     metadata
@@ -857,28 +840,6 @@ export function MaterialsPage() {
                   : 'Qablaşdırma və palet sayı daxil etdikdə hesablanacaq.'}
               </div>
             </div>
-
-            <Field label="Valyuta">
-              <Input value={formState.currencyCode} onChange={(event) => setFormState((current) => ({ ...current, currencyCode: event.target.value }))} />
-            </Field>
-
-            <Field label="Alış qiyməti">
-              <Input
-                type="number"
-                step="0.01"
-                value={formState.purchasePrice}
-                onChange={(event) => setFormState((current) => ({ ...current, purchasePrice: event.target.value }))}
-              />
-            </Field>
-
-            <Field label="AZN qiyməti">
-              <Input
-                type="number"
-                step="0.01"
-                value={formState.aznPrice}
-                onChange={(event) => setFormState((current) => ({ ...current, aznPrice: event.target.value }))}
-              />
-            </Field>
 
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 md:col-span-2">
               <input
