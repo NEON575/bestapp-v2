@@ -306,7 +306,7 @@ export function PurchasesPage() {
         }),
         materialsClient.list({
           page: 1,
-          limit: 500
+          limit: 200
         })
       ]);
 
