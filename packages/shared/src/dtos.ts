@@ -383,6 +383,7 @@ export interface CreatePurchaseDto {
   purchaseDate?: string;
   supplierName: string;
   invoiceNo?: string;
+  warehouseId?: string;
   currencyCode?: 'AZN' | 'USD' | 'EUR' | 'TRY';
   exchangeRate?: number;
   notes?: string;

@@ -265,6 +265,7 @@ export interface Purchase {
   purchaseDate: string;
   supplierName: string;
   invoiceNo?: string | null;
+  warehouseId?: string | null;
   currencyCode: PurchaseCurrencyCode;
   exchangeRate: number;
   status: PurchaseStatus;
@@ -272,6 +273,8 @@ export interface Purchase {
   vatTotal: number;
   total: number;
   notes?: string | null;
+  confirmedAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
   items: PurchaseItem[];
@@ -616,6 +619,34 @@ export interface WarehouseItem {
   code: string;
   name: string;
   description?: string | null;
+}
+
+export interface WarehouseStockLevelItem {
+  id: string;
+  materialId: string;
+  warehouseId: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  updatedAt: string;
+  material?: InventoryMaterialItem | null;
+  warehouse?: WarehouseItem | null;
+}
+
+export interface WarehouseMovementItem {
+  id: string;
+  materialId: string;
+  warehouseId?: string | null;
+  type: string;
+  quantity: number;
+  balanceDelta?: number;
+  unitCost?: number;
+  totalCost?: number;
+  reference?: string | null;
+  note?: string | null;
+  createdAt?: string;
+  material?: InventoryMaterialItem | null;
+  warehouse?: WarehouseItem | null;
 }
 
 export interface InventoryMovementItem {

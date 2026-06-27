@@ -660,6 +660,7 @@ model Purchase {
   id            String         @id @default(cuid())
   purchaseNo    String         @unique
   invoiceNo     String?        @unique
+  warehouseId   String?
   purchaseDate   DateTime
   supplierName   String
   currencyCode  String         @default("AZN")
@@ -669,12 +670,17 @@ model Purchase {
   vatTotal      Decimal        @default(0) @db.Decimal(18, 2)
   total         Decimal        @default(0) @db.Decimal(18, 2)
   notes         String?
+  confirmedAt   DateTime?
+  cancelledAt   DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   items         PurchaseItem[]
 
+  warehouse     Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
   @@index([purchaseDate])
   @@index([status])
+  @@index([warehouseId])
   @@map("purchases")
 }
 
@@ -731,6 +737,7 @@ model Warehouse {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
+  purchases   Purchase[]
   stockLevels StockLevel[]
   reservations StockReservation[]
   movements   StockMovement[]

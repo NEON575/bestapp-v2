@@ -7,10 +7,12 @@ import type {
   PurchaseItem,
   PurchaseQuantityMode,
   PurchaseStatus,
+  WarehouseItem,
   UpdatePurchaseDto
 } from '@bestapp/shared';
 import { materialsClient } from '../shared/api/materials';
 import { purchasesClient } from '../shared/api/purchases';
+import { warehousesClient } from '../shared/api/warehouses';
 import { ErrorState, EmptyState, LoadingState, PageHeader, Pagination } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 import type { MaterialListItem } from '../shared/materials';
@@ -27,6 +29,7 @@ type LineDraft = {
 type FormState = {
   purchaseDate: string;
   supplierName: string;
+  warehouseId: string;
   notes: string;
   status: PurchaseStatus;
   items: LineDraft[];
@@ -92,10 +95,11 @@ function emptyLine(): LineDraft {
   };
 }
 
-function emptyFormState(): FormState {
+function emptyFormState(warehouseId = ''): FormState {
   return {
     purchaseDate: toDateInput(),
     supplierName: '',
+    warehouseId,
     notes: '',
     status: 'draft',
     items: []
@@ -155,13 +159,14 @@ function toFormState(purchase?: Purchase | null): FormState {
   return {
     purchaseDate: toDateInput(purchase.purchaseDate),
     supplierName: purchase.supplierName,
+    warehouseId: purchase.warehouseId ?? '',
     notes: purchase.notes ?? '',
     status: purchase.status,
     items: purchase.items.map(toLineDraft)
   };
 }
 
-function buildPayload(form: FormState, materials: MaterialListItem[]): CreatePurchaseDto {
+function buildPayload(form: FormState, materials: MaterialListItem[], defaultWarehouseId?: string): CreatePurchaseDto {
   const materialMap = new Map(materials.map((material) => [material.id, material]));
 
   const items = form.items.map((line) => {
@@ -203,6 +208,7 @@ function buildPayload(form: FormState, materials: MaterialListItem[]): CreatePur
   return {
     purchaseDate: form.purchaseDate ? new Date(`${form.purchaseDate}T00:00:00`).toISOString() : undefined,
     supplierName: form.supplierName.trim(),
+    warehouseId: form.warehouseId || defaultWarehouseId || undefined,
     notes: form.notes.trim() || undefined,
     status: form.status,
     items
@@ -268,6 +274,7 @@ export function PurchasesPage() {
   const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [materials, setMaterials] = useState<MaterialListItem[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
@@ -285,6 +292,7 @@ export function PurchasesPage() {
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
 
   const selectedMaterials = useMemo(() => materials, [materials]);
+  const defaultWarehouseId = useMemo(() => warehouses[0]?.id ?? '', [warehouses]);
   const editingPurchase = useMemo(() => purchases.find((purchase) => purchase.id === editingId) ?? null, [editingId, purchases]);
   const selectedMaterial = useMemo(
     () => selectedMaterials.find((material) => material.id === lineDraft.materialId) ?? null,
@@ -297,7 +305,7 @@ export function PurchasesPage() {
     setError(null);
 
     try {
-      const [purchaseResponse, materialResponse] = await Promise.all([
+      const [purchaseResponse, materialResponse, warehouseResponse] = await Promise.all([
         purchasesClient.list({
           page: nextPage,
           limit: nextLimit,
@@ -308,13 +316,15 @@ export function PurchasesPage() {
           page: 1,
           limit: 200,
           status: 'active'
-        })
+        }),
+        warehousesClient.list()
       ]);
 
       setPurchases(purchaseResponse.data);
       setTotalPages(purchaseResponse.meta.totalPages);
       setTotalItems(purchaseResponse.meta.total);
       setMaterials(materialResponse.data);
+      setWarehouses(warehouseResponse);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Alış məlumatları yüklənmədi');
     } finally {
@@ -337,7 +347,7 @@ export function PurchasesPage() {
   const openCreate = () => {
     setMode('create');
     setEditingId(null);
-    setFormState(emptyFormState());
+    setFormState(emptyFormState(defaultWarehouseId));
     setLineDraft(emptyLine());
     setEditingLineIndex(null);
     setModalOpen(true);
@@ -364,7 +374,7 @@ export function PurchasesPage() {
   const closeModal = () => {
     setModalOpen(false);
     setEditingId(null);
-    setFormState(emptyFormState());
+    setFormState(emptyFormState(defaultWarehouseId));
     setLineDraft(emptyLine());
     setEditingLineIndex(null);
   };
@@ -382,7 +392,7 @@ export function PurchasesPage() {
 
     setSaving(true);
     try {
-      const payload = buildPayload(formState, selectedMaterials);
+      const payload = buildPayload(formState, selectedMaterials, defaultWarehouseId);
 
       if (mode === 'edit' && editingId) {
         await purchasesClient.update(editingId, payload as UpdatePurchaseDto);
@@ -490,7 +500,7 @@ export function PurchasesPage() {
   const confirmPurchase = async (purchase: Purchase) => {
     try {
       await purchasesClient.confirm(purchase.id);
-      toast.success('Alış təsdiqləndi');
+      toast.success('Alış təsdiqləndi və anbara daxil edildi');
       await refresh();
     } catch (confirmError) {
       toast.error('Alış təsdiqlənmədi', confirmError instanceof Error ? confirmError.message : 'Xəta baş verdi');
@@ -608,7 +618,7 @@ export function PurchasesPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
-                    {['Alış №', 'Faktura №', 'Tarix', 'Təchizatçı', 'Status', 'Ara cəm', 'ƏDV', 'Yekun', 'Əməliyyatlar'].map((header) => (
+                    {['Alış №', 'Faktura №', 'Tarix', 'Təchizatçı', 'Anbar', 'Status', 'Ara cəm', 'ƏDV', 'Yekun', 'Əməliyyatlar'].map((header) => (
                       <th
                         key={header}
                         className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
@@ -625,6 +635,7 @@ export function PurchasesPage() {
                       <td className="px-4 py-3">{purchase.invoiceNo}</td>
                       <td className="px-4 py-3">{toDateInput(purchase.purchaseDate)}</td>
                       <td className="px-4 py-3">{purchase.supplierName}</td>
+                      <td className="px-4 py-3">{warehouses.find((warehouse) => warehouse.id === purchase.warehouseId)?.name ?? '—'}</td>
                       <td className="px-4 py-3">
                         <Badge status={purchase.status} />
                       </td>
@@ -654,6 +665,7 @@ export function PurchasesPage() {
                             variant="ghost"
                             className="h-9 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             onClick={() => void removePurchase(purchase)}
+                            disabled={purchase.status === 'confirmed'}
                           >
                             <span className="inline-flex items-center gap-2">
                               <Trash2 className="h-4 w-4" />
@@ -675,7 +687,7 @@ export function PurchasesPage() {
                             variant="secondary"
                             className="h-9 px-3"
                             onClick={() => void cancelPurchase(purchase)}
-                            disabled={purchase.status === 'cancelled'}
+                            disabled={purchase.status !== 'draft'}
                           >
                             <span className="inline-flex items-center gap-2">
                               <XCircle className="h-4 w-4" />
@@ -707,7 +719,7 @@ export function PurchasesPage() {
           footer={footer}
         >
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Tarix</span>
                 <Input
@@ -728,6 +740,23 @@ export function PurchasesPage() {
               </label>
 
               <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Anbar</span>
+                <select
+                  value={formState.warehouseId || defaultWarehouseId}
+                  onChange={(event) => setFormState((current) => ({ ...current, warehouseId: event.target.value }))}
+                  disabled={modalReadOnly}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                >
+                  <option value="">Anbar seçin</option>
+                  {warehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.code} · {warehouse.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Status</span>
                 <select
                   value={formState.status}
@@ -741,7 +770,7 @@ export function PurchasesPage() {
                 </select>
               </label>
 
-              <label className="block space-y-2 md:col-span-3">
+              <label className="block space-y-2 md:col-span-4">
                 <span className="text-sm font-medium text-slate-700">Qeyd</span>
                 <textarea
                   rows={3}

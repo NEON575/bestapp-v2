@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type Material, type Purchase as PrismaPurchase, type PurchaseItem as PrismaPurchaseItem } from '@prisma/client';
+import { buildPurchaseMovement } from '../../common/business/purchase-flow';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { WarehouseService } from '../warehouse/warehouse.service';
 import { CreatePurchaseDto, PurchaseListQueryDto, UpdatePurchaseDto } from './dto/purchases.dto';
 
 type PurchaseStatus = 'draft' | 'confirmed' | 'cancelled';
@@ -43,6 +45,7 @@ type PurchaseResponse = {
   id: string;
   purchaseNo: string;
   invoiceNo: string;
+  warehouseId?: string | null;
   purchaseDate: string;
   supplierName: string;
   currencyCode: PurchaseCurrencyCode;
@@ -52,6 +55,8 @@ type PurchaseResponse = {
   vatTotal: number;
   total: number;
   notes?: string | null;
+  confirmedAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
   items: PurchaseItemResponse[];
@@ -129,6 +134,7 @@ function mapPurchase(purchase: PrismaPurchase & { items?: Array<PrismaPurchaseIt
     id: purchase.id,
     purchaseNo: purchase.purchaseNo,
     invoiceNo: purchase.invoiceNo ?? '',
+    warehouseId: purchase.warehouseId,
     purchaseDate: purchase.purchaseDate.toISOString(),
     supplierName: purchase.supplierName,
     currencyCode: purchase.currencyCode as PurchaseCurrencyCode,
@@ -138,6 +144,8 @@ function mapPurchase(purchase: PrismaPurchase & { items?: Array<PrismaPurchaseIt
     vatTotal: toNumber(purchase.vatTotal),
     total: toNumber(purchase.total),
     notes: purchase.notes,
+    confirmedAt: purchase.confirmedAt ? purchase.confirmedAt.toISOString() : null,
+    cancelledAt: purchase.cancelledAt ? purchase.cancelledAt.toISOString() : null,
     createdAt: purchase.createdAt.toISOString(),
     updatedAt: purchase.updatedAt.toISOString(),
     items: (purchase.items ?? []).map(mapPurchaseItem)
@@ -151,14 +159,14 @@ function computeBaseQuantity(material: Material, quantityMode: PurchaseQuantityM
 
   if (quantityMode === 'package') {
     if (material.defaultUnitsPerPackage == null) {
-      throw new BadRequestException(`"${material.name}" materialı üçün qablaşdırma məlumatı yoxdur`);
+      throw new BadRequestException(`"${material.name}" material üçün qablaşdırma məlumatı yoxdur`);
     }
 
     return quantity * toNumber(material.defaultUnitsPerPackage);
   }
 
   if (material.defaultUnitsPerPallet == null) {
-    throw new BadRequestException(`"${material.name}" materialı üçün palet məlumatı yoxdur`);
+    throw new BadRequestException(`"${material.name}" material üçün palet məlumatı yoxdur`);
   }
 
   return quantity * toNumber(material.defaultUnitsPerPallet);
@@ -174,7 +182,10 @@ function resolveVatRate(item: PurchaseItemInput) {
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly warehouseService: WarehouseService
+  ) {}
 
   private async nextPurchaseNo(tx: Prisma.TransactionClient) {
     const sequence = await tx.numberSequence.upsert({
@@ -220,8 +231,9 @@ export class PurchasesService {
     return `${sequence.prefix}${String(nextValue).padStart(sequence.padding, '0')}`;
   }
 
-  private async loadPurchaseOrThrow(id: string) {
-    const purchase = await this.prisma.purchase.findFirst({
+  private async loadPurchaseOrThrow(id: string, tx?: Prisma.TransactionClient) {
+    const db = tx ?? this.prisma;
+    const purchase = await db.purchase.findFirst({
       where: { id },
       include: { items: { include: { material: true } } }
     });
@@ -284,6 +296,82 @@ export class PurchasesService {
         lineTotal: toDecimal(lineTotal),
         notes: sanitizeText(item.notes)
       };
+    });
+  }
+
+  private async applyPurchaseReceipt(tx: Prisma.TransactionClient, purchaseId: string) {
+    const existing = await this.loadPurchaseOrThrow(purchaseId, tx);
+
+    if (existing.status === 'cancelled' || existing.cancelledAt) {
+      throw new BadRequestException('Ləğv edilmiş alış təsdiqlənə bilməz');
+    }
+
+    if (existing.status === 'confirmed' || existing.confirmedAt) {
+      return existing;
+    }
+
+    const warehouse = await this.warehouseService.findWarehouseOrMain(existing.warehouseId, tx);
+    const reference = [existing.purchaseNo, existing.invoiceNo].filter(Boolean).join(' / ');
+    const uniqueMaterialIds = new Set<string>();
+
+    for (const item of existing.items) {
+      const baseQuantity = toNumber(item.baseQuantity);
+      const lineTotal = toNumber(item.lineTotal);
+      const unitCost = baseQuantity > 0 ? lineTotal / baseQuantity : 0;
+
+      await tx.stockMovement.create({
+        data: {
+          ...buildPurchaseMovement({
+            materialId: item.materialId,
+            warehouseId: warehouse.id,
+            totalQuantity: baseQuantity,
+            unitPrice: unitCost,
+            totalAmount: lineTotal,
+            reference,
+            note: 'Alış təsdiqi'
+          })
+        }
+      });
+
+      uniqueMaterialIds.add(item.materialId);
+    }
+
+    for (const materialId of uniqueMaterialIds) {
+      await this.warehouseService.syncStockLevel(materialId, warehouse.id, tx);
+    }
+
+    const updated = await tx.purchase.update({
+      where: { id: purchaseId },
+      data: {
+        warehouseId: existing.warehouseId ?? warehouse.id,
+        status: 'confirmed',
+        confirmedAt: new Date(),
+        cancelledAt: null
+      },
+      include: { items: { include: { material: true } } }
+    });
+
+    return updated;
+  }
+
+  private async applyPurchaseCancellation(tx: Prisma.TransactionClient, purchaseId: string) {
+    const existing = await this.loadPurchaseOrThrow(purchaseId, tx);
+
+    if (existing.status === 'confirmed' || existing.confirmedAt) {
+      throw new BadRequestException('Təsdiqlənmiş alış ləğv edilə bilməz');
+    }
+
+    if (existing.status === 'cancelled' || existing.cancelledAt) {
+      return existing;
+    }
+
+    return tx.purchase.update({
+      where: { id: purchaseId },
+      data: {
+        status: 'cancelled',
+        cancelledAt: new Date()
+      },
+      include: { items: { include: { material: true } } }
     });
   }
 
@@ -351,16 +439,18 @@ export class PurchasesService {
       const subtotal = items.reduce((sum, item) => sum + toNumber(item.netAmount), 0);
       const vatTotal = items.reduce((sum, item) => sum + toNumber(item.vatAmount), 0);
       const total = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+      const warehouse = await this.warehouseService.findWarehouseOrMain(dto.warehouseId, tx);
 
       const purchase = await tx.purchase.create({
         data: {
           purchaseNo,
           invoiceNo,
+          warehouseId: warehouse.id,
           purchaseDate,
           supplierName,
           currencyCode: dto.currencyCode ?? 'AZN',
           exchangeRate: toDecimal(dto.exchangeRate ?? 1),
-          status: dto.status ?? 'draft',
+          status: 'draft',
           subtotal: toDecimal(subtotal),
           vatTotal: toDecimal(vatTotal),
           total: toDecimal(total),
@@ -384,6 +474,14 @@ export class PurchasesService {
           notes: item.notes
         }))
       });
+
+      if (dto.status === 'confirmed') {
+        return this.applyPurchaseReceipt(tx, purchase.id);
+      }
+
+      if (dto.status === 'cancelled') {
+        return this.applyPurchaseCancellation(tx, purchase.id);
+      }
 
       return tx.purchase.findUnique({
         where: { id: purchase.id },
@@ -412,6 +510,7 @@ export class PurchasesService {
     const result = await this.prisma.$transaction(async (tx) => {
       const purchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : existing.purchaseDate;
       const supplierName = dto.supplierName?.trim() || existing.supplierName;
+      const warehouse = await this.warehouseService.findWarehouseOrMain(dto.warehouseId ?? existing.warehouseId, tx);
       const itemsInput =
         (dto.items as PurchaseItemInput[] | undefined) ??
         existing.items.map((item) => ({
@@ -433,12 +532,16 @@ export class PurchasesService {
         data: {
           purchaseDate,
           supplierName,
+          warehouseId: warehouse.id,
           currencyCode: dto.currencyCode ?? existing.currencyCode,
           exchangeRate: dto.exchangeRate !== undefined ? toDecimal(dto.exchangeRate) : existing.exchangeRate,
           notes: dto.notes !== undefined ? sanitizeText(dto.notes) : existing.notes,
           subtotal: toDecimal(subtotal),
           vatTotal: toDecimal(vatTotal),
-          total: toDecimal(total)
+          total: toDecimal(total),
+          status: 'draft',
+          confirmedAt: null,
+          cancelledAt: null
         }
       });
 
@@ -460,6 +563,14 @@ export class PurchasesService {
         }))
       });
 
+      if (dto.status === 'confirmed') {
+        return this.applyPurchaseReceipt(tx, id);
+      }
+
+      if (dto.status === 'cancelled') {
+        return this.applyPurchaseCancellation(tx, id);
+      }
+
       return tx.purchase.findUnique({
         where: { id },
         include: { items: { include: { material: true } } }
@@ -474,34 +585,23 @@ export class PurchasesService {
   }
 
   async remove(id: string) {
-    await this.loadPurchaseOrThrow(id);
+    const existing = await this.loadPurchaseOrThrow(id);
+
+    if (existing.status === 'confirmed' || existing.confirmedAt) {
+      throw new BadRequestException('Təsdiqlənmiş alış silinə bilməz');
+    }
+
     await this.prisma.purchase.delete({ where: { id } });
     return { success: true };
   }
 
   async confirm(id: string) {
-    const existing = await this.loadPurchaseOrThrow(id);
-
-    if (existing.status === 'cancelled') {
-      throw new BadRequestException('Ləğv edilmiş alış təsdiqlənə bilməz');
-    }
-
-    await this.prisma.purchase.update({
-      where: { id },
-      data: { status: 'confirmed' }
-    });
-
-    return mapPurchase(await this.loadPurchaseOrThrow(id));
+    const result = await this.prisma.$transaction(async (tx) => this.applyPurchaseReceipt(tx, id));
+    return mapPurchase(result);
   }
 
   async cancel(id: string) {
-    await this.loadPurchaseOrThrow(id);
-
-    await this.prisma.purchase.update({
-      where: { id },
-      data: { status: 'cancelled' }
-    });
-
-    return mapPurchase(await this.loadPurchaseOrThrow(id));
+    const result = await this.prisma.$transaction(async (tx) => this.applyPurchaseCancellation(tx, id));
+    return mapPurchase(result);
   }
 }

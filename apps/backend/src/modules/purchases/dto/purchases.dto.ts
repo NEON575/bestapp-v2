@@ -91,6 +91,12 @@ export class CreatePurchaseDto {
   @Length(1, 255)
   supplierName!: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Length(0, 36)
+  warehouseId?: string;
+
   @ApiPropertyOptional({ enum: PURCHASE_CURRENCY_VALUES, default: 'AZN' })
   @IsOptional()
   @IsIn(PURCHASE_CURRENCY_VALUES)

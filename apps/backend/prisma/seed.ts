@@ -38,6 +38,22 @@ async function main() {
     }
   });
 
+  await prisma.warehouse.upsert({
+    where: { code: 'MAIN' },
+    update: {
+      name: 'Əsas anbar',
+      description: 'Default warehouse',
+      isActive: true,
+      deletedAt: null
+    },
+    create: {
+      code: 'MAIN',
+      name: 'Əsas anbar',
+      description: 'Default warehouse',
+      isActive: true
+    }
+  });
+
   const paperCategory = await prisma.materialCategory.findUnique({ where: { code: 'kagiz' } });
   const laminationCategory = await prisma.materialCategory.findUnique({ where: { code: 'laminasiya' } });
   const formCategory = await prisma.materialCategory.findUnique({ where: { code: 'forma' } });

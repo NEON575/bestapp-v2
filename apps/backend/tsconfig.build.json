@@ -10,7 +10,8 @@
     "src/common/**/*.ts",
     "src/modules/materials/**/*.ts",
     "src/modules/material-categories/**/*.ts",
-    "src/modules/purchases/**/*.ts"
+    "src/modules/purchases/**/*.ts",
+    "src/modules/warehouse/**/*.ts"
   ],
   "exclude": [
     "node_modules",

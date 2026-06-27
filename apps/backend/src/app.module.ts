@@ -6,6 +6,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { MaterialCategoriesModule } from './modules/material-categories/material-categories.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { WarehouseModule } from './modules/warehouse/warehouse.module';
 
 @Module({
   controllers: [AppController],
@@ -22,7 +23,8 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
     PrismaModule,
     MaterialCategoriesModule,
     MaterialsModule,
-    PurchasesModule
+    PurchasesModule,
+    WarehouseModule
   ]
 })
 export class AppModule {}
