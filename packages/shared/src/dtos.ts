@@ -374,6 +374,8 @@ export interface CreatePurchaseItemDto {
   quantityMode: 'base' | 'package' | 'pallet';
   quantity: number;
   unitPrice: number;
+  vatRate?: number;
+  isVatIncluded?: boolean;
   notes?: string;
 }
 

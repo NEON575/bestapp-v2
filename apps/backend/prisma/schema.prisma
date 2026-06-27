@@ -659,13 +659,14 @@ model PurchaseEntry {
 model Purchase {
   id            String         @id @default(cuid())
   purchaseNo    String         @unique
+  invoiceNo     String?        @unique
   purchaseDate   DateTime
   supplierName   String
-  invoiceNo     String?
   currencyCode  String         @default("AZN")
   exchangeRate   Decimal        @default(1) @db.Decimal(18, 4)
   status        String         @default("draft")
   subtotal      Decimal        @default(0) @db.Decimal(18, 2)
+  vatTotal      Decimal        @default(0) @db.Decimal(18, 2)
   total         Decimal        @default(0) @db.Decimal(18, 2)
   notes         String?
   createdAt     DateTime       @default(now())
@@ -684,6 +685,9 @@ model PurchaseItem {
   quantityMode  String
   quantity      Decimal   @db.Decimal(18, 4)
   unitPrice     Decimal   @db.Decimal(18, 4)
+  vatRate       Decimal   @default(0) @db.Decimal(5, 2)
+  vatAmount     Decimal   @default(0) @db.Decimal(18, 2)
+  netAmount     Decimal   @default(0) @db.Decimal(18, 2)
   baseQuantity  Decimal   @db.Decimal(18, 4)
   baseUnit      String
   lineTotal     Decimal   @db.Decimal(18, 2)

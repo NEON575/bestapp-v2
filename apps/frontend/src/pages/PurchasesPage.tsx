@@ -1,39 +1,48 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Input } from '@bestapp/ui';
 import { CheckCircle2, Eye, Package2, PencilLine, Plus, Trash2, XCircle } from 'lucide-react';
-import type { CreatePurchaseDto, Purchase, PurchaseCurrencyCode, PurchaseItem, PurchaseQuantityMode, PurchaseStatus, UpdatePurchaseDto } from '@bestapp/shared';
+import type {
+  CreatePurchaseDto,
+  Purchase,
+  PurchaseItem,
+  PurchaseQuantityMode,
+  PurchaseStatus,
+  UpdatePurchaseDto
+} from '@bestapp/shared';
 import { materialsClient } from '../shared/api/materials';
 import { purchasesClient } from '../shared/api/purchases';
 import { ErrorState, EmptyState, LoadingState, PageHeader, Pagination } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 import type { MaterialListItem } from '../shared/materials';
 
-type PurchaseLineDraft = {
+type LineDraft = {
   materialId: string;
   quantityMode: PurchaseQuantityMode;
   quantity: string;
   unitPrice: string;
+  vatRate: '0' | '18';
   notes: string;
 };
 
-type PurchaseFormState = {
+type FormState = {
   purchaseDate: string;
   supplierName: string;
-  invoiceNo: string;
-  currencyCode: PurchaseCurrencyCode;
-  exchangeRate: string;
   notes: string;
   status: PurchaseStatus;
-  items: PurchaseLineDraft[];
+  items: LineDraft[];
 };
 
 type Mode = 'create' | 'edit' | 'view';
 
-const CURRENCY_OPTIONS: PurchaseCurrencyCode[] = ['AZN', 'USD', 'EUR', 'TRY'];
 const QUANTITY_MODE_OPTIONS: Array<{ value: PurchaseQuantityMode; label: string }> = [
   { value: 'base', label: 'Əsas vahid' },
   { value: 'package', label: 'Qablaşdırma' },
   { value: 'pallet', label: 'Palet' }
+];
+
+const VAT_OPTIONS: Array<{ value: '0' | '18'; label: string }> = [
+  { value: '0', label: 'ƏDV-siz' },
+  { value: '18', label: 'ƏDV-li 18%' }
 ];
 
 function toDateInput(value?: string | null) {
@@ -64,7 +73,7 @@ function formatInteger(value: number | null | undefined) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value).replace(/,/g, ' ');
 }
 
-function formatCurrency(value: number, currencyCode: PurchaseCurrencyCode) {
+function formatCurrency(value: number, currencyCode = 'AZN') {
   return new Intl.NumberFormat('az-AZ', {
     style: 'currency',
     currency: currencyCode,
@@ -72,26 +81,24 @@ function formatCurrency(value: number, currencyCode: PurchaseCurrencyCode) {
   }).format(value);
 }
 
-function emptyLine(materialId = ''): PurchaseLineDraft {
+function emptyLine(): LineDraft {
   return {
-    materialId,
+    materialId: '',
     quantityMode: 'base',
     quantity: '',
     unitPrice: '',
+    vatRate: '0',
     notes: ''
   };
 }
 
-function emptyFormState(materialId = ''): PurchaseFormState {
+function emptyFormState(): FormState {
   return {
     purchaseDate: toDateInput(),
     supplierName: '',
-    invoiceNo: '',
-    currencyCode: 'AZN',
-    exchangeRate: '1',
     notes: '',
     status: 'draft',
-    items: [emptyLine(materialId)]
+    items: []
   };
 }
 
@@ -99,55 +106,48 @@ function materialBaseUnit(material?: MaterialListItem | null) {
   return material?.stockUnit || material?.unit || '—';
 }
 
-function getModeOptions(material?: MaterialListItem | null) {
-  return QUANTITY_MODE_OPTIONS.map((option) => ({
-    ...option,
-    disabled:
-      option.value === 'package'
-        ? material?.defaultUnitsPerPackage == null
-        : option.value === 'pallet'
-          ? material?.defaultUnitsPerPallet == null
-          : false
-  }));
-}
-
-function calculateLine(material: MaterialListItem | null | undefined, line: PurchaseLineDraft) {
+function calculateLine(material: MaterialListItem | null | undefined, line: LineDraft) {
   const quantity = toNumber(line.quantity);
   const unitPrice = toNumber(line.unitPrice);
-  const baseUnit = materialBaseUnit(material);
+  const vatRate = toNumber(line.vatRate);
 
-  if (!material || !line.materialId || quantity <= 0) {
-    return { baseQuantity: null, lineTotal: null, baseUnit };
+  let baseQuantity = null as number | null;
+
+  if (material && quantity > 0) {
+    if (line.quantityMode === 'base') {
+      baseQuantity = quantity;
+    } else if (line.quantityMode === 'package' && material.defaultUnitsPerPackage != null) {
+      baseQuantity = quantity * material.defaultUnitsPerPackage;
+    } else if (line.quantityMode === 'pallet' && material.defaultUnitsPerPallet != null) {
+      baseQuantity = quantity * material.defaultUnitsPerPallet;
+    }
   }
 
-  let baseQuantity: number | null = null;
-
-  if (line.quantityMode === 'base') {
-    baseQuantity = quantity;
-  } else if (line.quantityMode === 'package' && material.defaultUnitsPerPackage != null) {
-    baseQuantity = quantity * material.defaultUnitsPerPackage;
-  } else if (line.quantityMode === 'pallet' && material.defaultUnitsPerPallet != null) {
-    baseQuantity = quantity * material.defaultUnitsPerPallet;
-  }
+  const netAmount = quantity > 0 ? quantity * unitPrice : 0;
+  const vatAmount = netAmount * (vatRate / 100);
+  const lineTotal = netAmount + vatAmount;
 
   return {
     baseQuantity,
-    lineTotal: quantity * unitPrice,
-    baseUnit
+    vatAmount,
+    netAmount,
+    lineTotal,
+    baseUnit: materialBaseUnit(material)
   };
 }
 
-function toLineDraft(item: PurchaseItem): PurchaseLineDraft {
+function toLineDraft(item: PurchaseItem): LineDraft {
   return {
     materialId: item.materialId,
     quantityMode: item.quantityMode,
     quantity: String(item.quantity),
     unitPrice: String(item.unitPrice),
+    vatRate: String(item.vatRate) === '18' ? '18' : '0',
     notes: item.notes ?? ''
   };
 }
 
-function toFormState(purchase?: Purchase | null): PurchaseFormState {
+function toFormState(purchase?: Purchase | null): FormState {
   if (!purchase) {
     return emptyFormState();
   }
@@ -155,61 +155,57 @@ function toFormState(purchase?: Purchase | null): PurchaseFormState {
   return {
     purchaseDate: toDateInput(purchase.purchaseDate),
     supplierName: purchase.supplierName,
-    invoiceNo: purchase.invoiceNo ?? '',
-    currencyCode: purchase.currencyCode,
-    exchangeRate: String(purchase.exchangeRate ?? 1),
     notes: purchase.notes ?? '',
     status: purchase.status,
-    items: purchase.items.length > 0 ? purchase.items.map(toLineDraft) : [emptyLine()]
+    items: purchase.items.map(toLineDraft)
   };
 }
 
-function buildPayload(form: PurchaseFormState, materials: MaterialListItem[]): CreatePurchaseDto {
+function buildPayload(form: FormState, materials: MaterialListItem[]): CreatePurchaseDto {
   const materialMap = new Map(materials.map((material) => [material.id, material]));
+
+  const items = form.items.map((line) => {
+    const material = materialMap.get(line.materialId);
+    if (!material) {
+      throw new Error('Material seçin');
+    }
+
+    const quantity = toNumber(line.quantity);
+    const unitPrice = toNumber(line.unitPrice);
+    const vatRate = line.vatRate === '18' ? 18 : 0;
+
+    if (quantity <= 0) {
+      throw new Error('Miqdar 0-dan böyük olmalıdır');
+    }
+
+    if (unitPrice < 0) {
+      throw new Error('Vahid qiymət 0 və ya daha böyük olmalıdır');
+    }
+
+    if (line.quantityMode === 'package' && material.defaultUnitsPerPackage == null) {
+      throw new Error('Seçilmiş material üçün qablaşdırma məlumatı yoxdur');
+    }
+
+    if (line.quantityMode === 'pallet' && material.defaultUnitsPerPallet == null) {
+      throw new Error('Seçilmiş material üçün palet məlumatı yoxdur');
+    }
+
+    return {
+      materialId: line.materialId,
+      quantityMode: line.quantityMode,
+      quantity,
+      unitPrice,
+      vatRate,
+      notes: line.notes.trim() || undefined
+    };
+  });
 
   return {
     purchaseDate: form.purchaseDate ? new Date(`${form.purchaseDate}T00:00:00`).toISOString() : undefined,
     supplierName: form.supplierName.trim(),
-    invoiceNo: form.invoiceNo.trim() || undefined,
-    currencyCode: form.currencyCode,
-    exchangeRate: toNumber(form.exchangeRate) || 1,
     notes: form.notes.trim() || undefined,
     status: form.status,
-    items: form.items
-      .filter((item) => item.materialId.trim())
-      .map((item) => {
-        const material = materialMap.get(item.materialId);
-        const quantity = toNumber(item.quantity);
-        const unitPrice = toNumber(item.unitPrice);
-
-        if (!material) {
-          throw new Error('Material seçin');
-        }
-
-        if (quantity <= 0) {
-          throw new Error('Miqdar 0-dan böyük olmalıdır');
-        }
-
-        if (unitPrice < 0) {
-          throw new Error('Vahid qiymət 0 və ya daha böyük olmalıdır');
-        }
-
-        if (item.quantityMode === 'package' && material.defaultUnitsPerPackage == null) {
-          throw new Error('Seçilmiş material üçün qablaşdırma məlumatı yoxdur');
-        }
-
-        if (item.quantityMode === 'pallet' && material.defaultUnitsPerPallet == null) {
-          throw new Error('Seçilmiş material üçün palet məlumatı yoxdur');
-        }
-
-        return {
-          materialId: item.materialId,
-          quantityMode: item.quantityMode,
-          quantity,
-          unitPrice,
-          notes: item.notes.trim() || undefined
-        };
-      })
+    items
   };
 }
 
@@ -284,13 +280,17 @@ export function PurchasesPage() {
   const [mode, setMode] = useState<Mode>('create');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formState, setFormState] = useState<PurchaseFormState>(emptyFormState());
+  const [formState, setFormState] = useState<FormState>(emptyFormState());
+  const [lineDraft, setLineDraft] = useState<LineDraft>(emptyLine());
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
 
   const selectedMaterials = useMemo(() => materials, [materials]);
-  const editingPurchase = useMemo(
-    () => purchases.find((purchase) => purchase.id === editingId) ?? null,
-    [editingId, purchases]
+  const editingPurchase = useMemo(() => purchases.find((purchase) => purchase.id === editingId) ?? null, [editingId, purchases]);
+  const selectedMaterial = useMemo(
+    () => selectedMaterials.find((material) => material.id === lineDraft.materialId) ?? null,
+    [lineDraft.materialId, selectedMaterials]
   );
+  const linePreview = useMemo(() => calculateLine(selectedMaterial, lineDraft), [selectedMaterial, lineDraft]);
 
   const loadData = async (nextPage = page, nextLimit = limit, nextSearch = search, nextStatus = status) => {
     setLoading(true);
@@ -306,7 +306,8 @@ export function PurchasesPage() {
         }),
         materialsClient.list({
           page: 1,
-          limit: 200
+          limit: 200,
+          status: 'active'
         })
       ]);
 
@@ -337,6 +338,8 @@ export function PurchasesPage() {
     setMode('create');
     setEditingId(null);
     setFormState(emptyFormState());
+    setLineDraft(emptyLine());
+    setEditingLineIndex(null);
     setModalOpen(true);
   };
 
@@ -344,6 +347,8 @@ export function PurchasesPage() {
     setMode('view');
     setEditingId(purchase.id);
     setFormState(toFormState(purchase));
+    setLineDraft(emptyLine());
+    setEditingLineIndex(null);
     setModalOpen(true);
   };
 
@@ -351,6 +356,8 @@ export function PurchasesPage() {
     setMode('edit');
     setEditingId(purchase.id);
     setFormState(toFormState(purchase));
+    setLineDraft(emptyLine());
+    setEditingLineIndex(null);
     setModalOpen(true);
   };
 
@@ -358,20 +365,8 @@ export function PurchasesPage() {
     setModalOpen(false);
     setEditingId(null);
     setFormState(emptyFormState());
-  };
-
-  const addLine = () => {
-    setFormState((current) => ({
-      ...current,
-      items: [...current.items, emptyLine()]
-    }));
-  };
-
-  const removeLine = (index: number) => {
-    setFormState((current) => ({
-      ...current,
-      items: current.items.length > 1 ? current.items.filter((_, currentIndex) => currentIndex !== index) : current.items
-    }));
+    setLineDraft(emptyLine());
+    setEditingLineIndex(null);
   };
 
   const savePurchase = async () => {
@@ -380,8 +375,8 @@ export function PurchasesPage() {
       return;
     }
 
-    if (formState.items.every((item) => !item.materialId.trim())) {
-      toast.warning('Ən azı 1 material seçin');
+    if (formState.items.length === 0) {
+      toast.warning('Ən azı 1 material əlavə edin');
       return;
     }
 
@@ -406,6 +401,75 @@ export function PurchasesPage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const addOrUpdateLine = () => {
+    try {
+      const material = selectedMaterials.find((item) => item.id === lineDraft.materialId) ?? null;
+      if (!material) {
+        toast.warning('Material seçin');
+        return;
+      }
+
+      const quantity = toNumber(lineDraft.quantity);
+      const unitPrice = toNumber(lineDraft.unitPrice);
+
+      if (quantity <= 0) {
+        toast.warning('Miqdar 0-dan böyük olmalıdır');
+        return;
+      }
+
+      if (unitPrice < 0) {
+        toast.warning('Vahid qiymət 0 və ya daha böyük olmalıdır');
+        return;
+      }
+
+      if (lineDraft.quantityMode === 'package' && material.defaultUnitsPerPackage == null) {
+        toast.warning('Bu material üçün qablaşdırma məlumatı yoxdur');
+        return;
+      }
+
+      if (lineDraft.quantityMode === 'pallet' && material.defaultUnitsPerPallet == null) {
+        toast.warning('Bu material üçün palet məlumatı yoxdur');
+        return;
+      }
+
+      setFormState((current) => {
+        const nextItems = [...current.items];
+
+        if (editingLineIndex != null && nextItems[editingLineIndex]) {
+          nextItems[editingLineIndex] = lineDraft;
+        } else {
+          nextItems.push(lineDraft);
+        }
+
+        return { ...current, items: nextItems };
+      });
+
+      setLineDraft(emptyLine());
+      setEditingLineIndex(null);
+    } catch (error_) {
+      toast.error('Sətir əlavə olunmadı', error_ instanceof Error ? error_.message : 'Xəta baş verdi');
+    }
+  };
+
+  const editLine = (index: number) => {
+    const row = formState.items[index];
+    if (!row) return;
+    setLineDraft(row);
+    setEditingLineIndex(index);
+  };
+
+  const deleteLine = (index: number) => {
+    setFormState((current) => ({
+      ...current,
+      items: current.items.filter((_, currentIndex) => currentIndex !== index)
+    }));
+
+    if (editingLineIndex === index) {
+      setLineDraft(emptyLine());
+      setEditingLineIndex(null);
     }
   };
 
@@ -445,6 +509,19 @@ export function PurchasesPage() {
 
   const currentPurchase = editingPurchase ?? (editingId ? purchases.find((purchase) => purchase.id === editingId) ?? null : null);
   const modalReadOnly = mode === 'view' || (mode === 'edit' && currentPurchase?.status !== 'draft');
+
+  const purchaseSubtotal = formState.items.reduce((sum, line) => {
+    const material = selectedMaterials.find((item) => item.id === line.materialId) ?? null;
+    return sum + calculateLine(material, line).netAmount;
+  }, 0);
+
+  const purchaseVatTotal = formState.items.reduce((sum, line) => {
+    const material = selectedMaterials.find((item) => item.id === line.materialId) ?? null;
+    return sum + calculateLine(material, line).vatAmount;
+  }, 0);
+
+  const purchaseTotal = purchaseSubtotal + purchaseVatTotal;
+
   const footer = (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="text-sm text-slate-500">
@@ -452,7 +529,7 @@ export function PurchasesPage() {
           ? 'Yalnız baxış rejimi'
           : modalReadOnly
             ? 'Təsdiqlənmiş alış redaktə edilə bilməz'
-            : 'Dəyişiklikləri yadda saxlayın'}
+            : 'Materialı seçin, məlumatı doldurun və “Əlavə et” basın.'}
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={closeModal} disabled={saving}>
@@ -471,7 +548,7 @@ export function PurchasesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Alış"
-        description="Materiallar üçün alış sənədlərini burada yaradın, təsdiqləyin və izləyin."
+        description="Alış qaimələri burada yaradılır, təsdiqlənir və izlənir."
         actions={
           <Button onClick={openCreate}>
             <span className="inline-flex items-center gap-2">
@@ -491,7 +568,7 @@ export function PurchasesPage() {
               setPage(1);
               setSearch(event.target.value);
             }}
-            placeholder="Alış №, təchizatçı və ya faktura №"
+            placeholder="Alış №, faktura № və ya təchizatçı"
           />
         </label>
         <label className="block space-y-2">
@@ -531,7 +608,7 @@ export function PurchasesPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
-                    {['Alış №', 'Tarix', 'Təchizatçı', 'Faktura №', 'Status', 'Cəmi', 'Əməliyyatlar'].map((header) => (
+                    {['Alış №', 'Faktura №', 'Tarix', 'Təchizatçı', 'Status', 'Ara cəm', 'ƏDV', 'Yekun', 'Əməliyyatlar'].map((header) => (
                       <th
                         key={header}
                         className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
@@ -545,12 +622,14 @@ export function PurchasesPage() {
                   {purchases.map((purchase) => (
                     <tr key={purchase.id} className="border-b border-slate-100 last:border-b-0">
                       <td className="px-4 py-3 font-medium text-slate-950">{purchase.purchaseNo}</td>
+                      <td className="px-4 py-3">{purchase.invoiceNo}</td>
                       <td className="px-4 py-3">{toDateInput(purchase.purchaseDate)}</td>
                       <td className="px-4 py-3">{purchase.supplierName}</td>
-                      <td className="px-4 py-3">{purchase.invoiceNo || '—'}</td>
                       <td className="px-4 py-3">
                         <Badge status={purchase.status} />
                       </td>
+                      <td className="px-4 py-3">{formatCurrency(purchase.subtotal, purchase.currencyCode)}</td>
+                      <td className="px-4 py-3">{formatCurrency(purchase.vatTotal, purchase.currencyCode)}</td>
                       <td className="px-4 py-3">{formatCurrency(purchase.total, purchase.currencyCode)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
@@ -623,12 +702,12 @@ export function PurchasesPage() {
       {modalOpen ? (
         <ModalShell
           title={mode === 'create' ? 'Yeni alış' : mode === 'edit' ? 'Alışı redaktə et' : 'Alış məlumatı'}
-          description="Başlıq məlumatları və material sətirlərini burada daxil edin."
+          description="Tarix, təchizatçı və material sətirlərini burada daxil edin."
           onClose={closeModal}
           footer={footer}
         >
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Tarix</span>
                 <Input
@@ -649,44 +728,20 @@ export function PurchasesPage() {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Faktura №</span>
-                <Input
-                  value={formState.invoiceNo}
-                  onChange={(event) => setFormState((current) => ({ ...current, invoiceNo: event.target.value }))}
-                  disabled={modalReadOnly}
-                />
-              </label>
-
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Valyuta</span>
+                <span className="text-sm font-medium text-slate-700">Status</span>
                 <select
-                  value={formState.currencyCode}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, currencyCode: event.target.value as PurchaseCurrencyCode }))
-                  }
+                  value={formState.status}
+                  onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as PurchaseStatus }))}
                   disabled={modalReadOnly}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
                 >
-                  {CURRENCY_OPTIONS.map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency}
-                    </option>
-                  ))}
+                  <option value="draft">Qaralama</option>
+                  <option value="confirmed">Təsdiqlənib</option>
+                  <option value="cancelled">Ləğv edilib</option>
                 </select>
               </label>
 
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Məzənnə</span>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  value={formState.exchangeRate}
-                  onChange={(event) => setFormState((current) => ({ ...current, exchangeRate: event.target.value }))}
-                  disabled={modalReadOnly}
-                />
-              </label>
-
-              <label className="block space-y-2 md:col-span-2">
+              <label className="block space-y-2 md:col-span-3">
                 <span className="text-sm font-medium text-slate-700">Qeyd</span>
                 <textarea
                   rows={3}
@@ -699,210 +754,213 @@ export function PurchasesPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-slate-700">Alış sətirləri</div>
-                  <div className="mt-1 text-sm text-slate-500">Materialı seçin və miqdar tipinə görə hesablamanı aparın.</div>
-                </div>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <label className="block flex-1 space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Material seçimi</span>
+                  <select
+                    value={lineDraft.materialId}
+                    onChange={(event) => setLineDraft((current) => ({ ...current, materialId: event.target.value }))}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    <option value="">Material seçin</option>
+                    {selectedMaterials.map((material) => (
+                      <option key={material.id} value={material.id}>
+                        {material.materialNo} · {material.name}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedMaterial ? (
+                    <div className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600">
+                      <div>Əsas vahid: {materialBaseUnit(selectedMaterial)}</div>
+                      <div>
+                        1 bağlama:{' '}
+                        {selectedMaterial.defaultUnitsPerPackage != null
+                          ? `${formatInteger(selectedMaterial.defaultUnitsPerPackage)} ${materialBaseUnit(selectedMaterial)}`
+                          : '—'}
+                      </div>
+                      <div>
+                        1 palet:{' '}
+                        {selectedMaterial.defaultUnitsPerPallet != null
+                          ? `${formatInteger(selectedMaterial.defaultUnitsPerPallet)} ${materialBaseUnit(selectedMaterial)}`
+                          : '—'}
+                      </div>
+                    </div>
+                  ) : null}
+                </label>
+
+                <label className="block w-full space-y-2 lg:w-40">
+                  <span className="text-sm font-medium text-slate-700">Miqdar tipi</span>
+                  <select
+                    value={lineDraft.quantityMode}
+                    onChange={(event) =>
+                      setLineDraft((current) => ({ ...current, quantityMode: event.target.value as PurchaseQuantityMode }))
+                    }
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    {QUANTITY_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block w-full space-y-2 lg:w-36">
+                  <span className="text-sm font-medium text-slate-700">Miqdar</span>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    value={lineDraft.quantity}
+                    onChange={(event) => setLineDraft((current) => ({ ...current, quantity: event.target.value }))}
+                    disabled={modalReadOnly}
+                  />
+                </label>
+
+                <label className="block w-full space-y-2 lg:w-40">
+                  <span className="text-sm font-medium text-slate-700">Vahid qiymət</span>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    value={lineDraft.unitPrice}
+                    onChange={(event) => setLineDraft((current) => ({ ...current, unitPrice: event.target.value }))}
+                    disabled={modalReadOnly}
+                  />
+                </label>
+
+                <label className="block w-full space-y-2 lg:w-40">
+                  <span className="text-sm font-medium text-slate-700">ƏDV</span>
+                  <select
+                    value={lineDraft.vatRate}
+                    onChange={(event) => setLineDraft((current) => ({ ...current, vatRate: event.target.value as '0' | '18' }))}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    {VAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 {!modalReadOnly ? (
-                  <Button variant="secondary" className="h-9 px-3" onClick={addLine}>
-                    <span className="inline-flex items-center gap-2">
-                      <Plus className="h-4 w-4" />
-                      Sətir əlavə et
-                    </span>
+                  <Button className="h-11 px-4" onClick={addOrUpdateLine}>
+                    {editingLineIndex != null ? 'Yenilə' : 'Əlavə et'}
                   </Button>
                 ) : null}
               </div>
 
-              <div className="mt-4 space-y-4">
-                {formState.items.map((line, index) => {
-                  const material = selectedMaterials.find((item) => item.id === line.materialId) ?? null;
-                  const calculated = calculateLine(material, line);
-                  const modeOptions = getModeOptions(material);
-                  return (
-                    <div key={`${index}-${line.materialId || 'new'}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="grid gap-4 lg:grid-cols-6">
-                        <label className="block space-y-2 lg:col-span-2">
-                          <span className="text-sm font-medium text-slate-700">Material</span>
-                          <select
-                            value={line.materialId}
-                            onChange={(event) => {
-                              const materialId = event.target.value;
-                              const material = selectedMaterials.find((item) => item.id === materialId) ?? null;
-                              setFormState((current) => {
-                                const nextItems = [...current.items];
-                                const currentLine = nextItems[index];
-                                const allowedMode =
-                                  currentLine.quantityMode === 'package' && material?.defaultUnitsPerPackage == null
-                                    ? 'base'
-                                    : currentLine.quantityMode === 'pallet' && material?.defaultUnitsPerPallet == null
-                                      ? 'base'
-                                      : currentLine.quantityMode;
-                                nextItems[index] = {
-                                  ...currentLine,
-                                  materialId,
-                                  quantityMode: allowedMode
-                                };
-                                return { ...current, items: nextItems };
-                              });
-                            }}
-                            disabled={modalReadOnly}
-                            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
-                          >
-                            <option value="">Material seçin</option>
-                            {selectedMaterials.map((materialItem) => (
-                              <option key={materialItem.id} value={materialItem.id}>
-                                {materialItem.materialNo} · {materialItem.name}
-                                {!materialItem.isActive ? ' (deaktiv)' : ''}
-                              </option>
-                            ))}
-                          </select>
-                          {material ? (
-                            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                              <div>Əsas vahid: {materialBaseUnit(material)}</div>
-                              <div>
-                                1 {material.packageUnit || '—'}:{' '}
-                                {material.defaultUnitsPerPackage != null ? `${formatInteger(material.defaultUnitsPerPackage)} ${materialBaseUnit(material)}` : '—'}
-                              </div>
-                              <div>
-                                1 {material.palletUnit || '—'}:{' '}
-                                {material.defaultUnitsPerPallet != null ? `${formatInteger(material.defaultUnitsPerPallet)} ${materialBaseUnit(material)}` : '—'}
-                              </div>
-                            </div>
-                          ) : null}
-                        </label>
-
-                        <label className="block space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Miqdar tipi</span>
-                          <select
-                            value={line.quantityMode}
-                            onChange={(event) =>
-                              setFormState((current) => {
-                                const nextItems = [...current.items];
-                                nextItems[index] = { ...nextItems[index], quantityMode: event.target.value as PurchaseQuantityMode };
-                                return { ...current, items: nextItems };
-                              })
-                            }
-                            disabled={modalReadOnly}
-                            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
-                          >
-                            {modeOptions.map((option) => (
-                              <option key={option.value} value={option.value} disabled={option.disabled}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Miqdar</span>
-                          <Input
-                            type="number"
-                            step="0.0001"
-                            value={line.quantity}
-                            onChange={(event) =>
-                              setFormState((current) => {
-                                const nextItems = [...current.items];
-                                nextItems[index] = { ...nextItems[index], quantity: event.target.value };
-                                return { ...current, items: nextItems };
-                              })
-                            }
-                            disabled={modalReadOnly}
-                          />
-                        </label>
-
-                        <label className="block space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Vahid qiymət</span>
-                          <Input
-                            type="number"
-                            step="0.0001"
-                            value={line.unitPrice}
-                            onChange={(event) =>
-                              setFormState((current) => {
-                                const nextItems = [...current.items];
-                                nextItems[index] = { ...nextItems[index], unitPrice: event.target.value };
-                                return { ...current, items: nextItems };
-                              })
-                            }
-                            disabled={modalReadOnly}
-                          />
-                        </label>
-
-                        <div className="space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Əsas miqdar</span>
-                          <div className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                            {calculated.baseQuantity != null ? `${formatInteger(calculated.baseQuantity)} ${calculated.baseUnit}` : '—'}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Cəmi</span>
-                          <div className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                            {calculated.lineTotal != null ? formatCurrency(calculated.lineTotal, formState.currencyCode) : '—'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end">
-                        <label className="block flex-1 space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Qeyd</span>
-                          <Input
-                            value={line.notes}
-                            onChange={(event) =>
-                              setFormState((current) => {
-                                const nextItems = [...current.items];
-                                nextItems[index] = { ...nextItems[index], notes: event.target.value };
-                                return { ...current, items: nextItems };
-                              })
-                            }
-                            disabled={modalReadOnly}
-                          />
-                        </label>
-
-                        {!modalReadOnly ? (
-                          <Button
-                            variant="ghost"
-                            className="h-11 px-4 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                            onClick={() => removeLine(index)}
-                            disabled={formState.items.length <= 1}
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              <Trash2 className="h-4 w-4" />
-                              Sətiri sil
-                            </span>
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <div className="text-xs text-slate-500">Əsas miqdar</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">
+                    {linePreview.baseQuantity != null
+                      ? `${formatInteger(linePreview.baseQuantity)} ${materialBaseUnit(selectedMaterial)}`
+                      : '—'}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <div className="text-xs text-slate-500">ƏDV məbləği</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{formatCurrency(linePreview.vatAmount, 'AZN')}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <div className="text-xs text-slate-500">Sətir cəmi</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{formatCurrency(linePreview.lineTotal, 'AZN')}</div>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div>
-                  <div className="text-sm text-slate-500">Sətir sayı</div>
-                  <div className="text-lg font-semibold text-slate-950">{formState.items.filter((item) => item.materialId).length}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-500">Cəmi məbləğ</div>
-                  <div className="text-lg font-semibold text-slate-950">
-                    {formatCurrency(
-                      formState.items.reduce((sum, item) => {
-                        const material = selectedMaterials.find((candidate) => candidate.id === item.materialId) ?? null;
-                        const line = calculateLine(material, item);
-                        return sum + (line.lineTotal ?? 0);
-                      }, 0),
-                      formState.currencyCode
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      {['№', 'Material', 'Miqdar tipi', 'Miqdar', 'Əsas miqdar', 'Vahid qiymət', 'ƏDV', 'ƏDV məbləği', 'Cəmi', 'Sil'].map(
+                        (header) => (
+                          <th
+                            key={header}
+                            className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
+                          >
+                            {header}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formState.items.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-6 text-center text-slate-500" colSpan={10}>
+                          Hələ material əlavə edilməyib
+                        </td>
+                      </tr>
+                    ) : (
+                      formState.items.map((line, index) => {
+                        const material = selectedMaterials.find((item) => item.id === line.materialId) ?? null;
+                        const lineResult = calculateLine(material, line);
+
+                        return (
+                          <tr
+                            key={`${index}-${line.materialId || 'draft'}`}
+                            className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
+                          >
+                            <td className="px-4 py-3 font-medium text-slate-950">{index + 1}</td>
+                            <td className="px-4 py-3">
+                              <button type="button" className="text-left text-slate-950 hover:underline" onClick={() => editLine(index)}>
+                                {material ? `${material.materialNo} · ${material.name}` : '—'}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">{line.quantityMode === 'base' ? 'Əsas vahid' : line.quantityMode === 'package' ? 'Qablaşdırma' : 'Palet'}</td>
+                            <td className="px-4 py-3">{formatNumber(toNumber(line.quantity), 4)}</td>
+                            <td className="px-4 py-3">
+                              {lineResult.baseQuantity != null ? `${formatInteger(lineResult.baseQuantity)} ${materialBaseUnit(material)}` : '—'}
+                            </td>
+                            <td className="px-4 py-3">{formatCurrency(toNumber(line.unitPrice), 'AZN')}</td>
+                            <td className="px-4 py-3">{line.vatRate === '18' ? 'ƏDV-li 18%' : 'ƏDV-siz'}</td>
+                            <td className="px-4 py-3">{formatCurrency(lineResult.vatAmount, 'AZN')}</td>
+                            <td className="px-4 py-3">{formatCurrency(lineResult.lineTotal, 'AZN')}</td>
+                            <td className="px-4 py-3">
+                              <Button
+                                variant="ghost"
+                                className="h-9 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                onClick={() => deleteLine(index)}
+                                disabled={modalReadOnly}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Trash2 className="h-4 w-4" />
+                                  Sil
+                                </span>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-500">Məzənnə</div>
-                  <div className="text-lg font-semibold text-slate-950">{formatNumber(toNumber(formState.exchangeRate), 4)}</div>
-                </div>
+                  </tbody>
+                </table>
               </div>
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+              <div>
+                <div className="text-sm text-slate-500">Ara cəm</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(purchaseSubtotal, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">ƏDV cəmi</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(purchaseVatTotal, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Yekun məbləğ</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(purchaseTotal, 'AZN')}</div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600 md:grid-cols-2">
+              <div>Alış №: avtomatik</div>
+              <div>Faktura №: avtomatik</div>
             </div>
           </div>
         </ModalShell>

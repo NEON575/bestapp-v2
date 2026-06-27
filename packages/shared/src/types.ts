@@ -247,6 +247,9 @@ export interface PurchaseItem {
   quantityMode: PurchaseQuantityMode;
   quantity: number;
   unitPrice: number;
+  vatRate: number;
+  vatAmount: number;
+  netAmount: number;
   baseQuantity: number;
   baseUnit: string;
   lineTotal: number;
@@ -266,6 +269,7 @@ export interface Purchase {
   exchangeRate: number;
   status: PurchaseStatus;
   subtotal: number;
+  vatTotal: number;
   total: number;
   notes?: string | null;
   createdAt: string;

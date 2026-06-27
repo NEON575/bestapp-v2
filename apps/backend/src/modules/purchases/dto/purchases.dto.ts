@@ -60,6 +60,19 @@ export class CreatePurchaseItemDto {
   @Min(0)
   unitPrice!: number;
 
+  @ApiPropertyOptional({ example: 0, description: '0 for VAT-free, 18 for VAT-inclusive items' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  vatRate?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isVatIncluded?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -77,12 +90,6 @@ export class CreatePurchaseDto {
   @IsString()
   @Length(1, 255)
   supplierName!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 120)
-  invoiceNo?: string;
 
   @ApiPropertyOptional({ enum: PURCHASE_CURRENCY_VALUES, default: 'AZN' })
   @IsOptional()

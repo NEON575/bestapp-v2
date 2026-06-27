@@ -27,6 +27,9 @@ type PurchaseItemResponse = {
   quantityMode: PurchaseQuantityMode;
   quantity: number;
   unitPrice: number;
+  vatRate: number;
+  vatAmount: number;
+  netAmount: number;
   baseQuantity: number;
   baseUnit: string;
   lineTotal: number;
@@ -39,13 +42,14 @@ type PurchaseItemResponse = {
 type PurchaseResponse = {
   id: string;
   purchaseNo: string;
+  invoiceNo: string;
   purchaseDate: string;
   supplierName: string;
-  invoiceNo?: string | null;
   currencyCode: PurchaseCurrencyCode;
   exchangeRate: number;
   status: PurchaseStatus;
   subtotal: number;
+  vatTotal: number;
   total: number;
   notes?: string | null;
   createdAt: string;
@@ -55,9 +59,11 @@ type PurchaseResponse = {
 
 type PurchaseItemInput = {
   materialId: string;
-  quantityMode: 'base' | 'package' | 'pallet';
+  quantityMode: PurchaseQuantityMode;
   quantity: number;
   unitPrice: number;
+  vatRate?: number;
+  isVatIncluded?: boolean;
   notes?: string | null;
 };
 
@@ -105,6 +111,9 @@ function mapPurchaseItem(item: PrismaPurchaseItem & { material?: Material | null
     quantityMode: item.quantityMode as PurchaseQuantityMode,
     quantity: toNumber(item.quantity),
     unitPrice: toNumber(item.unitPrice),
+    vatRate: toNumber(item.vatRate),
+    vatAmount: toNumber(item.vatAmount),
+    netAmount: toNumber(item.netAmount),
     baseQuantity: toNumber(item.baseQuantity),
     baseUnit: item.baseUnit,
     lineTotal: toNumber(item.lineTotal),
@@ -119,13 +128,14 @@ function mapPurchase(purchase: PrismaPurchase & { items?: Array<PrismaPurchaseIt
   return {
     id: purchase.id,
     purchaseNo: purchase.purchaseNo,
+    invoiceNo: purchase.invoiceNo ?? '',
     purchaseDate: purchase.purchaseDate.toISOString(),
     supplierName: purchase.supplierName,
-    invoiceNo: purchase.invoiceNo,
     currencyCode: purchase.currencyCode as PurchaseCurrencyCode,
     exchangeRate: toNumber(purchase.exchangeRate),
     status: purchase.status as PurchaseStatus,
     subtotal: toNumber(purchase.subtotal),
+    vatTotal: toNumber(purchase.vatTotal),
     total: toNumber(purchase.total),
     notes: purchase.notes,
     createdAt: purchase.createdAt.toISOString(),
@@ -134,28 +144,32 @@ function mapPurchase(purchase: PrismaPurchase & { items?: Array<PrismaPurchaseIt
   };
 }
 
-function computeBaseQuantity(
-  material: Material,
-  quantityMode: PurchaseItemInput['quantityMode'],
-  quantity: number
-) {
+function computeBaseQuantity(material: Material, quantityMode: PurchaseQuantityMode, quantity: number) {
   if (quantityMode === 'base') {
     return quantity;
   }
 
   if (quantityMode === 'package') {
     if (material.defaultUnitsPerPackage == null) {
-      throw new BadRequestException(`"${material.name}" materialı üçün qablaşdırma vahidi təyin edilməyib`);
+      throw new BadRequestException(`"${material.name}" materialı üçün qablaşdırma məlumatı yoxdur`);
     }
 
     return quantity * toNumber(material.defaultUnitsPerPackage);
   }
 
   if (material.defaultUnitsPerPallet == null) {
-    throw new BadRequestException(`"${material.name}" materialı üçün palet məlumatı təyin edilməyib`);
+    throw new BadRequestException(`"${material.name}" materialı üçün palet məlumatı yoxdur`);
   }
 
   return quantity * toNumber(material.defaultUnitsPerPallet);
+}
+
+function resolveVatRate(item: PurchaseItemInput) {
+  if (item.vatRate != null && Number.isFinite(Number(item.vatRate))) {
+    return Number(item.vatRate) > 0 ? Number(item.vatRate) : 0;
+  }
+
+  return item.isVatIncluded ? 18 : 0;
 }
 
 @Injectable()
@@ -178,6 +192,28 @@ export class PurchasesService {
     const nextValue = sequence.currentValue + sequence.step;
     await tx.numberSequence.update({
       where: { key: 'purchase' },
+      data: { currentValue: nextValue }
+    });
+
+    return `${sequence.prefix}${String(nextValue).padStart(sequence.padding, '0')}`;
+  }
+
+  private async nextInvoiceNo(tx: Prisma.TransactionClient) {
+    const sequence = await tx.numberSequence.upsert({
+      where: { key: 'purchase_invoice' },
+      update: {},
+      create: {
+        key: 'purchase_invoice',
+        prefix: 'F-',
+        currentValue: 0,
+        step: 1,
+        padding: 6
+      }
+    });
+
+    const nextValue = sequence.currentValue + sequence.step;
+    await tx.numberSequence.update({
+      where: { key: 'purchase_invoice' },
       data: { currentValue: nextValue }
     });
 
@@ -220,6 +256,7 @@ export class PurchasesService {
 
       const quantity = Number(item.quantity);
       const unitPrice = Number(item.unitPrice);
+      const vatRate = resolveVatRate(item);
 
       if (!Number.isFinite(quantity) || quantity <= 0) {
         throw new BadRequestException('Miqdar 0-dan böyük olmalıdır');
@@ -230,13 +267,18 @@ export class PurchasesService {
       }
 
       const baseQuantity = computeBaseQuantity(material, item.quantityMode, quantity);
-      const lineTotal = quantity * unitPrice;
+      const netAmount = quantity * unitPrice;
+      const vatAmount = (netAmount * vatRate) / 100;
+      const lineTotal = netAmount + vatAmount;
 
       return {
         materialId: material.id,
         quantityMode: item.quantityMode,
         quantity: toDecimal(quantity),
         unitPrice: toDecimal(unitPrice),
+        vatRate: toDecimal(vatRate),
+        vatAmount: toDecimal(vatAmount),
+        netAmount: toDecimal(netAmount),
         baseQuantity: toDecimal(baseQuantity),
         baseUnit: material.stockUnit || material.unit,
         lineTotal: toDecimal(lineTotal),
@@ -256,8 +298,8 @@ export class PurchasesService {
         ? {
             OR: [
               { purchaseNo: { contains: search, mode: 'insensitive' } },
-              { supplierName: { contains: search, mode: 'insensitive' } },
-              { invoiceNo: { contains: search, mode: 'insensitive' } }
+              { invoiceNo: { contains: search, mode: 'insensitive' } },
+              { supplierName: { contains: search, mode: 'insensitive' } }
             ]
           }
         : {}),
@@ -287,13 +329,12 @@ export class PurchasesService {
   }
 
   async getById(id: string) {
-    const purchase = await this.loadPurchaseOrThrow(id);
-    return mapPurchase(purchase);
+    return mapPurchase(await this.loadPurchaseOrThrow(id));
   }
 
   async create(dto: CreatePurchaseDto) {
     if (!dto.items?.length) {
-      throw new BadRequestException('Ən azı 1 alış sətri olmalıdır');
+      throw new BadRequestException('Ən azı 1 alış sətiri olmalıdır');
     }
 
     const purchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : new Date();
@@ -305,19 +346,24 @@ export class PurchasesService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const purchaseNo = await this.nextPurchaseNo(tx);
+      const invoiceNo = await this.nextInvoiceNo(tx);
       const items = await this.buildPurchaseItems(tx, dto.items as PurchaseItemInput[]);
-      const subtotal = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+      const subtotal = items.reduce((sum, item) => sum + toNumber(item.netAmount), 0);
+      const vatTotal = items.reduce((sum, item) => sum + toNumber(item.vatAmount), 0);
+      const total = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+
       const purchase = await tx.purchase.create({
         data: {
           purchaseNo,
+          invoiceNo,
           purchaseDate,
           supplierName,
-          invoiceNo: sanitizeText(dto.invoiceNo),
           currencyCode: dto.currencyCode ?? 'AZN',
           exchangeRate: toDecimal(dto.exchangeRate ?? 1),
           status: dto.status ?? 'draft',
           subtotal: toDecimal(subtotal),
-          total: toDecimal(subtotal),
+          vatTotal: toDecimal(vatTotal),
+          total: toDecimal(total),
           notes: sanitizeText(dto.notes)
         }
       });
@@ -329,6 +375,9 @@ export class PurchasesService {
           quantityMode: item.quantityMode,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          vatRate: item.vatRate,
+          vatAmount: item.vatAmount,
+          netAmount: item.netAmount,
           baseQuantity: item.baseQuantity,
           baseUnit: item.baseUnit,
           lineTotal: item.lineTotal,
@@ -357,34 +406,39 @@ export class PurchasesService {
     }
 
     if (dto.items && dto.items.length === 0) {
-      throw new BadRequestException('Ən azı 1 alış sətri olmalıdır');
+      throw new BadRequestException('Ən azı 1 alış sətiri olmalıdır');
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updatedPurchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : existing.purchaseDate;
-      const updatedSupplierName = dto.supplierName?.trim() || existing.supplierName;
-      const itemsInput = (dto.items as PurchaseItemInput[] | undefined) ?? existing.items.map((item) => ({
-        materialId: item.materialId,
-        quantityMode: item.quantityMode as PurchaseItemInput['quantityMode'],
-        quantity: toNumber(item.quantity),
-        unitPrice: toNumber(item.unitPrice),
-        notes: item.notes
-      }));
+      const purchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : existing.purchaseDate;
+      const supplierName = dto.supplierName?.trim() || existing.supplierName;
+      const itemsInput =
+        (dto.items as PurchaseItemInput[] | undefined) ??
+        existing.items.map((item) => ({
+          materialId: item.materialId,
+          quantityMode: item.quantityMode as PurchaseQuantityMode,
+          quantity: toNumber(item.quantity),
+          unitPrice: toNumber(item.unitPrice),
+          vatRate: toNumber(item.vatRate),
+          notes: item.notes
+        }));
 
       const items = await this.buildPurchaseItems(tx, itemsInput);
-      const subtotal = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+      const subtotal = items.reduce((sum, item) => sum + toNumber(item.netAmount), 0);
+      const vatTotal = items.reduce((sum, item) => sum + toNumber(item.vatAmount), 0);
+      const total = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
 
       await tx.purchase.update({
         where: { id },
         data: {
-          purchaseDate: updatedPurchaseDate,
-          supplierName: updatedSupplierName,
-          invoiceNo: dto.invoiceNo !== undefined ? sanitizeText(dto.invoiceNo) : existing.invoiceNo,
+          purchaseDate,
+          supplierName,
           currencyCode: dto.currencyCode ?? existing.currencyCode,
           exchangeRate: dto.exchangeRate !== undefined ? toDecimal(dto.exchangeRate) : existing.exchangeRate,
           notes: dto.notes !== undefined ? sanitizeText(dto.notes) : existing.notes,
           subtotal: toDecimal(subtotal),
-          total: toDecimal(subtotal)
+          vatTotal: toDecimal(vatTotal),
+          total: toDecimal(total)
         }
       });
 
@@ -396,6 +450,9 @@ export class PurchasesService {
           quantityMode: item.quantityMode,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          vatRate: item.vatRate,
+          vatAmount: item.vatAmount,
+          netAmount: item.netAmount,
           baseQuantity: item.baseQuantity,
           baseUnit: item.baseUnit,
           lineTotal: item.lineTotal,
