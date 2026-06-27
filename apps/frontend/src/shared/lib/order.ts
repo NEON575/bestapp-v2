@@ -1,4 +1,12 @@
-import { OrderStatus } from '@bestapp/shared';
+const OrderStatus = {
+  DRAFT: 'draft',
+  CALCULATED: 'calculated',
+  APPROVED: 'approved',
+  IN_PRODUCTION: 'in_production',
+  READY: 'ready',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled'
+} as const;
 
 export type OrderWorkflowAction = 'calculatePrice' | 'approve' | 'startProduction' | 'markReady' | 'deliver';
 

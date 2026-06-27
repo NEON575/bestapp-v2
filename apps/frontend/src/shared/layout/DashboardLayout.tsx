@@ -3,7 +3,8 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const navItems = [
   { to: '/materials', label: 'Materiallar', icon: SquareStack },
-  { to: '/material-category-parameters', label: 'Kateqoriya parametrləri', icon: Layers3 }
+  { to: '/material-category-parameters', label: 'Kateqoriya parametrləri', icon: Layers3 },
+  { to: '/purchases', label: 'Alış', icon: Package2 }
 ];
 
 export function DashboardLayout() {
@@ -65,3 +66,4 @@ export function DashboardLayout() {
     </div>
   );
 }
+

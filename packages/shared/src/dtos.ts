@@ -369,6 +369,31 @@ export interface CreatePurchaseEntryDto {
 
 export interface UpdatePurchaseEntryDto extends Partial<CreatePurchaseEntryDto> {}
 
+export interface CreatePurchaseItemDto {
+  materialId: string;
+  quantityMode: 'base' | 'package' | 'pallet';
+  quantity: number;
+  unitPrice: number;
+  notes?: string;
+}
+
+export interface CreatePurchaseDto {
+  purchaseDate?: string;
+  supplierName: string;
+  invoiceNo?: string;
+  currencyCode?: 'AZN' | 'USD' | 'EUR' | 'TRY';
+  exchangeRate?: number;
+  notes?: string;
+  status?: 'draft' | 'confirmed' | 'cancelled';
+  items: CreatePurchaseItemDto[];
+}
+
+export interface UpdatePurchaseDto extends Partial<CreatePurchaseDto> {}
+
+export interface PurchaseListQueryDto extends PaginationQueryDto {
+  status?: 'draft' | 'confirmed' | 'cancelled' | 'all';
+}
+
 export interface PurchaseEntryQueryDto extends PaginationQueryDto {
   supplierId?: string;
   paymentType?: string;

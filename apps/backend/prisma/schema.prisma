@@ -534,6 +534,7 @@ model Material {
   stockReservations StockReservation[]
   stockMovements  StockMovement[]
   purchaseEntries PurchaseEntry[]
+  purchaseItems   PurchaseItem[]
   orderItems      OrderItem[]
 
   @@map("materials")
@@ -653,6 +654,49 @@ model PurchaseEntry {
 
   @@index([date])
   @@map("purchase_entries")
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  purchaseNo    String         @unique
+  purchaseDate   DateTime
+  supplierName   String
+  invoiceNo     String?
+  currencyCode  String         @default("AZN")
+  exchangeRate   Decimal        @default(1) @db.Decimal(18, 4)
+  status        String         @default("draft")
+  subtotal      Decimal        @default(0) @db.Decimal(18, 2)
+  total         Decimal        @default(0) @db.Decimal(18, 2)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  items         PurchaseItem[]
+
+  @@index([purchaseDate])
+  @@index([status])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id            String    @id @default(cuid())
+  purchaseId    String
+  materialId    String
+  quantityMode  String
+  quantity      Decimal   @db.Decimal(18, 4)
+  unitPrice     Decimal   @db.Decimal(18, 4)
+  baseQuantity  Decimal   @db.Decimal(18, 4)
+  baseUnit      String
+  lineTotal     Decimal   @db.Decimal(18, 2)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  purchase      Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  material      Material  @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseId])
+  @@index([materialId])
+  @@map("purchase_items")
 }
 
 model SalaryEntry {

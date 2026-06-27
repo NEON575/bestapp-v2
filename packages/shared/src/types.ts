@@ -223,6 +223,56 @@ export interface PurchaseEntryItem {
   supplier?: SupplierItem | null;
 }
 
+export type PurchaseStatus = 'draft' | 'confirmed' | 'cancelled';
+export type PurchaseQuantityMode = 'base' | 'package' | 'pallet';
+export type PurchaseCurrencyCode = 'AZN' | 'USD' | 'EUR' | 'TRY';
+
+export interface PurchaseMaterialSummary {
+  id: string;
+  materialNo: string;
+  name: string;
+  stockUnit: string;
+  packageUnit?: string | null;
+  defaultUnitsPerPackage?: number | null;
+  palletUnit?: string | null;
+  packagesPerPallet?: number | null;
+  defaultUnitsPerPallet?: number | null;
+  unit: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  purchaseId: string;
+  materialId: string;
+  quantityMode: PurchaseQuantityMode;
+  quantity: number;
+  unitPrice: number;
+  baseQuantity: number;
+  baseUnit: string;
+  lineTotal: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  material?: PurchaseMaterialSummary | null;
+}
+
+export interface Purchase {
+  id: string;
+  purchaseNo: string;
+  purchaseDate: string;
+  supplierName: string;
+  invoiceNo?: string | null;
+  currencyCode: PurchaseCurrencyCode;
+  exchangeRate: number;
+  status: PurchaseStatus;
+  subtotal: number;
+  total: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PurchaseItem[];
+}
+
 export interface SalaryEntryItem {
   id: string;
   date: string;

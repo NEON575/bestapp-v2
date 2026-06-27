@@ -1,422 +1,450 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { DebtStatus, Prisma, SalesPaymentType, StockMovementType } from '@prisma/client';
-import { AuditService } from '../audit/audit.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, type Material, type Purchase as PrismaPurchase, type PurchaseItem as PrismaPurchaseItem } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
-import {
-  CreatePurchaseEntryDto,
-  CreateSupplierDto,
-  PurchaseEntryQueryDto,
-  UpdatePurchaseEntryDto,
-  UpdateSupplierDto
-} from './dto/purchases.dto';
-import { aggregateSupplierDebt } from '../../common/business/purchase-entry';
-import { recalculatePurchaseFlow } from '../../common/business/purchase-flow';
-import { InventoryService } from '../inventory/inventory.service';
-import { buildPurchaseOrderBy, buildPurchaseWhere } from '../../common/business/purchase-list';
+import { CreatePurchaseDto, PurchaseListQueryDto, UpdatePurchaseDto } from './dto/purchases.dto';
+
+type PurchaseStatus = 'draft' | 'confirmed' | 'cancelled';
+type PurchaseQuantityMode = 'base' | 'package' | 'pallet';
+type PurchaseCurrencyCode = 'AZN' | 'USD' | 'EUR' | 'TRY';
+
+type PurchaseMaterialSummary = {
+  id: string;
+  materialNo: string;
+  name: string;
+  stockUnit: string;
+  packageUnit?: string | null;
+  defaultUnitsPerPackage?: number | null;
+  palletUnit?: string | null;
+  packagesPerPallet?: number | null;
+  defaultUnitsPerPallet?: number | null;
+  unit: string;
+};
+
+type PurchaseItemResponse = {
+  id: string;
+  purchaseId: string;
+  materialId: string;
+  quantityMode: PurchaseQuantityMode;
+  quantity: number;
+  unitPrice: number;
+  baseQuantity: number;
+  baseUnit: string;
+  lineTotal: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  material?: PurchaseMaterialSummary | null;
+};
+
+type PurchaseResponse = {
+  id: string;
+  purchaseNo: string;
+  purchaseDate: string;
+  supplierName: string;
+  invoiceNo?: string | null;
+  currencyCode: PurchaseCurrencyCode;
+  exchangeRate: number;
+  status: PurchaseStatus;
+  subtotal: number;
+  total: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PurchaseItemResponse[];
+};
+
+type PurchaseItemInput = {
+  materialId: string;
+  quantityMode: 'base' | 'package' | 'pallet';
+  quantity: number;
+  unitPrice: number;
+  notes?: string | null;
+};
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
-  if (value == null) return 0;
-  return typeof value === 'number' ? value : Number(value.toString());
+  if (value == null) {
+    return 0;
+  }
+
+  return Number(value.toString());
 }
 
-function resolvePayableStatus(remainingDebt: number) {
-  return remainingDebt <= 0 ? DebtStatus.closed : DebtStatus.open;
+function toDecimal(value: number | string | Prisma.Decimal) {
+  return new Prisma.Decimal(value);
+}
+
+function sanitizeText(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function mapMaterial(material: Material | null | undefined): PurchaseMaterialSummary | null {
+  if (!material) {
+    return null;
+  }
+
+  return {
+    id: material.id,
+    materialNo: material.materialNo,
+    name: material.name,
+    stockUnit: material.stockUnit,
+    packageUnit: material.packageUnit,
+    defaultUnitsPerPackage: material.defaultUnitsPerPackage == null ? null : toNumber(material.defaultUnitsPerPackage),
+    palletUnit: material.palletUnit,
+    packagesPerPallet: material.packagesPerPallet == null ? null : toNumber(material.packagesPerPallet),
+    defaultUnitsPerPallet: material.defaultUnitsPerPallet == null ? null : toNumber(material.defaultUnitsPerPallet),
+    unit: material.unit
+  };
+}
+
+function mapPurchaseItem(item: PrismaPurchaseItem & { material?: Material | null }): PurchaseItemResponse {
+  return {
+    id: item.id,
+    purchaseId: item.purchaseId,
+    materialId: item.materialId,
+    quantityMode: item.quantityMode as PurchaseQuantityMode,
+    quantity: toNumber(item.quantity),
+    unitPrice: toNumber(item.unitPrice),
+    baseQuantity: toNumber(item.baseQuantity),
+    baseUnit: item.baseUnit,
+    lineTotal: toNumber(item.lineTotal),
+    notes: item.notes,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    material: mapMaterial(item.material)
+  };
+}
+
+function mapPurchase(purchase: PrismaPurchase & { items?: Array<PrismaPurchaseItem & { material?: Material | null }> }): PurchaseResponse {
+  return {
+    id: purchase.id,
+    purchaseNo: purchase.purchaseNo,
+    purchaseDate: purchase.purchaseDate.toISOString(),
+    supplierName: purchase.supplierName,
+    invoiceNo: purchase.invoiceNo,
+    currencyCode: purchase.currencyCode as PurchaseCurrencyCode,
+    exchangeRate: toNumber(purchase.exchangeRate),
+    status: purchase.status as PurchaseStatus,
+    subtotal: toNumber(purchase.subtotal),
+    total: toNumber(purchase.total),
+    notes: purchase.notes,
+    createdAt: purchase.createdAt.toISOString(),
+    updatedAt: purchase.updatedAt.toISOString(),
+    items: (purchase.items ?? []).map(mapPurchaseItem)
+  };
+}
+
+function computeBaseQuantity(
+  material: Material,
+  quantityMode: PurchaseItemInput['quantityMode'],
+  quantity: number
+) {
+  if (quantityMode === 'base') {
+    return quantity;
+  }
+
+  if (quantityMode === 'package') {
+    if (material.defaultUnitsPerPackage == null) {
+      throw new BadRequestException(`"${material.name}" materialı üçün qablaşdırma vahidi təyin edilməyib`);
+    }
+
+    return quantity * toNumber(material.defaultUnitsPerPackage);
+  }
+
+  if (material.defaultUnitsPerPallet == null) {
+    throw new BadRequestException(`"${material.name}" materialı üçün palet məlumatı təyin edilməyib`);
+  }
+
+  return quantity * toNumber(material.defaultUnitsPerPallet);
 }
 
 @Injectable()
 export class PurchasesService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AuditService) private readonly auditService: AuditService,
-    @Inject(InventoryService) private readonly inventoryService: InventoryService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async listSuppliers() {
-    return this.prisma.supplier.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ isActive: 'desc' }, { name: 'asc' }]
-    });
-  }
-
-  createSupplier(dto: CreateSupplierDto) {
-    return this.prisma.supplier.create({
-      data: {
-        code: dto.code,
-        name: dto.name,
-        phone: dto.phone,
-        taxId: dto.taxId,
-        email: dto.email,
-        address: dto.address,
-        notes: dto.notes,
-        isActive: dto.isActive ?? true
+  private async nextPurchaseNo(tx: Prisma.TransactionClient) {
+    const sequence = await tx.numberSequence.upsert({
+      where: { key: 'purchase' },
+      update: {},
+      create: {
+        key: 'purchase',
+        prefix: 'AL-',
+        currentValue: 0,
+        step: 1,
+        padding: 6
       }
     });
+
+    const nextValue = sequence.currentValue + sequence.step;
+    await tx.numberSequence.update({
+      where: { key: 'purchase' },
+      data: { currentValue: nextValue }
+    });
+
+    return `${sequence.prefix}${String(nextValue).padStart(sequence.padding, '0')}`;
   }
 
-  updateSupplier(id: string, dto: UpdateSupplierDto) {
-    return this.prisma.supplier.update({
+  private async loadPurchaseOrThrow(id: string) {
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id },
-      data: {
-        code: dto.code,
-        name: dto.name,
-        phone: dto.phone,
-        taxId: dto.taxId,
-        email: dto.email,
-        address: dto.address,
-        notes: dto.notes,
-        isActive: dto.isActive
-      }
-    });
-  }
-
-  removeSupplier(id: string) {
-    return this.prisma.supplier.update({
-      where: { id },
-      data: {
-        isActive: false,
-        deletedAt: new Date()
-      }
-    });
-  }
-
-  private async ensureMaterial(tx: Prisma.TransactionClient, materialId: string) {
-    const material = await tx.material.findFirst({
-      where: { id: materialId, deletedAt: null }
-    });
-
-    if (!material) {
-      throw new NotFoundException('Material not found');
-    }
-
-    return material;
-  }
-
-  private async resolveWarehouseId(tx: Prisma.TransactionClient, requestedWarehouseId?: string) {
-    if (requestedWarehouseId) {
-      const warehouse = await tx.warehouse.findFirst({
-        where: { id: requestedWarehouseId, deletedAt: null, isActive: true }
-      });
-
-      if (!warehouse) {
-        throw new NotFoundException('Warehouse not found');
-      }
-
-      return warehouse.id;
-    }
-
-    const defaultWarehouse = await tx.warehouse.findFirst({
-      where: { deletedAt: null, isActive: true },
-      orderBy: { createdAt: 'asc' }
-    });
-
-    if (!defaultWarehouse) {
-      throw new NotFoundException('Warehouse not found');
-    }
-
-    return defaultWarehouse.id;
-  }
-
-  private async syncPayable(tx: Prisma.TransactionClient, purchaseEntryId: string) {
-    const purchase = await tx.purchaseEntry.findUnique({
-      where: { id: purchaseEntryId },
-      include: { supplier: true, payable: true }
+      include: { items: { include: { material: true } } }
     });
 
     if (!purchase) {
-      throw new NotFoundException('Purchase entry not found');
+      throw new NotFoundException('Alış tapılmadı');
     }
 
-    const payable = purchase.payable
-      ? await tx.payable.update({
-          where: { id: purchase.payable.id },
-          data: {
-            supplierId: purchase.supplierId,
-            counterpartyName: purchase.supplier.name,
-            amount: purchase.amount,
-            paidAmount: purchase.paymentAmount,
-            purchaseReference: purchase.id,
-            status: resolvePayableStatus(Number(purchase.remainingDebt))
-          }
-        })
-      : await tx.payable.create({
-          data: {
-            supplierId: purchase.supplierId,
-            purchaseEntryId: purchase.id,
-            counterpartyName: purchase.supplier.name,
-            purchaseReference: purchase.id,
-            amount: purchase.amount,
-            paidAmount: purchase.paymentAmount,
-            status: resolvePayableStatus(Number(purchase.remainingDebt))
-          }
-        });
-
-    if (!purchase.payableId || purchase.payableId !== payable.id) {
-      await tx.purchaseEntry.update({
-        where: { id: purchase.id },
-        data: { payableId: payable.id }
-      });
-    }
+    return purchase;
   }
 
-  private async syncPurchaseMovement(tx: Prisma.TransactionClient, purchaseEntryId: string, previousState?: { materialId: string; warehouseId: string | null }) {
-    const purchase = await tx.purchaseEntry.findUnique({
-      where: { id: purchaseEntryId }
+  private async buildPurchaseItems(tx: Prisma.TransactionClient, items: PurchaseItemInput[]) {
+    const uniqueMaterialIds = [...new Set(items.map((item) => item.materialId))];
+    const materials = await tx.material.findMany({
+      where: {
+        id: { in: uniqueMaterialIds },
+        deletedAt: null
+      }
     });
 
-    if (!purchase || !purchase.materialId) {
-      throw new NotFoundException('Purchase entry not found');
+    if (materials.length !== uniqueMaterialIds.length) {
+      throw new BadRequestException('Seçilmiş material tapılmadı');
     }
 
-    const movement = await tx.stockMovement.findFirst({
-      where: { purchaseEntryId: purchase.id, type: StockMovementType.purchase_in }
+    const materialMap = new Map(materials.map((material) => [material.id, material]));
+
+    return items.map((item) => {
+      const material = materialMap.get(item.materialId);
+      if (!material) {
+        throw new BadRequestException('Seçilmiş material tapılmadı');
+      }
+
+      const quantity = Number(item.quantity);
+      const unitPrice = Number(item.unitPrice);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new BadRequestException('Miqdar 0-dan böyük olmalıdır');
+      }
+
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new BadRequestException('Vahid qiymət 0 və ya daha böyük olmalıdır');
+      }
+
+      const baseQuantity = computeBaseQuantity(material, item.quantityMode, quantity);
+      const lineTotal = quantity * unitPrice;
+
+      return {
+        materialId: material.id,
+        quantityMode: item.quantityMode,
+        quantity: toDecimal(quantity),
+        unitPrice: toDecimal(unitPrice),
+        baseQuantity: toDecimal(baseQuantity),
+        baseUnit: material.stockUnit || material.unit,
+        lineTotal: toDecimal(lineTotal),
+        notes: sanitizeText(item.notes)
+      };
     });
-
-    if (movement) {
-      await tx.stockMovement.update({
-        where: { id: movement.id },
-        data: {
-          materialId: purchase.materialId,
-          warehouseId: purchase.warehouseId,
-          type: StockMovementType.purchase_in,
-          quantity: purchase.totalQuantity,
-          balanceDelta: purchase.totalQuantity,
-          unitCost: purchase.unitPrice,
-          totalCost: purchase.amount,
-          reference: `purchase:${purchase.id}`,
-          note: purchase.comment,
-          createdAt: purchase.date
-        }
-      });
-    } else {
-      await tx.stockMovement.create({
-        data: {
-          purchaseEntryId: purchase.id,
-          materialId: purchase.materialId,
-          warehouseId: purchase.warehouseId,
-          type: StockMovementType.purchase_in,
-          quantity: purchase.totalQuantity,
-          balanceDelta: purchase.totalQuantity,
-          unitCost: purchase.unitPrice,
-          totalCost: purchase.amount,
-          reference: `purchase:${purchase.id}`,
-          note: purchase.comment,
-          createdAt: purchase.date
-        }
-      });
-    }
-
-    if (previousState?.warehouseId) {
-      await this.inventoryService.syncStockLevel(previousState.materialId, previousState.warehouseId, tx);
-      await this.inventoryService.refreshMaterialSnapshots(previousState.materialId, tx);
-    }
-
-    if (purchase.warehouseId) {
-      await this.inventoryService.syncStockLevel(purchase.materialId, purchase.warehouseId, tx);
-    }
-    await this.inventoryService.refreshMaterialSnapshots(purchase.materialId, tx);
   }
 
-  async findAll(query: PurchaseEntryQueryDto) {
-    const { page, limit, skip, take } = normalizePagination(query);
-    const where = buildPurchaseWhere(query);
-    const orderBy = buildPurchaseOrderBy(query.sortBy, query.sortOrder);
+  async list(query: PurchaseListQueryDto) {
+    const page = Math.max(1, Number(query.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 20)));
+    const skip = (page - 1) * limit;
+    const search = query.search?.trim();
 
-    const [total, data] = await this.prisma.$transaction([
-      this.prisma.purchaseEntry.count({ where }),
-      this.prisma.purchaseEntry.findMany({
+    const where: Prisma.PurchaseWhereInput = {
+      ...(search
+        ? {
+            OR: [
+              { purchaseNo: { contains: search, mode: 'insensitive' } },
+              { supplierName: { contains: search, mode: 'insensitive' } },
+              { invoiceNo: { contains: search, mode: 'insensitive' } }
+            ]
+          }
+        : {}),
+      ...(query.status && query.status !== 'all' ? { status: query.status } : {})
+    };
+
+    const [total, purchases] = await this.prisma.$transaction([
+      this.prisma.purchase.count({ where }),
+      this.prisma.purchase.findMany({
         where,
+        include: { items: { include: { material: true } } },
+        orderBy: [{ purchaseDate: 'desc' }, { createdAt: 'desc' }],
         skip,
-        take,
-        orderBy,
-        include: {
-          supplier: true,
-          material: true,
-          warehouse: true,
-          payable: true
-        }
+        take: limit
       })
     ]);
 
-    return buildPaginatedResponse(data, total, page, limit);
-  }
-
-  async quickCreate(dto: CreatePurchaseEntryDto) {
-    return this.create(dto);
-  }
-
-  async create(dto: CreatePurchaseEntryDto) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const material = await this.ensureMaterial(tx, dto.materialId);
-        const warehouseId = await this.resolveWarehouseId(tx, dto.warehouseId);
-        const calculated = recalculatePurchaseFlow({
-          quantity: dto.quantity,
-          packageQuantity: dto.packageQuantity,
-          unitsPerPackage: dto.unitsPerPackage,
-          unitPrice: dto.unitPrice,
-          totalAmount: dto.amount,
-          paymentAmount: dto.paymentAmount
-        });
-
-        const created = await tx.purchaseEntry.create({
-          data: {
-            supplierId: dto.supplierId,
-            materialId: dto.materialId,
-            warehouseId,
-            date: dto.date ? new Date(dto.date) : new Date(),
-            stockUnit: dto.stockUnit || material.stockUnit || material.unit,
-            packageUnit: dto.packageUnit,
-            unitsPerPackage: dto.unitsPerPackage ?? null,
-            packageQuantity: dto.packageQuantity ?? null,
-            totalQuantity: calculated.totalQuantity,
-            unitPrice: calculated.unitPrice,
-            amount: calculated.totalAmount,
-            paymentAmount: calculated.paymentAmount,
-            remainingDebt: calculated.remainingDebt,
-            paymentType: (dto.paymentType as SalesPaymentType | undefined) ?? SalesPaymentType.hesab,
-            comment: dto.comment
-          }
-        });
-
-        await this.syncPurchaseMovement(tx, created.id);
-        await this.syncPayable(tx, created.id);
-
-        await this.auditService.logTx(tx, {
-          action: 'purchase_entry.created',
-          entityType: 'purchase_entry',
-          entityId: created.id,
-          afterData: created
-        });
-
-        return tx.purchaseEntry.findUniqueOrThrow({
-          where: { id: created.id },
-          include: { supplier: true, material: true, warehouse: true, payable: true }
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-    );
-  }
-
-  async update(id: string, dto: UpdatePurchaseEntryDto) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const existing = await tx.purchaseEntry.findFirst({
-          where: { id, deletedAt: null }
-        });
-
-        if (!existing) {
-          throw new NotFoundException('Purchase entry not found');
-        }
-
-        const materialId = dto.materialId ?? existing.materialId;
-        if (!materialId) {
-          throw new NotFoundException('Material not found');
-        }
-
-        const material = await this.ensureMaterial(tx, materialId);
-        const warehouseId = await this.resolveWarehouseId(tx, dto.warehouseId ?? existing.warehouseId ?? undefined);
-        const calculated = recalculatePurchaseFlow({
-          quantity: dto.quantity ?? toNumber(existing.totalQuantity),
-          packageQuantity: dto.packageQuantity ?? toNumber(existing.packageQuantity),
-          unitsPerPackage: dto.unitsPerPackage ?? toNumber(existing.unitsPerPackage),
-          unitPrice: dto.unitPrice ?? toNumber(existing.unitPrice),
-          totalAmount: dto.amount ?? toNumber(existing.amount),
-          paymentAmount: dto.paymentAmount ?? toNumber(existing.paymentAmount)
-        });
-
-        const updated = await tx.purchaseEntry.update({
-          where: { id },
-          data: {
-            supplierId: dto.supplierId ?? existing.supplierId,
-            materialId,
-            warehouseId,
-            date: dto.date ? new Date(dto.date) : existing.date,
-            stockUnit: dto.stockUnit ?? existing.stockUnit ?? material.stockUnit ?? material.unit,
-            packageUnit: dto.packageUnit ?? existing.packageUnit,
-            unitsPerPackage: dto.unitsPerPackage ?? existing.unitsPerPackage,
-            packageQuantity: dto.packageQuantity ?? existing.packageQuantity,
-            totalQuantity: calculated.totalQuantity,
-            unitPrice: calculated.unitPrice,
-            amount: calculated.totalAmount,
-            paymentAmount: calculated.paymentAmount,
-            remainingDebt: calculated.remainingDebt,
-            paymentType: (dto.paymentType as SalesPaymentType | undefined) ?? existing.paymentType,
-            comment: dto.comment ?? existing.comment
-          }
-        });
-
-        await this.syncPurchaseMovement(tx, updated.id, {
-          materialId: existing.materialId ?? materialId,
-          warehouseId: existing.warehouseId
-        });
-        await this.syncPayable(tx, updated.id);
-
-        await this.auditService.logTx(tx, {
-          action: 'purchase_entry.updated',
-          entityType: 'purchase_entry',
-          entityId: updated.id,
-          beforeData: existing,
-          afterData: updated
-        });
-
-        return tx.purchaseEntry.findUniqueOrThrow({
-          where: { id: updated.id },
-          include: { supplier: true, material: true, warehouse: true, payable: true }
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-    );
-  }
-
-  remove(id: string) {
-    return this.prisma.purchaseEntry.update({
-      where: { id },
-      data: { deletedAt: new Date() }
-    });
-  }
-
-  async summary(query: Partial<PurchaseEntryQueryDto> = {}) {
-    const entries = await this.prisma.purchaseEntry.findMany({
-      where: buildPurchaseWhere(query),
-      include: { supplier: true }
-    });
-
-    const supplierTotals = aggregateSupplierDebt(
-      entries.map((entry) => ({
-        supplierId: entry.supplierId,
-        supplierName: entry.supplier.name,
-        amount: entry.amount,
-        paymentAmount: entry.paymentAmount,
-        remainingDebt: entry.remainingDebt
-      }))
-    );
-
     return {
-      totalPurchaseAmount: entries.reduce((sum, entry) => sum + Number(entry.amount), 0),
-      totalPaymentAmount: entries.reduce((sum, entry) => sum + Number(entry.paymentAmount), 0),
-      totalSupplierDebt: entries.reduce((sum, entry) => sum + Number(entry.remainingDebt), 0),
-      supplierTotals
+      data: purchases.map(mapPurchase),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      }
     };
   }
 
-  async supplierDebts(supplierId?: string) {
-    const entries = await this.prisma.purchaseEntry.findMany({
-      where: {
-        deletedAt: null,
-        ...(supplierId ? { supplierId } : {})
-      },
-      include: { supplier: true }
+  async getById(id: string) {
+    const purchase = await this.loadPurchaseOrThrow(id);
+    return mapPurchase(purchase);
+  }
+
+  async create(dto: CreatePurchaseDto) {
+    if (!dto.items?.length) {
+      throw new BadRequestException('Ən azı 1 alış sətri olmalıdır');
+    }
+
+    const purchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : new Date();
+    const supplierName = dto.supplierName.trim();
+
+    if (!supplierName) {
+      throw new BadRequestException('Təchizatçı adı boş ola bilməz');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const purchaseNo = await this.nextPurchaseNo(tx);
+      const items = await this.buildPurchaseItems(tx, dto.items as PurchaseItemInput[]);
+      const subtotal = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+      const purchase = await tx.purchase.create({
+        data: {
+          purchaseNo,
+          purchaseDate,
+          supplierName,
+          invoiceNo: sanitizeText(dto.invoiceNo),
+          currencyCode: dto.currencyCode ?? 'AZN',
+          exchangeRate: toDecimal(dto.exchangeRate ?? 1),
+          status: dto.status ?? 'draft',
+          subtotal: toDecimal(subtotal),
+          total: toDecimal(subtotal),
+          notes: sanitizeText(dto.notes)
+        }
+      });
+
+      await tx.purchaseItem.createMany({
+        data: items.map((item) => ({
+          purchaseId: purchase.id,
+          materialId: item.materialId,
+          quantityMode: item.quantityMode,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          baseQuantity: item.baseQuantity,
+          baseUnit: item.baseUnit,
+          lineTotal: item.lineTotal,
+          notes: item.notes
+        }))
+      });
+
+      return tx.purchase.findUnique({
+        where: { id: purchase.id },
+        include: { items: { include: { material: true } } }
+      });
     });
 
-    return aggregateSupplierDebt(
-      entries.map((entry) => ({
-        supplierId: entry.supplierId,
-        supplierName: entry.supplier.name,
-        amount: entry.amount,
-        paymentAmount: entry.paymentAmount,
-        remainingDebt: entry.remainingDebt
-      }))
-    );
+    if (!result) {
+      throw new BadRequestException('Alış yaradılmadı');
+    }
+
+    return mapPurchase(result);
+  }
+
+  async update(id: string, dto: UpdatePurchaseDto) {
+    const existing = await this.loadPurchaseOrThrow(id);
+
+    if (existing.status !== 'draft') {
+      throw new BadRequestException('Yalnız qaralama alışlar redaktə oluna bilər');
+    }
+
+    if (dto.items && dto.items.length === 0) {
+      throw new BadRequestException('Ən azı 1 alış sətri olmalıdır');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedPurchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : existing.purchaseDate;
+      const updatedSupplierName = dto.supplierName?.trim() || existing.supplierName;
+      const itemsInput = (dto.items as PurchaseItemInput[] | undefined) ?? existing.items.map((item) => ({
+        materialId: item.materialId,
+        quantityMode: item.quantityMode as PurchaseItemInput['quantityMode'],
+        quantity: toNumber(item.quantity),
+        unitPrice: toNumber(item.unitPrice),
+        notes: item.notes
+      }));
+
+      const items = await this.buildPurchaseItems(tx, itemsInput);
+      const subtotal = items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0);
+
+      await tx.purchase.update({
+        where: { id },
+        data: {
+          purchaseDate: updatedPurchaseDate,
+          supplierName: updatedSupplierName,
+          invoiceNo: dto.invoiceNo !== undefined ? sanitizeText(dto.invoiceNo) : existing.invoiceNo,
+          currencyCode: dto.currencyCode ?? existing.currencyCode,
+          exchangeRate: dto.exchangeRate !== undefined ? toDecimal(dto.exchangeRate) : existing.exchangeRate,
+          notes: dto.notes !== undefined ? sanitizeText(dto.notes) : existing.notes,
+          subtotal: toDecimal(subtotal),
+          total: toDecimal(subtotal)
+        }
+      });
+
+      await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
+      await tx.purchaseItem.createMany({
+        data: items.map((item) => ({
+          purchaseId: id,
+          materialId: item.materialId,
+          quantityMode: item.quantityMode,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          baseQuantity: item.baseQuantity,
+          baseUnit: item.baseUnit,
+          lineTotal: item.lineTotal,
+          notes: item.notes
+        }))
+      });
+
+      return tx.purchase.findUnique({
+        where: { id },
+        include: { items: { include: { material: true } } }
+      });
+    });
+
+    if (!result) {
+      throw new BadRequestException('Alış yenilənmədi');
+    }
+
+    return mapPurchase(result);
+  }
+
+  async remove(id: string) {
+    await this.loadPurchaseOrThrow(id);
+    await this.prisma.purchase.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async confirm(id: string) {
+    const existing = await this.loadPurchaseOrThrow(id);
+
+    if (existing.status === 'cancelled') {
+      throw new BadRequestException('Ləğv edilmiş alış təsdiqlənə bilməz');
+    }
+
+    await this.prisma.purchase.update({
+      where: { id },
+      data: { status: 'confirmed' }
+    });
+
+    return mapPurchase(await this.loadPurchaseOrThrow(id));
+  }
+
+  async cancel(id: string) {
+    await this.loadPurchaseOrThrow(id);
+
+    await this.prisma.purchase.update({
+      where: { id },
+      data: { status: 'cancelled' }
+    });
+
+    return mapPurchase(await this.loadPurchaseOrThrow(id));
   }
 }

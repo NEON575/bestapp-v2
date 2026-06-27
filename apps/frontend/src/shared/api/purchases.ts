@@ -1,12 +1,16 @@
 import type {
+  CreatePurchaseDto,
   CreatePurchaseEntryDto,
   CreateSupplierDto,
   PaginatedResponse,
+  Purchase,
   PurchaseEntryItem,
   PurchaseEntryQueryDto,
+  PurchaseListQueryDto,
   PurchaseSummary,
   SupplierDebtSummaryItem,
   SupplierItem,
+  UpdatePurchaseDto,
   UpdatePurchaseEntryDto,
   UpdateSupplierDto
 } from '@bestapp/shared';
@@ -14,25 +18,40 @@ import { api } from './http';
 import { buildQueryParams } from './query';
 
 export const purchasesClient = {
-  async list(query: PurchaseEntryQueryDto = {}) {
-    const { data } = await api.get<PaginatedResponse<PurchaseEntryItem>>('/purchases', {
+  async list(query: PurchaseListQueryDto = {}) {
+    const { data } = await api.get<PaginatedResponse<Purchase>>('/purchases', {
       params: buildQueryParams(query)
     });
     return data;
   },
 
-  async create(dto: CreatePurchaseEntryDto) {
-    const { data } = await api.post<PurchaseEntryItem>('/purchases', dto);
+  async get(id: string) {
+    const { data } = await api.get<Purchase>(`/purchases/${id}`);
     return data;
   },
 
-  async quickCreate(dto: CreatePurchaseEntryDto) {
-    const { data } = await api.post<PurchaseEntryItem>('/purchases/quick-create', dto);
+  async create(dto: CreatePurchaseDto) {
+    const { data } = await api.post<Purchase>('/purchases', dto);
     return data;
   },
 
-  async update(id: string, dto: UpdatePurchaseEntryDto) {
-    const { data } = await api.patch<PurchaseEntryItem>(`/purchases/${id}`, dto);
+  async update(id: string, dto: UpdatePurchaseDto) {
+    const { data } = await api.patch<Purchase>(`/purchases/${id}`, dto);
+    return data;
+  },
+
+  async remove(id: string) {
+    const { data } = await api.delete<{ success: boolean }>(`/purchases/${id}`);
+    return data;
+  },
+
+  async confirm(id: string) {
+    const { data } = await api.post<Purchase>(`/purchases/${id}/confirm`);
+    return data;
+  },
+
+  async cancel(id: string) {
+    const { data } = await api.post<Purchase>(`/purchases/${id}/cancel`);
     return data;
   },
 
@@ -68,5 +87,23 @@ export const purchasesClient = {
   async removeSupplier(id: string) {
     const { data } = await api.delete<SupplierItem>(`/purchases/suppliers/${id}`);
     return data;
+  },
+
+  async legacyList(query: PurchaseEntryQueryDto = {}) {
+    const { data } = await api.get<PaginatedResponse<PurchaseEntryItem>>('/purchase-entries', {
+      params: buildQueryParams(query)
+    });
+    return data;
+  },
+
+  async legacyCreate(dto: CreatePurchaseEntryDto) {
+    const { data } = await api.post<PurchaseEntryItem>('/purchase-entries', dto);
+    return data;
+  },
+
+  async legacyUpdate(id: string, dto: UpdatePurchaseEntryDto) {
+    const { data } = await api.patch<PurchaseEntryItem>(`/purchase-entries/${id}`, dto);
+    return data;
   }
 };
+

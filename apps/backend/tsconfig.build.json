@@ -9,7 +9,8 @@
     "src/app.module.ts",
     "src/common/**/*.ts",
     "src/modules/materials/**/*.ts",
-    "src/modules/material-categories/**/*.ts"
+    "src/modules/material-categories/**/*.ts",
+    "src/modules/purchases/**/*.ts"
   ],
   "exclude": [
     "node_modules",
@@ -31,7 +32,6 @@
     "src/modules/papers/**",
     "src/modules/pricing/**",
     "src/modules/production/**",
-    "src/modules/purchases/**",
     "src/modules/roles/**",
     "src/modules/salaries/**",
     "src/modules/sales/**",

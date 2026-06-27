@@ -1,13 +1,68 @@
-import {
-  CalculationStatus,
-  DebtStatus,
-  InvoiceStatus,
-  OrderStatus,
-  PaymentStatus,
-  ProductionOperationStatus,
-  StockMovementType,
-  StockReservationStatus
-} from '@bestapp/shared';
+const OrderStatus = {
+  DRAFT: 'draft',
+  CALCULATED: 'calculated',
+  APPROVED: 'approved',
+  IN_PRODUCTION: 'in_production',
+  READY: 'ready',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled'
+} as const;
+
+const CalculationStatus = {
+  DRAFT: 'draft',
+  APPROVED: 'approved',
+  CONVERTED: 'converted'
+} as const;
+
+const InvoiceStatus = {
+  DRAFT: 'draft',
+  ISSUED: 'issued',
+  PARTIALLY_PAID: 'partially_paid',
+  PAID: 'paid',
+  OVERDUE: 'overdue',
+  CANCELLED: 'cancelled'
+} as const;
+
+const PaymentStatus = {
+  PENDING: 'pending',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  REVERSED: 'reversed'
+} as const;
+
+const ProductionOperationStatus = {
+  PENDING: 'pending',
+  READY: 'ready',
+  IN_PROGRESS: 'in_progress',
+  PAUSED: 'paused',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled'
+} as const;
+
+const StockMovementType = {
+  PURCHASE_IN: 'purchase_in',
+  RESERVE: 'reserve',
+  WRITE_OFF: 'write_off',
+  RETURN: 'return',
+  ADJUSTMENT: 'adjustment',
+  WASTE: 'waste'
+} as const;
+
+const StockReservationStatus = {
+  OPEN: 'open',
+  RESERVED: 'reserved',
+  RELEASED: 'released',
+  CONSUMED: 'consumed',
+  CANCELLED: 'cancelled'
+} as const;
+
+const DebtStatus = {
+  OPEN: 'open',
+  PARTIAL: 'partial',
+  OVERDUE: 'overdue',
+  CLOSED: 'closed'
+} as const;
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
 
@@ -207,32 +262,87 @@ export function getToneForReservationStatus(status?: string | null): Tone {
 
 export function getToneForDebtStatus(status?: string | null): Tone {
   switch (normalize(status)) {
-    case DebtStatus.CLOSED:
-      return 'success';
-    case DebtStatus.PARTIAL:
-      return 'warning';
     case DebtStatus.OVERDUE:
       return 'danger';
+    case DebtStatus.PARTIAL:
+      return 'warning';
+    case DebtStatus.CLOSED:
+      return 'success';
     default:
       return 'neutral';
   }
 }
 
+function createLabelMap(record: Record<string, string>) {
+  return (value?: string | null) => {
+    const normalized = normalize(value);
+    if (!normalized) {
+      return '—';
+    }
+
+    return record[normalized] ?? titleCase(normalized);
+  };
+}
+
+export const getOrderStatusLabel = createLabelMap(orderStatusLabels);
+export const getCalculationStatusLabel = createLabelMap(calculationStatusLabels);
+export const getInvoiceStatusLabel = createLabelMap(invoiceStatusLabels);
+export const getPaymentStatusLabel = createLabelMap(paymentStatusLabels);
+export const getProductionStatusLabel = createLabelMap(productionStatusLabels);
+export const getMovementTypeLabel = createLabelMap(movementTypeLabels);
+export const getReservationStatusLabel = createLabelMap(reservationStatusLabels);
+export const getDebtStatusLabel = createLabelMap(debtStatusLabels);
+
 export function getStatusLabel(
   kind: 'order' | 'calculation' | 'invoice' | 'payment' | 'production' | 'movement' | 'reservation' | 'debt' | 'custom',
-  status?: string | null
+  value?: string | null
 ) {
-  const normalized = normalize(status);
+  switch (kind) {
+    case 'order':
+      return getOrderStatusLabel(value);
+    case 'calculation':
+      return getCalculationStatusLabel(value);
+    case 'invoice':
+      return getInvoiceStatusLabel(value);
+    case 'payment':
+      return getPaymentStatusLabel(value);
+    case 'production':
+      return getProductionStatusLabel(value);
+    case 'movement':
+      return getMovementTypeLabel(value);
+    case 'reservation':
+      return getReservationStatusLabel(value);
+    case 'debt':
+      return getDebtStatusLabel(value);
+    default:
+      return value ?? '—';
+  }
+}
 
-  if (kind === 'order') return orderStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'calculation') return calculationStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'invoice') return invoiceStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'payment') return paymentStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'production') return productionStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'movement') return movementTypeLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'reservation') return reservationStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  if (kind === 'debt') return debtStatusLabels[normalized] ?? (status ? titleCase(status) : '—');
-  return status ? titleCase(status) : '—';
+export function getStatusTone(value?: string | null): Tone {
+  const normalized = normalize(value);
+
+  if (!normalized) {
+    return 'neutral';
+  }
+
+  if (Object.values(OrderStatus).includes(normalized as (typeof OrderStatus)[keyof typeof OrderStatus])) {
+    return getToneForOrderStatus(normalized);
+  }
+
+  if (
+    Object.values(CalculationStatus).includes(normalized as (typeof CalculationStatus)[keyof typeof CalculationStatus]) ||
+    Object.values(InvoiceStatus).includes(normalized as (typeof InvoiceStatus)[keyof typeof InvoiceStatus]) ||
+    Object.values(PaymentStatus).includes(normalized as (typeof PaymentStatus)[keyof typeof PaymentStatus]) ||
+    Object.values(ProductionOperationStatus).includes(normalized as (typeof ProductionOperationStatus)[keyof typeof ProductionOperationStatus]) ||
+    Object.values(StockMovementType).includes(normalized as (typeof StockMovementType)[keyof typeof StockMovementType]) ||
+    Object.values(StockReservationStatus).includes(normalized as (typeof StockReservationStatus)[keyof typeof StockReservationStatus]) ||
+    Object.values(DebtStatus).includes(normalized as (typeof DebtStatus)[keyof typeof DebtStatus])
+  ) {
+    return 'info';
+  }
+
+  return 'neutral';
 }
 
 export function toneClass(tone: Tone) {
