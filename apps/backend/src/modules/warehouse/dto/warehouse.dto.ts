@@ -27,5 +27,11 @@ export class WarehouseFilterQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   @Length(0, 36)
+  materialId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Length(0, 36)
   warehouseId?: string;
 }

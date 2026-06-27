@@ -9,6 +9,7 @@ export type CreateWarehousePayload = {
 };
 
 export type WarehouseFilterQuery = PaginationQuery & {
+  materialId?: string;
   warehouseId?: string;
 };
 

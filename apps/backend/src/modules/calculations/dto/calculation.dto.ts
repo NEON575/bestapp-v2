@@ -1,125 +1,124 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsNumber, IsOptional, IsString, Length, Min, ValidateNested } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/query/pagination.dto';
-import {
-  CALCULATION_PARAMETER_CATEGORIES,
-  type CalculationParameterCategory
-} from '../../../common/business/calculation-flow';
 
-const calculationStatusValues = ['draft', 'approved', 'converted'] as const;
+export const CALCULATION_STATUS_VALUES = ['draft', 'approved', 'converted', 'cancelled'] as const;
+export const CALCULATION_SERVICE_NAMES = ['Çap', 'Kəsim', 'Laminasiya', 'Büküm', 'Dizayn', 'Çatdırılma', 'Digər'] as const;
+
+export type CalculationStatusValue = (typeof CALCULATION_STATUS_VALUES)[number];
 
 export class CalculationListQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: calculationStatusValues })
+  @ApiPropertyOptional({ enum: CALCULATION_STATUS_VALUES })
   @IsOptional()
-  @IsIn(calculationStatusValues)
-  status?: (typeof calculationStatusValues)[number];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  customerId?: string;
+  @IsIn(CALCULATION_STATUS_VALUES)
+  status?: CalculationStatusValue;
 }
 
-export class CalculationRowDto {
-  @ApiProperty({ enum: CALCULATION_PARAMETER_CATEGORIES })
-  @IsIn(CALCULATION_PARAMETER_CATEGORIES)
-  category!: CalculationParameterCategory;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  parameterId?: string;
-
+export class CalculationMaterialLineDto {
   @ApiProperty()
   @IsString()
-  parameterName!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  parameterVariant?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  variants?: string[];
-
-  @ApiPropertyOptional({ type: Object })
-  @IsOptional()
-  @IsObject()
-  details?: Record<string, unknown>;
-
-  @ApiProperty()
-  @IsString()
-  unit!: string;
+  @Length(1, 36)
+  materialId!: string;
 
   @ApiProperty()
   @Type(() => Number)
   @IsNumber()
+  @Min(0.0001)
   quantity!: number;
 
   @ApiProperty()
+  @IsString()
+  @Length(1, 50)
+  unit!: string;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  unitCost?: number;
+}
+
+export class CalculationServiceLineDto {
+  @ApiProperty()
+  @IsString()
+  @Length(1, 255)
+  serviceName!: string;
+
+  @ApiProperty()
   @Type(() => Number)
   @IsNumber()
-  unitPrice!: number;
+  @Min(0.0001)
+  quantity!: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
   @IsString()
-  note?: string;
+  @Length(1, 50)
+  unit!: string;
 
   @ApiPropertyOptional()
+  @Type(() => Number)
   @IsOptional()
-  @IsString()
-  id?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  isPriceOverridden?: boolean;
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  unitPrice?: number;
 }
 
 export class CreateCalculationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  date?: string;
+  @Length(0, 255)
+  customerName?: string;
 
   @ApiProperty()
   @IsString()
-  customerId!: string;
-
-  @ApiProperty()
-  @IsString()
+  @Length(1, 255)
   productName!: string;
 
   @ApiProperty()
   @Type(() => Number)
   @IsNumber()
+  @Min(0.0001)
   quantity!: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @Length(0, 2000)
   note?: string;
 
   @ApiPropertyOptional()
   @Type(() => Number)
   @IsOptional()
-  @IsNumber()
-  salePrice?: number;
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  profitPercent?: number;
 
-  @ApiPropertyOptional({ enum: calculationStatusValues })
+  @ApiPropertyOptional()
+  @Type(() => Number)
   @IsOptional()
-  @IsIn(calculationStatusValues)
-  status?: (typeof calculationStatusValues)[number];
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  finalPrice?: number;
 
-  @ApiProperty({ type: [CalculationRowDto] })
+  @ApiPropertyOptional({ enum: CALCULATION_STATUS_VALUES, default: 'draft' })
+  @IsOptional()
+  @IsIn(CALCULATION_STATUS_VALUES)
+  status?: CalculationStatusValue;
+
+  @ApiProperty({ type: [CalculationMaterialLineDto] })
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => CalculationRowDto)
-  rows!: CalculationRowDto[];
+  @Type(() => CalculationMaterialLineDto)
+  materialLines!: CalculationMaterialLineDto[];
+
+  @ApiProperty({ type: [CalculationServiceLineDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CalculationServiceLineDto)
+  serviceLines!: CalculationServiceLineDto[];
 }
 
 export class UpdateCalculationDto extends PartialType(CreateCalculationDto) {}

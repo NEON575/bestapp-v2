@@ -7,6 +7,7 @@ import { MaterialCategoriesModule } from './modules/material-categories/material
 import { MaterialsModule } from './modules/materials/materials.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
+import { CalculationsModule } from './modules/calculations/calculations.module';
 
 @Module({
   controllers: [AppController],
@@ -24,7 +25,8 @@ import { WarehouseModule } from './modules/warehouse/warehouse.module';
     MaterialCategoriesModule,
     MaterialsModule,
     PurchasesModule,
-    WarehouseModule
+    WarehouseModule,
+    CalculationsModule
   ]
 })
 export class AppModule {}

@@ -1,548 +1,490 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CalculationStatus, Prisma } from '@prisma/client';
-import { AuditService } from '../audit/audit.service';
-import { OrderStatusDto } from '../orders/dto/order.dto';
-import { OrdersService } from '../orders/orders.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { CalculationStatus, Prisma, type Calculation as PrismaCalculation, type Material } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPaginatedResponse, normalizePagination } from '../../common/query/pagination';
 import {
-  buildCalculationSnapshot,
-  calculateCalculationSummary,
-  createEmptyCalculationRow,
-  defaultCalculationHeader,
-  normalizeCalculationRow,
-  normalizeStoredCalculation,
-  type CalculationParameterVariantItem,
-  type CalculationHeader,
-  type CalculationRow,
-  type CalculationSnapshot,
-  type CalculationStoredPayload,
+  CalculationListQueryDto,
+  CreateCalculationDto,
+  UpdateCalculationDto,
   type CalculationStatusValue
-} from '../../common/business/calculation-flow';
-import { CalculationListQueryDto, CreateCalculationDto, UpdateCalculationDto } from './dto/calculation.dto';
+} from './dto/calculation.dto';
+
+type CalculationMaterialLineRecord = {
+  materialId: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  totalCost: number;
+  availableStock: number;
+};
+
+type CalculationServiceLineRecord = {
+  serviceName: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  totalCost: number;
+};
+
+type CalculationResponse = {
+  id: string;
+  number: string;
+  customerName: string;
+  productName: string;
+  quantity: number;
+  note?: string | null;
+  status: CalculationStatusValue;
+  materialCost: number;
+  serviceCost: number;
+  totalCost: number;
+  profitPercent: number;
+  profitAmount: number;
+  salePrice: number;
+  finalPrice: number;
+  costPrice: number;
+  profit: number;
+  sections: {
+    materialLines: CalculationMaterialLineRecord[];
+    serviceLines: CalculationServiceLineRecord[];
+  };
+  createdAt: string;
+  updatedAt: string;
+  cancelledAt?: string | null;
+};
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
-  if (value == null) return 0;
-  return typeof value === 'number' ? value : Number(value.toString());
+  if (value == null) {
+    return 0;
+  }
+
+  return Number(value.toString());
 }
 
-function normalizeVariantItems(input?: unknown): CalculationParameterVariantItem[] {
-  if (!Array.isArray(input)) {
-    return [];
-  }
-
-  return input
-    .map((item) => {
-      if (typeof item === 'string') {
-        const value = item.trim();
-        return value ? { label: value, value } : null;
-      }
-
-      if (item && typeof item === 'object') {
-        const candidate = item as Partial<CalculationParameterVariantItem>;
-        const label = typeof candidate.label === 'string' ? candidate.label.trim() : '';
-        const value = typeof candidate.value === 'string' ? candidate.value.trim() : label;
-        return label || value ? { label: label || value, value: value || label } : null;
-      }
-
-      return null;
-    })
-    .filter(Boolean) as CalculationParameterVariantItem[];
+function toDecimal(value: number | string | Prisma.Decimal) {
+  return new Prisma.Decimal(value);
 }
 
-function mapCalculationStatus(status: CalculationStatusValue | undefined) {
-  if (status === 'approved') {
-    return CalculationStatus.approved;
-  }
-
-  if (status === 'converted') {
-    return CalculationStatus.converted;
-  }
-
-  return CalculationStatus.draft;
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
-function mapStatusFromDb(status: CalculationStatus): CalculationStatusValue {
-  if (status === CalculationStatus.approved) {
-    return 'approved';
-  }
-
-  if (status === CalculationStatus.converted) {
-    return 'converted';
-  }
-
-  return 'draft';
+function sanitizeText(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
-function categoryFromLegacyKey(key?: string): CalculationRow['category'] {
-  switch (key) {
-    case 'paper':
-      return 'paper';
-    case 'printing':
-      return 'printing';
-    case 'form':
-      return 'form';
-    case 'extra_work':
-      return 'manual_work';
-    case 'other_costs':
-    default:
-      return 'other_cost';
-  }
+function mapStatus(status: CalculationStatus): CalculationStatusValue {
+  return status as CalculationStatusValue;
 }
 
-function legacySectionsToStored(raw: unknown, fallback?: Partial<CalculationHeader>): CalculationStoredPayload {
-  const header = {
-    ...defaultCalculationHeader(),
-    ...fallback
+function roundQuantity(value: number) {
+  return Math.round(value * 10000) / 10000;
+}
+
+function mapMaterial(material: Material) {
+  return {
+    id: material.id,
+    name: material.name,
+    stockUnit: material.stockUnit || material.unit,
+    averageCost: toNumber(material.averageCost),
+    unitCost: toNumber(material.unitCost),
+    costPrice: toNumber(material.costPrice)
   };
-
-  if (!Array.isArray(raw)) {
-    return normalizeStoredCalculation({
-      ...header,
-      rows: []
-    });
-  }
-
-  const rows = raw.flatMap((section: any) => {
-    const category = categoryFromLegacyKey(section?.key ?? section?.category);
-    const sectionRows = Array.isArray(section?.rows) ? section.rows : [];
-
-    return sectionRows.map((row: any) =>
-      normalizeCalculationRow({
-        category,
-        id: row?.id,
-        parameterId: row?.parameterId ?? null,
-        parameterName: row?.parameterName ?? row?.name ?? section?.title ?? category,
-        parameterVariant: row?.parameterVariant ?? null,
-        variants: [],
-        details: row?.details && typeof row.details === 'object' ? (row.details as Record<string, unknown>) : {},
-        unit:
-          row?.unit ??
-          (category === 'paper'
-            ? 'ədəd'
-            : category === 'printing'
-              ? 'çap'
-              : category === 'form'
-                ? 'forma'
-                : 'ədəd'),
-        quantity: row?.quantity ?? row?.printCount ?? row?.formCount ?? 1,
-        unitPrice: row?.unitPrice ?? row?.price ?? row?.printPrice ?? row?.formPrice ?? 0,
-        isPriceOverridden: Boolean(row?.isPriceOverridden ?? row?.price != null),
-        note: row?.note ?? ''
-      })
-    );
-  });
-
-  return normalizeStoredCalculation({
-    ...header,
-    rows
-  });
-}
-
-function parseStoredPayload(raw: Prisma.JsonValue | null | undefined, fallback?: Partial<CalculationHeader>) {
-  if (!raw) {
-    return normalizeStoredCalculation({
-      ...(fallback ?? defaultCalculationHeader()),
-      rows: []
-    });
-  }
-
-  if (Array.isArray(raw)) {
-    return legacySectionsToStored(raw, fallback);
-  }
-
-  if (typeof raw === 'object') {
-    const candidate = raw as Partial<CalculationStoredPayload> & { rows?: unknown };
-    if (Array.isArray(candidate.rows)) {
-      return normalizeStoredCalculation({
-        ...defaultCalculationHeader(),
-        ...fallback,
-        ...candidate
-      });
-    }
-  }
-
-  return normalizeStoredCalculation({
-    ...(fallback ?? defaultCalculationHeader()),
-    rows: []
-  });
 }
 
 @Injectable()
 export class CalculationsService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(OrdersService) private readonly ordersService: OrdersService,
-    @Inject(AuditService) private readonly auditService: AuditService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  private async nextCalculationNumber() {
-    const sequence = await this.prisma.numberSequence.upsert({
+  private async nextNumber(tx: Prisma.TransactionClient) {
+    const sequence = await tx.numberSequence.upsert({
       where: { key: 'calculation' },
-      update: { currentValue: { increment: 1 } },
+      update: {
+        prefix: 'HS-'
+      },
       create: {
         key: 'calculation',
-        prefix: 'CAL-',
-        currentValue: 1,
+        prefix: 'HS-',
+        currentValue: 0,
         step: 1,
         padding: 6
       }
     });
 
-    const value = sequence.currentValue.toString().padStart(sequence.padding, '0');
-    return `${sequence.prefix}${value}`;
+    const nextValue = sequence.currentValue + sequence.step;
+    await tx.numberSequence.update({
+      where: { key: 'calculation' },
+      data: { currentValue: nextValue, prefix: 'HS-' }
+    });
+
+    return `HS-${String(nextValue).padStart(6, '0')}`;
   }
 
-  private serializeOrderSummary(order: any) {
-    if (!order) {
-      return null;
+  private async ensureDefaultCustomer(tx: Prisma.TransactionClient) {
+    const name = 'Müştəri';
+    const customer = await tx.customer.findFirst({
+      where: {
+        name,
+        deletedAt: null
+      }
+    });
+
+    if (customer) {
+      return customer;
     }
 
+    return tx.customer.create({
+      data: {
+        name,
+        companyName: null,
+        isActive: true
+      }
+    });
+  }
+
+  private async loadMaterialRecords(tx: Prisma.TransactionClient, materialLines: CreateCalculationDto['materialLines']) {
+    const ids = [...new Set(materialLines.map((line) => line.materialId))];
+    const materials = await tx.material.findMany({
+      where: {
+        id: { in: ids },
+        deletedAt: null
+      },
+      include: {
+        stockLevels: true
+      }
+    });
+
+    if (materials.length !== ids.length) {
+      throw new BadRequestException('Seçilmiş material tapılmadı');
+    }
+
+    return new Map(materials.map((material) => [material.id, material]));
+  }
+
+  private normalizeMaterialLines(materialLines: CreateCalculationDto['materialLines'], materialMap: Map<string, Material & { stockLevels: Array<{ available: Prisma.Decimal | number | string }> }>) {
+    return materialLines.map((line) => {
+      const material = materialMap.get(line.materialId);
+      if (!material) {
+        throw new BadRequestException('Seçilmiş material tapılmadı');
+      }
+
+      const quantity = Number(line.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new BadRequestException('Material miqdarı 0-dan böyük olmalıdır');
+      }
+
+      const unitCost = line.unitCost != null ? Number(line.unitCost) : toNumber(material.averageCost || material.unitCost || material.costPrice || 0);
+      const availableStock = roundQuantity((material.stockLevels ?? []).reduce((sum, level) => sum + toNumber(level.available), 0));
+      const totalCost = roundMoney(quantity * (Number.isFinite(unitCost) ? unitCost : 0));
+
+      return {
+        materialId: material.id,
+        materialName: material.name,
+        quantity: roundQuantity(quantity),
+        unit: line.unit.trim(),
+        unitCost: roundMoney(Number.isFinite(unitCost) ? unitCost : 0),
+        totalCost,
+        availableStock
+      };
+    });
+  }
+
+  private normalizeServiceLines(serviceLines: CreateCalculationDto['serviceLines']) {
+    return serviceLines.map((line) => {
+      const quantity = Number(line.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new BadRequestException('Xidmət miqdarı 0-dan böyük olmalıdır');
+      }
+
+      const unitPrice = line.unitPrice != null ? Number(line.unitPrice) : 0;
+      const totalCost = roundMoney(quantity * (Number.isFinite(unitPrice) ? unitPrice : 0));
+
+      return {
+        serviceName: line.serviceName.trim(),
+        quantity: roundQuantity(quantity),
+        unit: line.unit.trim(),
+        unitPrice: roundMoney(Number.isFinite(unitPrice) ? unitPrice : 0),
+        totalCost
+      };
+    });
+  }
+
+  private async buildCalculationRecord(
+    tx: Prisma.TransactionClient,
+    dto: CreateCalculationDto,
+    existing?: PrismaCalculation & { sections: Prisma.JsonValue }
+  ) {
+    const customer = await this.ensureDefaultCustomer(tx);
+    const materialLines = await this.loadMaterialRecords(tx, dto.materialLines);
+    const normalizedMaterialLines = this.normalizeMaterialLines(dto.materialLines, materialLines);
+    const normalizedServiceLines = this.normalizeServiceLines(dto.serviceLines);
+
+    const materialCost = roundMoney(normalizedMaterialLines.reduce((sum, line) => sum + line.totalCost, 0));
+    const serviceCost = roundMoney(normalizedServiceLines.reduce((sum, line) => sum + line.totalCost, 0));
+    const totalCost = roundMoney(materialCost + serviceCost);
+    const profitPercent = Number(dto.profitPercent ?? 0);
+    const profitAmount = roundMoney((totalCost * profitPercent) / 100);
+    const salePrice = roundMoney(totalCost + profitAmount);
+    const finalPrice = roundMoney(dto.finalPrice != null ? Number(dto.finalPrice) : salePrice);
+    const realizedProfit = roundMoney(finalPrice - totalCost);
+
     return {
-      id: order.id,
-      number: order.number,
-      status: order.status,
-      totalAmount: toNumber(order.totalAmount)
+      customer,
+      data: {
+        customerId: customer.id,
+        customerName: dto.customerName?.trim() || existing?.customerName || customer.name,
+        productName: dto.productName.trim(),
+        quantity: toDecimal(dto.quantity),
+        note: sanitizeText(dto.note),
+        status: dto.status ?? (existing ? mapStatus(existing.status) : 'draft'),
+        materialCost: toDecimal(materialCost),
+        serviceCost: toDecimal(serviceCost),
+        totalCost: toDecimal(totalCost),
+        profitPercent: toDecimal(profitPercent),
+        profitAmount: toDecimal(profitAmount),
+        salePrice: toDecimal(salePrice),
+        finalPrice: toDecimal(finalPrice),
+        costPrice: toDecimal(totalCost),
+        profit: toDecimal(realizedProfit),
+        sections: {
+          materialLines: normalizedMaterialLines,
+          serviceLines: normalizedServiceLines
+        },
+        cancelledAt: dto.status === 'cancelled' ? new Date() : existing?.cancelledAt ?? null
+      }
     };
   }
 
-  private serializeCalculation(calculation: any): CalculationSnapshot | null {
-    if (!calculation) {
-      return null;
-    }
-
-    const payload = parseStoredPayload(calculation.sections, {
-      customerId: calculation.customerId,
-      productName: calculation.productName,
-      quantity: toNumber(calculation.quantity),
-      note: calculation.note ?? '',
-      salePrice: toNumber(calculation.salePrice),
-      status: mapStatusFromDb(calculation.status)
-    });
-
-    return buildCalculationSnapshot({
-      id: calculation.id,
-      number: calculation.number,
-      header: {
-        date: payload.date,
-        customerId: calculation.customerId,
-        productName: calculation.productName,
-        quantity: toNumber(calculation.quantity),
-        note: calculation.note ?? payload.note,
-        salePrice: payload.salePrice,
-        status: mapStatusFromDb(calculation.status)
-      },
-      rows: payload.rows,
-      customer: calculation.customer
-        ? {
-            id: calculation.customer.id,
-            name: calculation.customer.name,
-            companyName: calculation.customer.companyName
-          }
-        : null,
-      orderId: calculation.orderId,
-      order: calculation.order
-        ? {
-            id: calculation.order.id,
-            number: calculation.order.number,
-            status: calculation.order.status,
-            totalAmount: toNumber(calculation.order.totalAmount)
-          }
-        : null,
-      createdAt: calculation.createdAt.toISOString(),
-      updatedAt: calculation.updatedAt.toISOString()
-    });
-  }
-
-  private buildWhere(query: CalculationListQueryDto) {
-    const search = query.search?.trim();
+  private serialize(calculation: any): CalculationResponse {
+    const sections = (typeof calculation.sections === 'object' && calculation.sections != null ? calculation.sections : {}) as {
+      materialLines?: CalculationMaterialLineRecord[];
+      serviceLines?: CalculationServiceLineRecord[];
+    };
 
     return {
-      deletedAt: null,
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { number: { contains: search, mode: 'insensitive' as const } },
-              { productName: { contains: search, mode: 'insensitive' as const } },
-              { note: { contains: search, mode: 'insensitive' as const } },
-              { customer: { name: { contains: search, mode: 'insensitive' as const } } }
-            ]
-          }
-        : {})
-    } satisfies Prisma.CalculationWhereInput;
+      id: calculation.id,
+      number: calculation.number,
+      customerName: calculation.customerName ?? calculation.customer?.name ?? 'Müştəri',
+      productName: calculation.productName,
+      quantity: toNumber(calculation.quantity),
+      note: calculation.note,
+      status: mapStatus(calculation.status),
+      materialCost: toNumber(calculation.materialCost ?? calculation.costPrice),
+      serviceCost: toNumber(calculation.serviceCost),
+      totalCost: toNumber(calculation.totalCost ?? calculation.costPrice),
+      profitPercent: toNumber(calculation.profitPercent),
+      profitAmount: toNumber(calculation.profitAmount ?? calculation.profit),
+      salePrice: toNumber(calculation.salePrice),
+      finalPrice: toNumber(calculation.finalPrice ?? calculation.salePrice),
+      costPrice: toNumber(calculation.costPrice ?? calculation.totalCost),
+      profit: toNumber(calculation.profit ?? calculation.profitAmount),
+      sections: {
+        materialLines: sections.materialLines ?? [],
+        serviceLines: sections.serviceLines ?? []
+      },
+      createdAt: calculation.createdAt.toISOString(),
+      updatedAt: calculation.updatedAt.toISOString(),
+      cancelledAt: calculation.cancelledAt ? calculation.cancelledAt.toISOString() : null
+    };
+  }
+
+  private async loadCalculationOrThrow(id: string) {
+    const calculation = await this.prisma.calculation.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        customer: true
+      }
+    });
+
+    if (!calculation) {
+      throw new NotFoundException('Hesablama tapılmadı');
+    }
+
+    return calculation;
   }
 
   async findAll(query: CalculationListQueryDto) {
     const { page, limit, skip, take } = normalizePagination(query);
-    const where = this.buildWhere(query);
-    const orderByField = query.sortBy ?? 'createdAt';
-    const orderBy = { [orderByField]: query.sortOrder ?? 'desc' } as Prisma.CalculationOrderByWithRelationInput;
+    const search = query.search?.trim();
 
-    const [total, rows] = await this.prisma.$transaction([
+    const where: Prisma.CalculationWhereInput = {
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { number: { contains: search, mode: 'insensitive' } },
+              { customerName: { contains: search, mode: 'insensitive' } },
+              { productName: { contains: search, mode: 'insensitive' } },
+              { note: { contains: search, mode: 'insensitive' } }
+            ]
+          }
+        : {})
+    };
+
+    const [total, calculations] = await this.prisma.$transaction([
       this.prisma.calculation.count({ where }),
       this.prisma.calculation.findMany({
         where,
+        include: { customer: true },
+        orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
         skip,
-        take,
-        orderBy,
-        include: {
-          customer: true,
-          order: true
-        }
+        take
       })
     ]);
 
-    return buildPaginatedResponse(
-      rows.map((calculation) => this.serializeCalculation(calculation)!),
-      total,
-      page,
-      limit
-    );
+    return buildPaginatedResponse(calculations.map((calculation) => this.serialize(calculation)), total, page, limit);
   }
 
   async findOne(id: string) {
-    const calculation = await this.prisma.calculation.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        customer: true,
-        order: true
-      }
-    });
-
-    if (!calculation) {
-      throw new NotFoundException('Calculation not found');
-    }
-
-    return this.serializeCalculation(calculation);
+    return this.serialize(await this.loadCalculationOrThrow(id));
   }
 
   async create(dto: CreateCalculationDto) {
-    const payload = normalizeStoredCalculation({
-      date: dto.date ?? defaultCalculationHeader().date,
-      customerId: dto.customerId,
-      productName: dto.productName,
-      quantity: dto.quantity,
-      note: dto.note ?? '',
-      salePrice: dto.salePrice ?? 0,
-      status: dto.status ?? 'draft',
-      rows: dto.rows.map((row) =>
-        normalizeCalculationRow({
-          category: row.category,
-          id: row.id,
-          parameterId: row.parameterId ?? null,
-          parameterName: row.parameterName,
-          parameterVariant: row.parameterVariant ?? null,
-          variants: normalizeVariantItems(row.variants),
-          details: row.details && typeof row.details === 'object' ? row.details : {},
-          unit: row.unit,
-          quantity: row.quantity,
-          unitPrice: row.unitPrice,
-          isPriceOverridden: Boolean(row.isPriceOverridden),
-          note: row.note ?? ''
-        })
-      )
+    if (!dto.materialLines?.length && !dto.serviceLines?.length) {
+      throw new BadRequestException('Ən azı 1 material və ya xidmət sətri olmalıdır');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const number = await this.nextNumber(tx);
+      const payload = await this.buildCalculationRecord(tx, dto);
+
+      const created = await tx.calculation.create({
+        data: {
+          number,
+          ...payload.data,
+          status: dto.status ?? 'draft'
+        }
+      });
+
+      return tx.calculation.findUnique({
+        where: { id: created.id },
+        include: { customer: true }
+      });
     });
 
-    const number = await this.nextCalculationNumber();
+    if (!result) {
+      throw new BadRequestException('Hesablama yaradılmadı');
+    }
 
-    const created = await this.prisma.calculation.create({
-      data: {
-        number,
-        customerId: payload.customerId,
-        productName: payload.productName,
-        quantity: payload.quantity,
-        note: payload.note || null,
-        status: mapCalculationStatus(payload.status),
-        salePrice: payload.summary.salePrice,
-        costPrice: payload.summary.costPrice,
-        profit: payload.summary.profit,
-        sections: payload as unknown as Prisma.InputJsonValue
-      },
-      include: {
-        customer: true,
-        order: true
-      }
-    });
-
-    await this.auditService.log({
-      action: 'calculation.created',
-      entityType: 'calculation',
-      entityId: created.id,
-      afterData: created,
-      metadata: {
-        number: created.number
-      }
-    });
-
-    return this.serializeCalculation(created)!;
+    return this.serialize(result);
   }
 
   async update(id: string, dto: UpdateCalculationDto) {
-    const existing = await this.prisma.calculation.findFirst({
-      where: { id, deletedAt: null },
-      include: { customer: true, order: true }
-    });
+    const existing = await this.loadCalculationOrThrow(id);
 
-    if (!existing) {
-      throw new NotFoundException('Calculation not found');
+    if (existing.status !== CalculationStatus.draft) {
+      throw new BadRequestException('Yalnız qaralama hesablamalar redaktə oluna bilər');
     }
 
-    const current = parseStoredPayload(existing.sections, {
-      customerId: existing.customerId,
-      productName: existing.productName,
-      quantity: toNumber(existing.quantity),
-      note: existing.note ?? '',
-      salePrice: toNumber(existing.salePrice),
-      status: mapStatusFromDb(existing.status)
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.calculation.findUnique({
+        where: { id },
+        include: { customer: true }
+      });
 
-    const payload = normalizeStoredCalculation({
-      date: dto.date ?? current.date,
-      customerId: dto.customerId ?? current.customerId,
-      productName: dto.productName ?? current.productName,
-      quantity: dto.quantity ?? current.quantity,
-      note: dto.note ?? current.note,
-      salePrice: dto.salePrice ?? current.salePrice,
-      status: dto.status ?? current.status,
-      rows: (dto.rows ?? current.rows).map((row) =>
-        normalizeCalculationRow({
-          category: row.category,
-          id: row.id,
-          parameterId: row.parameterId ?? null,
-          parameterName: row.parameterName,
-          parameterVariant: row.parameterVariant ?? null,
-          variants: normalizeVariantItems(row.variants),
-          details: row.details && typeof row.details === 'object' ? row.details : {},
-          unit: row.unit,
-          quantity: row.quantity,
-          unitPrice: row.unitPrice,
-          isPriceOverridden: Boolean(row.isPriceOverridden),
-          note: row.note ?? ''
-        })
-      )
-    });
-
-    const updated = await this.prisma.calculation.update({
-      where: { id },
-      data: {
-        customerId: payload.customerId,
-        productName: payload.productName,
-        quantity: payload.quantity,
-        note: payload.note || null,
-        status: mapCalculationStatus(payload.status),
-        salePrice: payload.summary.salePrice,
-        costPrice: payload.summary.costPrice,
-        profit: payload.summary.profit,
-        sections: payload as unknown as Prisma.InputJsonValue
-      },
-      include: {
-        customer: true,
-        order: true
+      if (!current) {
+        throw new NotFoundException('Hesablama tapılmadı');
       }
+
+      const nextDto: CreateCalculationDto = {
+        customerName: dto.customerName ?? current.customerName ?? current.customer?.name ?? 'Müştəri',
+        productName: dto.productName ?? current.productName,
+        quantity: dto.quantity ?? toNumber(current.quantity),
+        note: dto.note ?? current.note ?? undefined,
+        profitPercent: dto.profitPercent ?? toNumber(current.profitPercent),
+        finalPrice: dto.finalPrice ?? toNumber(current.finalPrice),
+        status: dto.status ?? mapStatus(current.status),
+        materialLines: (dto.materialLines ?? (current.sections as any)?.materialLines ?? []) as CreateCalculationDto['materialLines'],
+        serviceLines: (dto.serviceLines ?? (current.sections as any)?.serviceLines ?? []) as CreateCalculationDto['serviceLines']
+      };
+
+      const payload = await this.buildCalculationRecord(tx, nextDto, current);
+
+      await tx.calculation.update({
+        where: { id },
+        data: {
+          customerId: payload.customer.id,
+          customerName: payload.data.customerName,
+          productName: payload.data.productName,
+          quantity: payload.data.quantity,
+          note: payload.data.note,
+          status: payload.data.status,
+          materialCost: payload.data.materialCost,
+          serviceCost: payload.data.serviceCost,
+          totalCost: payload.data.totalCost,
+          profitPercent: payload.data.profitPercent,
+          profitAmount: payload.data.profitAmount,
+          salePrice: payload.data.salePrice,
+          finalPrice: payload.data.finalPrice,
+          costPrice: payload.data.costPrice,
+          profit: payload.data.profit,
+          sections: payload.data.sections,
+          cancelledAt: payload.data.cancelledAt
+        }
+      });
+
+      return tx.calculation.findUnique({
+        where: { id },
+        include: { customer: true }
+      });
     });
 
-    await this.auditService.log({
-      action: 'calculation.updated',
-      entityType: 'calculation',
-      entityId: updated.id,
-      beforeData: existing,
-      afterData: updated
-    });
+    if (!result) {
+      throw new BadRequestException('Hesablama yenilənmədi');
+    }
 
-    return this.serializeCalculation(updated)!;
+    return this.serialize(result);
   }
 
-  async convertToOrder(id: string) {
-    const calculation = await this.prisma.calculation.findFirst({
-      where: { id, deletedAt: null },
-      include: { customer: true, order: true }
-    });
+  async remove(id: string) {
+    const existing = await this.loadCalculationOrThrow(id);
 
-    if (!calculation) {
-      throw new NotFoundException('Calculation not found');
+    if (existing.status === CalculationStatus.converted) {
+      throw new BadRequestException('Çevrilmiş hesablamanı silmək olmaz');
     }
 
-    if (calculation.orderId) {
-      return {
-        calculation: this.serializeCalculation(calculation)!,
-        order:
-          this.serializeOrderSummary(
-            calculation.order ?? (await this.prisma.order.findFirst({ where: { id: calculation.orderId } }))
-          )!
-      };
+    await this.prisma.calculation.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+
+    return { success: true };
+  }
+
+  async approve(id: string) {
+    const existing = await this.loadCalculationOrThrow(id);
+
+    if (existing.status !== CalculationStatus.draft) {
+      throw new BadRequestException('Yalnız qaralama hesablama təsdiqlənə bilər');
     }
 
-    const payload = parseStoredPayload(calculation.sections, {
-      customerId: calculation.customerId,
-      productName: calculation.productName,
-      quantity: toNumber(calculation.quantity),
-      note: calculation.note ?? '',
-      salePrice: toNumber(calculation.salePrice),
-      status: mapStatusFromDb(calculation.status)
-    });
-
-    const order = await this.ordersService.create({
-      customerId: payload.customerId,
-      status: OrderStatusDto.draft,
-      comment: payload.note || undefined,
-      items: [
-        {
-          name: payload.productName,
-          productType: 'calculation',
-          quantity: payload.quantity,
-          width: 0,
-          height: 0,
-          unitPrice: payload.summary.saleUnitPrice,
-          totalPrice: payload.summary.salePrice,
-          unitCost: payload.summary.unitCost,
-          totalCost: payload.summary.costPrice
-        }
-      ]
-    });
-
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        totalAmount: payload.summary.salePrice,
-        costAmount: payload.summary.costPrice,
-        profitAmount: payload.summary.profit,
-        marginPercent: payload.summary.profitPercent,
-        customerDebtAmount: payload.summary.salePrice
-      }
-    });
-
-    const updatedCalculation = await this.prisma.calculation.update({
+    await this.prisma.calculation.update({
       where: { id },
       data: {
-        status: CalculationStatus.converted,
-        orderId: order.id,
-        salePrice: payload.summary.salePrice,
-        costPrice: payload.summary.costPrice,
-        profit: payload.summary.profit,
-        sections: payload as unknown as Prisma.InputJsonValue
-      },
-      include: {
-        customer: true,
-        order: true
+        status: CalculationStatus.approved
       }
     });
 
-    await this.auditService.log({
-      action: 'calculation.converted_to_order',
-      entityType: 'calculation',
-      entityId: id,
-      beforeData: calculation,
-      afterData: updatedCalculation,
-      metadata: {
-        orderId: order.id
+    return this.serialize(await this.loadCalculationOrThrow(id));
+  }
+
+  async cancel(id: string) {
+    const existing = await this.loadCalculationOrThrow(id);
+
+    if (existing.status === CalculationStatus.converted) {
+      throw new BadRequestException('Çevrilmiş hesablama ləğv edilə bilməz');
+    }
+
+    await this.prisma.calculation.update({
+      where: { id },
+      data: {
+        status: CalculationStatus.cancelled,
+        cancelledAt: new Date()
       }
     });
 
-    return {
-      calculation: this.serializeCalculation(updatedCalculation)!,
-      order: this.serializeOrderSummary(updatedOrder)!
-    };
+    return this.serialize(await this.loadCalculationOrThrow(id));
   }
 }

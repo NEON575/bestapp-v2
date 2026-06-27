@@ -152,6 +152,7 @@ export class WarehouseService {
     const search = query.search?.trim();
 
     const where: Prisma.StockLevelWhereInput = {
+      ...(query.materialId ? { materialId: query.materialId } : {}),
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
       ...(search
         ? {
@@ -222,6 +223,7 @@ export class WarehouseService {
     const search = query.search?.trim();
 
     const where: Prisma.StockMovementWhereInput = {
+      ...(query.materialId ? { materialId: query.materialId } : {}),
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
       ...(search
         ? {

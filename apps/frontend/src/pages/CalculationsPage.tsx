@@ -1,84 +1,242 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { CalculationConvertResult, CalculationCreateDto, CalculationListItem, CalculationListQuery, CalculationParameterItem, CustomerListItem } from '@bestapp/shared';
-import { Button, Card } from '@bestapp/ui';
-import { calculationParametersClient } from '../shared/api/calculation-parameters';
-import { calculationsClient } from '../shared/api/calculations';
-import { customersClient } from '../shared/api/customers';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Modal, PageHeader, Pagination, SearchInput, StatusBadge } from '../shared/components';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Button, Input } from '@bestapp/ui';
+import { CheckCircle2, Eye, Plus, PencilLine, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import type { MaterialListItem } from '../shared/materials';
+import { calculationsClient, type CalculationRecord, type CalculationStatus } from '../shared/api/calculations';
+import { materialsClient } from '../shared/api/materials';
+import { warehousesClient } from '../shared/api/warehouses';
+import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from '../shared/components';
 import { formatCurrency, formatDateOnly, formatNumber } from '../shared/lib/format';
 import { useToast } from '../shared/toast/toast-context';
-import { CalculationEditorForm, createCalculationForm, mapCalculationToForm, type CalculationFormState } from './CalculationEditorForm';
+import type { WarehouseStockLevelItem } from '@bestapp/shared';
 
-type QueryState = CalculationListQuery & {
-  customerId: string;
-  status: string;
+type MaterialLineDraft = {
+  materialId: string;
+  quantity: string;
+  unit: string;
+  unitCost: string;
 };
 
-function mapFormToDto(form: CalculationFormState): CalculationCreateDto {
+type ServiceLineDraft = {
+  serviceName: string;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
+};
+
+type FormState = {
+  customerName: string;
+  productName: string;
+  quantity: string;
+  note: string;
+  profitPercent: string;
+  finalPrice: string;
+  status: CalculationStatus;
+  materialLines: MaterialLineDraft[];
+  serviceLines: ServiceLineDraft[];
+};
+
+type Mode = 'create' | 'edit' | 'view';
+type FinalPriceMode = 'auto' | 'manual';
+
+function toNumber(value: string | number | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function formatQuantity(value: number) {
+  return new Intl.NumberFormat('az-Latn-AZ', { maximumFractionDigits: 4 }).format(value);
+}
+
+function emptyMaterialLine(): MaterialLineDraft {
   return {
-    ...form,
-    rows: form.rows.map((row) => ({
-      ...row,
-      variants: row.variants.map((variant) => ({ ...variant }))
-    }))
+    materialId: '',
+    quantity: '',
+    unit: '',
+    unitCost: ''
   };
 }
 
-function nextPageFromPatch(current: QueryState, patch: Partial<QueryState>) {
+function emptyServiceLine(): ServiceLineDraft {
   return {
-    ...current,
-    ...patch,
-    page: patch.page ?? (Object.keys(patch).some((key) => key !== 'page') ? 1 : current.page)
+    serviceName: '',
+    quantity: '',
+    unit: '',
+    unitPrice: ''
   };
+}
+
+function emptyFormState(): FormState {
+  return {
+    customerName: '',
+    productName: '',
+    quantity: '',
+    note: '',
+    profitPercent: '30',
+    finalPrice: '',
+    status: 'draft',
+    materialLines: [],
+    serviceLines: []
+  };
+}
+
+function materialBaseUnit(material?: MaterialListItem | null) {
+  return material?.stockUnit || material?.unit || '—';
+}
+
+function materialDisplayName(material?: MaterialListItem | null) {
+  if (!material) {
+    return '—';
+  }
+
+  return `${material.materialNo} · ${material.name}`;
+}
+
+function ModalShell({
+  title,
+  description,
+  children,
+  footer,
+  onClose
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  footer: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+              {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+            </div>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
+              onClick={onClose}
+            >
+              Bağla
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+        <div className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4">{footer}</div>
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: CalculationStatus }) {
+  const classes =
+    status === 'approved'
+      ? 'bg-emerald-50 text-emerald-700'
+      : status === 'converted'
+        ? 'bg-sky-50 text-sky-700'
+        : status === 'cancelled'
+          ? 'bg-rose-50 text-rose-700'
+          : 'bg-slate-100 text-slate-600';
+
+  const labels: Record<CalculationStatus, string> = {
+    draft: 'Qaralama',
+    approved: 'Təsdiqləndi',
+    converted: 'Çevrildi',
+    cancelled: 'Ləğv edildi'
+  };
+
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}>{labels[status]}</span>;
 }
 
 export function CalculationsPage() {
-  const navigate = useNavigate();
   const toast = useToast();
-  const [rows, setRows] = useState<CalculationListItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
-  const [parameters, setParameters] = useState<CalculationParameterItem[]>([]);
-  const [meta, setMeta] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-  const [query, setQuery] = useState<QueryState>({
-    page: 1,
-    limit: 10,
-    search: '',
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
-    status: '',
-    customerId: ''
-  });
+  const [calculations, setCalculations] = useState<CalculationRecord[]>([]);
+  const [materials, setMaterials] = useState<MaterialListItem[]>([]);
+  const [stockLevels, setStockLevels] = useState<WarehouseStockLevelItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | CalculationStatus>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [activeCalculation, setActiveCalculation] = useState<CalculationListItem | null>(null);
-  const [form, setForm] = useState<CalculationFormState>(createCalculationForm());
+  const [modalOpen, setModalOpen] = useState(false);
+  const [mode, setMode] = useState<Mode>('create');
   const [saving, setSaving] = useState(false);
-  const [converting, setConverting] = useState(false);
-  const [confirmConvertOpen, setConfirmConvertOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formState, setFormState] = useState<FormState>(emptyFormState());
+  const [materialDraft, setMaterialDraft] = useState<MaterialLineDraft>(emptyMaterialLine());
+  const [serviceDraft, setServiceDraft] = useState<ServiceLineDraft>(emptyServiceLine());
+  const [editingMaterialIndex, setEditingMaterialIndex] = useState<number | null>(null);
+  const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
+  const [finalPriceMode, setFinalPriceMode] = useState<FinalPriceMode>('auto');
 
-  const load = async (nextQuery = query) => {
+  const selectedMaterial = useMemo(
+    () => materials.find((material) => material.id === materialDraft.materialId) ?? null,
+    [materialDraft.materialId, materials]
+  );
+
+  const stockMap = useMemo(() => {
+    const map = new Map<string, { available: number; unitCost: number }>();
+
+    for (const level of stockLevels) {
+      const materialId = level.material?.id || level.materialId;
+      const current = map.get(materialId) ?? { available: 0, unitCost: 0 };
+      current.available += Number(level.available ?? 0);
+      const suggested = Number(level.material?.averageCost ?? level.material?.unitCost ?? level.material?.costPrice ?? 0);
+      if (current.unitCost <= 0 && suggested > 0) {
+        current.unitCost = suggested;
+      }
+      map.set(materialId, current);
+    }
+
+    return map;
+  }, [stockLevels]);
+
+  const selectedMaterialStock = useMemo(() => {
+    if (!selectedMaterial) {
+      return { available: 0, unitCost: 0 };
+    }
+
+    const stock = stockMap.get(selectedMaterial.id);
+    return {
+      available: stock?.available ?? 0,
+      unitCost: stock?.unitCost ?? 0
+    };
+  }, [selectedMaterial, stockMap]);
+
+  const loadData = async (nextPage = page, nextSearch = search, nextStatus = status) => {
     setLoading(true);
     setError(null);
 
     try {
-      const apiQuery: CalculationListQuery = {
-        ...nextQuery,
-        status: nextQuery.status || undefined,
-        customerId: nextQuery.customerId || undefined
-      };
-
-      const [calculationResponse, customersResponse, parametersResponse] = await Promise.all([
-        calculationsClient.list(apiQuery),
-        customersClient.list({ page: 1, limit: 200 }),
-        calculationParametersClient.list({ page: 1, limit: 200, isActive: true })
+      const [calculationResponse, materialResponse, stockResponse] = await Promise.all([
+        calculationsClient.list({
+          page: nextPage,
+          limit,
+          search: nextSearch || undefined,
+          status: nextStatus === 'all' ? undefined : nextStatus
+        }),
+        materialsClient.list({
+          page: 1,
+          limit: 200,
+          status: 'active'
+        }),
+        warehousesClient.levels({ page: 1, limit: 200 })
       ]);
 
-      setRows(calculationResponse.data);
-      setMeta(calculationResponse.meta);
-      setCustomers(customersResponse.data);
-      setParameters(parametersResponse.data);
+      setCalculations(calculationResponse.data);
+      setTotalPages(calculationResponse.meta.totalPages);
+      setTotalItems(calculationResponse.meta.total);
+      setMaterials(materialResponse.data);
+      setStockLevels(stockResponse.data);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Hesablamalar yüklənmədi');
     } finally {
@@ -87,276 +245,920 @@ export function CalculationsPage() {
   };
 
   useEffect(() => {
-    void load(query);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.page, query.limit, query.search, query.sortBy, query.sortOrder, query.status, query.customerId]);
+    const timer = window.setTimeout(() => {
+      void loadData(page, search, status);
+    }, 250);
 
-  const customerOptions = useMemo(() => customers.map((customer) => ({ value: customer.id, label: customer.name })), [customers]);
+    return () => window.clearTimeout(timer);
+  }, [page, search, status]);
 
-  const updateQuery = (patch: Partial<QueryState>) => {
-    setQuery((current) => nextPageFromPatch(current, patch));
+  const refresh = async () => {
+    await loadData(page, search, status);
   };
 
   const openCreate = () => {
-    setActiveCalculation(null);
-    setForm(createCalculationForm());
-    setEditorOpen(true);
+    setMode('create');
+    setEditingId(null);
+    setFormState(emptyFormState());
+    setMaterialDraft(emptyMaterialLine());
+    setServiceDraft(emptyServiceLine());
+    setEditingMaterialIndex(null);
+    setEditingServiceIndex(null);
+    setFinalPriceMode('auto');
+    setModalOpen(true);
   };
 
-  const openEdit = (calculation: CalculationListItem) => {
-    setActiveCalculation(calculation);
-    setForm(mapCalculationToForm(calculation));
-    setEditorOpen(true);
+  const toMaterialDraft = (line: CalculationRecord['sections']['materialLines'][number]): MaterialLineDraft => ({
+    materialId: line.materialId,
+    quantity: String(line.quantity),
+    unit: line.unit,
+    unitCost: String(line.unitCost)
+  });
+
+  const toServiceDraft = (line: CalculationRecord['sections']['serviceLines'][number]): ServiceLineDraft => ({
+    serviceName: line.serviceName,
+    quantity: String(line.quantity),
+    unit: line.unit,
+    unitPrice: String(line.unitPrice)
+  });
+
+  const openView = (calculation: CalculationRecord) => {
+    setMode('view');
+    setEditingId(calculation.id);
+    setFormState({
+      customerName: calculation.customerName ?? '',
+      productName: calculation.productName,
+      quantity: String(calculation.quantity),
+      note: calculation.note ?? '',
+      profitPercent: String(calculation.profitPercent),
+      finalPrice: String(calculation.finalPrice),
+      status: calculation.status,
+      materialLines: calculation.sections.materialLines.map(toMaterialDraft),
+      serviceLines: calculation.sections.serviceLines.map(toServiceDraft)
+    });
+    setMaterialDraft(emptyMaterialLine());
+    setServiceDraft(emptyServiceLine());
+    setEditingMaterialIndex(null);
+    setEditingServiceIndex(null);
+    setFinalPriceMode('manual');
+    setModalOpen(true);
   };
 
-  const closeEditor = () => {
-    setEditorOpen(false);
-    setActiveCalculation(null);
-    setForm(createCalculationForm());
-    setConfirmConvertOpen(false);
+  const openEdit = (calculation: CalculationRecord) => {
+    setMode('edit');
+    setEditingId(calculation.id);
+    setFormState({
+      customerName: calculation.customerName ?? '',
+      productName: calculation.productName,
+      quantity: String(calculation.quantity),
+      note: calculation.note ?? '',
+      profitPercent: String(calculation.profitPercent),
+      finalPrice: String(calculation.finalPrice),
+      status: calculation.status,
+      materialLines: calculation.sections.materialLines.map(toMaterialDraft),
+      serviceLines: calculation.sections.serviceLines.map(toServiceDraft)
+    });
+    setMaterialDraft(emptyMaterialLine());
+    setServiceDraft(emptyServiceLine());
+    setEditingMaterialIndex(null);
+    setEditingServiceIndex(null);
+    setFinalPriceMode('manual');
+    setModalOpen(true);
   };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingId(null);
+    setFormState(emptyFormState());
+    setMaterialDraft(emptyMaterialLine());
+    setServiceDraft(emptyServiceLine());
+    setEditingMaterialIndex(null);
+    setEditingServiceIndex(null);
+    setFinalPriceMode('auto');
+  };
+
+  const materialCost = useMemo(
+    () =>
+      formState.materialLines.reduce((sum, line) => {
+        const quantity = toNumber(line.quantity);
+        const unitCost = toNumber(line.unitCost);
+        return sum + quantity * unitCost;
+      }, 0),
+    [formState.materialLines]
+  );
+
+  const serviceCost = useMemo(
+    () =>
+      formState.serviceLines.reduce((sum, line) => {
+        const quantity = toNumber(line.quantity);
+        const unitPrice = toNumber(line.unitPrice);
+        return sum + quantity * unitPrice;
+      }, 0),
+    [formState.serviceLines]
+  );
+
+  const totalCost = materialCost + serviceCost;
+  const profitPercent = toNumber(formState.profitPercent);
+  const profitAmount = roundMoney((totalCost * profitPercent) / 100);
+  const salePrice = roundMoney(totalCost + profitAmount);
+  const finalPrice = finalPriceMode === 'manual' ? toNumber(formState.finalPrice) : salePrice;
+  const realProfit = roundMoney(finalPrice - totalCost);
+  const realProfitPercent = totalCost > 0 ? roundMoney((realProfit / totalCost) * 100) : 0;
+  const draftMaterialAvailable = selectedMaterial ? selectedMaterialStock.available : 0;
+  const draftUnitCost = selectedMaterial ? selectedMaterialStock.unitCost : 0;
+
+  const buildPayload = (): Parameters<typeof calculationsClient.create>[0] => ({
+    customerName: formState.customerName.trim() || undefined,
+    productName: formState.productName.trim(),
+    quantity: toNumber(formState.quantity),
+    note: formState.note.trim() || undefined,
+    profitPercent,
+    finalPrice,
+    status: formState.status,
+    materialLines: formState.materialLines.map((line) => ({
+      materialId: line.materialId,
+      quantity: toNumber(line.quantity),
+      unit: line.unit.trim(),
+      unitCost: toNumber(line.unitCost)
+    })),
+    serviceLines: formState.serviceLines.map((line) => ({
+      serviceName: line.serviceName.trim(),
+      quantity: toNumber(line.quantity),
+      unit: line.unit.trim(),
+      unitPrice: toNumber(line.unitPrice)
+    }))
+  });
 
   const persist = async () => {
-    const payload = mapFormToDto(form);
+    const payload = buildPayload();
 
-    if (activeCalculation?.id) {
-      return calculationsClient.update(activeCalculation.id, payload);
+    if (editingId && mode === 'edit') {
+      return calculationsClient.update(editingId, payload);
     }
 
     return calculationsClient.create(payload);
   };
 
   const saveCalculation = async () => {
+    if (!formState.productName.trim()) {
+      toast.warning('Məhsul adını daxil edin');
+      return;
+    }
+
+    if (!formState.customerName.trim()) {
+      toast.warning('Müştəri adını daxil edin');
+      return;
+    }
+
+    if (formState.materialLines.length === 0 && formState.serviceLines.length === 0) {
+      toast.warning('Ən azı 1 material və ya xidmət sətri əlavə edin');
+      return;
+    }
+
     setSaving(true);
     try {
       const saved = await persist();
       toast.success('Hesablama saxlanıldı', saved.number);
-      setActiveCalculation(saved);
-      setForm(mapCalculationToForm(saved));
-      await load(query);
+      closeModal();
+      await loadData(page, search, status);
       return saved;
     } catch (saveError) {
-      toast.error('Hesablama saxlanmadı', saveError instanceof Error ? saveError.message : 'Bir az sonra yenidən yoxlayın');
+      toast.error('Hesablama saxlanmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
       return null;
     } finally {
       setSaving(false);
     }
   };
 
-  const convertCalculation = async () => {
-    setConverting(true);
-    try {
-      let calculationId = activeCalculation?.id;
+  const addOrUpdateMaterialLine = () => {
+    const material = selectedMaterial;
+    if (!material) {
+      toast.warning('Material seçin');
+      return;
+    }
 
-      if (!calculationId) {
-        const saved = await persist();
-        if (!saved) return;
-        calculationId = saved.id;
-        setActiveCalculation(saved);
-        setForm(mapCalculationToForm(saved));
+    const quantity = toNumber(materialDraft.quantity);
+    const unit = materialDraft.unit.trim() || materialBaseUnit(material);
+    const unitCost = materialDraft.unitCost.trim() ? toNumber(materialDraft.unitCost) : draftUnitCost;
+
+    if (quantity <= 0) {
+      toast.warning('Miqdar 0-dan böyük olmalıdır');
+      return;
+    }
+
+    const nextLine: MaterialLineDraft = {
+      materialId: material.id,
+      quantity: String(quantity),
+      unit,
+      unitCost: String(unitCost)
+    };
+
+    setFormState((current) => {
+      const nextItems = [...current.materialLines];
+      if (editingMaterialIndex != null && nextItems[editingMaterialIndex]) {
+        nextItems[editingMaterialIndex] = nextLine;
       } else {
-        const saved = await calculationsClient.update(calculationId, mapFormToDto(form));
-        setActiveCalculation(saved);
-        setForm(mapCalculationToForm(saved));
+        nextItems.push(nextLine);
       }
+      return { ...current, materialLines: nextItems };
+    });
 
-      const result: CalculationConvertResult = await calculationsClient.convertToOrder(calculationId);
-      toast.success('Sifariş yaradıldı', result.order.number);
-      closeEditor();
-      await load(query);
-    } catch (convertError) {
-      toast.error('Sifarişə çevrilmədi', convertError instanceof Error ? convertError.message : 'Bir az sonra yenidən yoxlayın');
-    } finally {
-      setConverting(false);
+    setMaterialDraft(emptyMaterialLine());
+    setEditingMaterialIndex(null);
+  };
+
+  const addOrUpdateServiceLine = () => {
+    const serviceName = serviceDraft.serviceName.trim();
+    const quantity = toNumber(serviceDraft.quantity);
+    const unit = serviceDraft.unit.trim();
+    const unitPrice = serviceDraft.unitPrice.trim() ? toNumber(serviceDraft.unitPrice) : 0;
+
+    if (!serviceName) {
+      toast.warning('Xidmət adı daxil edin');
+      return;
+    }
+
+    if (!unit) {
+      toast.warning('Vahidi daxil edin');
+      return;
+    }
+
+    if (quantity <= 0) {
+      toast.warning('Miqdar 0-dan böyük olmalıdır');
+      return;
+    }
+
+    const nextLine: ServiceLineDraft = {
+      serviceName,
+      quantity: String(quantity),
+      unit,
+      unitPrice: String(unitPrice)
+    };
+
+    setFormState((current) => {
+      const nextItems = [...current.serviceLines];
+      if (editingServiceIndex != null && nextItems[editingServiceIndex]) {
+        nextItems[editingServiceIndex] = nextLine;
+      } else {
+        nextItems.push(nextLine);
+      }
+      return { ...current, serviceLines: nextItems };
+    });
+
+    setServiceDraft(emptyServiceLine());
+    setEditingServiceIndex(null);
+  };
+
+  const approveCalculation = async (calculation: CalculationRecord) => {
+    try {
+      await calculationsClient.approve(calculation.id);
+      toast.success('Hesablama təsdiqləndi');
+      await refresh();
+    } catch (approveError) {
+      toast.error('Hesablama təsdiqlənmədi', approveError instanceof Error ? approveError.message : 'Xəta baş verdi');
     }
   };
 
-  const activeConverted = Boolean(activeCalculation?.orderId);
+  const cancelCalculation = async (calculation: CalculationRecord) => {
+    try {
+      await calculationsClient.cancel(calculation.id);
+      toast.success('Hesablama ləğv edildi');
+      await refresh();
+    } catch (cancelError) {
+      toast.error('Hesablama ləğv edilmədi', cancelError instanceof Error ? cancelError.message : 'Xəta baş verdi');
+    }
+  };
 
-  if (loading && !rows.length) {
-    return (
-      <div className="space-y-5">
-        <PageHeader title="Hesablamalar" description="Parametr əsaslı print hesablama modulu." />
-        <LoadingState rows={4} />
+  const removeCalculation = async (calculation: CalculationRecord) => {
+    if (!window.confirm('Bu hesablama silinsin?')) {
+      return;
+    }
+
+    try {
+      await calculationsClient.remove(calculation.id);
+      toast.success('Hesablama silindi');
+      await refresh();
+    } catch (removeError) {
+      toast.error('Hesablama silinmədi', removeError instanceof Error ? removeError.message : 'Xəta baş verdi');
+    }
+  };
+
+  const activeCalculation = calculations.find((calculation) => calculation.id === editingId) ?? null;
+  const modalReadOnly = mode === 'view' || (mode === 'edit' && activeCalculation?.status !== 'draft');
+
+  const footer = (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm text-slate-500">
+        {mode === 'view'
+          ? 'Yalnız baxış rejimi'
+          : modalReadOnly
+            ? 'Təsdiqlənmiş və ya ləğv edilmiş hesablama redaktə edilə bilməz'
+            : 'Material və xidmət sətrlərini əlavə edin, sonra yadda saxlayın.'}
       </div>
-    );
-  }
-
-  if (error) {
-    return <ErrorState description={error} onRetry={() => void load(query)} />;
-  }
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" onClick={closeModal} disabled={saving}>
+          Bağla
+        </Button>
+        {!modalReadOnly ? (
+          <Button onClick={() => void saveCalculation()} disabled={saving}>
+            {saving ? 'Yadda saxlanılır...' : 'Yadda saxla'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
-        title="Hesablamalar"
-        description="Parametrləri seçin, qiymətlər avtomatik hesablansın və lazım olduqda sifarişə çevirin."
-        actions={<Button onClick={openCreate}>Yeni hesablama</Button>}
-      />
-
-      <FilterBar>
-        <div className="w-full lg:max-w-sm">
-          <SearchInput value={query.search ?? ''} onChange={(value) => updateQuery({ search: value, page: 1 })} placeholder="Nömrə, məhsul və ya müştəri üzrə axtar" />
-        </div>
-
-        <div className="w-full lg:w-44">
-          <select
-            value={query.status ?? ''}
-            onChange={(event) => updateQuery({ status: event.target.value, page: 1 })}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-          >
-            <option value="">Bütün statuslar</option>
-            <option value="draft">Qaralama</option>
-            <option value="approved">Təsdiqləndi</option>
-            <option value="converted">Sifarişə çevrildi</option>
-          </select>
-        </div>
-
-        <div className="w-full lg:w-56">
-          <select
-            value={query.customerId ?? ''}
-            onChange={(event) => updateQuery({ customerId: event.target.value, page: 1 })}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-          >
-            <option value="">Bütün müştərilər</option>
-            {customerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </FilterBar>
-
-      <DataTable
-        rowKey={(row) => row.id}
-        data={rows}
-        columns={[
-          {
-            key: 'number',
-            header: 'Nömrə',
-            render: (row) => (
-              <div>
-                <div className="font-semibold text-slate-950">{row.number}</div>
-                <div className="text-xs text-slate-500">{formatDateOnly(row.createdAt)}</div>
-              </div>
-            )
-          },
-          {
-            key: 'customer',
-            header: 'Müştəri',
-            render: (row) => row.customer?.name ?? '—'
-          },
-          {
-            key: 'product',
-            header: 'Məhsul',
-            render: (row) => row.productName
-          },
-          {
-            key: 'quantity',
-            header: 'Tiraj',
-            render: (row) => formatNumber(row.quantity, 0)
-          },
-          {
-            key: 'status',
-            header: 'Status',
-            render: (row) => <StatusBadge kind="calculation" status={row.status} />
-          },
-          {
-            key: 'sale',
-            header: 'Satış',
-            render: (row) => formatCurrency(row.salePrice)
-          },
-          {
-            key: 'cost',
-            header: 'Maya',
-            render: (row) => formatCurrency(row.costPrice)
-          },
-          {
-            key: 'profit',
-            header: 'Qazanc',
-            render: (row) => formatCurrency(row.profit)
-          },
-          {
-            key: 'order',
-            header: 'Sifariş',
-            render: (row) =>
-              row.order ? (
-                <button type="button" className="font-semibold text-sky-700 hover:underline" onClick={() => navigate(`/orders/${row.order?.id}`)}>
-                  {row.order.number}
-                </button>
-              ) : (
-                '—'
-              )
-          },
-          {
-            key: 'actions',
-            header: 'Əməliyyatlar',
-            className: 'w-[240px]',
-            render: (row) => (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => openEdit(row)}>
-                  Aç
-                </Button>
-                {row.orderId ? (
-                  <Button variant="secondary" onClick={() => navigate(`/orders/${row.orderId}`)}>
-                    Sifarişi aç
-                  </Button>
-                ) : null}
-              </div>
-            )
-          }
-        ]}
-        emptyState={
-          <EmptyState
-            title="Hesablama yoxdur"
-            description="İlk parametrlərə əsaslanan hesablamanı yaradın."
-            actionLabel="Yeni hesablama"
-            onAction={openCreate}
-          />
+        title="Hesablama"
+        description="Maya, satış və qazancı sifarişdən əvvəl burada hesablayın."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void refresh()}>
+              <span className="inline-flex items-center gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Yenilə
+              </span>
+            </Button>
+            <Button onClick={openCreate}>
+              <span className="inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Yeni hesablama
+              </span>
+            </Button>
+          </div>
         }
       />
 
-      <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => updateQuery({ page })} />
+      <div className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3">
+        <label className="block space-y-2 md:col-span-2">
+          <span className="text-sm font-medium text-slate-700">Axtarış</span>
+          <Input
+            value={search}
+            onChange={(event) => {
+              setPage(1);
+              setSearch(event.target.value);
+            }}
+            placeholder="Hesablama №, məhsul və ya müştəri"
+          />
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-slate-700">Status</span>
+          <select
+            value={status}
+            onChange={(event) => {
+              setPage(1);
+              setStatus(event.target.value as 'all' | CalculationStatus);
+            }}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400"
+          >
+            <option value="all">Hamısı</option>
+            <option value="draft">Qaralama</option>
+            <option value="approved">Təsdiqləndi</option>
+            <option value="converted">Çevrildi</option>
+            <option value="cancelled">Ləğv edildi</option>
+          </select>
+        </label>
+      </div>
 
-      <Card className="border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-        Cəmi: <span className="font-semibold text-slate-950">{meta.total}</span>
-      </Card>
-
-      <Modal
-        open={editorOpen}
-        title={activeCalculation ? `Hesablama ${activeCalculation.number}` : 'Yeni hesablama'}
-        description="Kateqoriya seçin, parametrlər avtomatik qiymətlənsin və nəticəni saxlayın."
-        onClose={closeEditor}
-        widthClassName="max-w-7xl"
-      >
-        <CalculationEditorForm
-          value={form}
-          customers={customers}
-          parameters={parameters}
-          onChange={setForm}
-          onClose={closeEditor}
-          onSave={() => void saveCalculation()}
-          onConvert={() => setConfirmConvertOpen(true)}
-          saving={saving}
-          converting={converting}
-          converted={activeConverted}
+      {loading ? (
+        <LoadingState rows={4} />
+      ) : error ? (
+        <ErrorState title="Hesablamalar yüklənmədi" description={error} onRetry={() => void loadData(page, search, status)} />
+      ) : calculations.length === 0 ? (
+        <EmptyState
+          title="Hesablama tapılmadı"
+          description="Yeni hesablama yaradaraq maya dəyərini və satış qiymətini hesablayın."
+          icon={Plus}
+          actionLabel="Yeni hesablama"
+          onAction={openCreate}
         />
-      </Modal>
+      ) : (
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    {['Hesablama №', 'Müştəri', 'Məhsul', 'Say', 'Maya', 'Satış qiyməti', 'Qazanc', 'Status', 'Əməliyyatlar'].map(
+                      (header) => (
+                        <th
+                          key={header}
+                          className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]"
+                        >
+                          {header}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {calculations.map((calculation) => (
+                    <tr key={calculation.id} className="border-b border-slate-100 last:border-b-0">
+                      <td className="px-4 py-3 font-medium text-slate-950">
+                        <div>{calculation.number}</div>
+                        <div className="text-xs text-slate-500">{formatDateOnly(calculation.createdAt)}</div>
+                      </td>
+                      <td className="px-4 py-3">{calculation.customerName}</td>
+                      <td className="px-4 py-3">{calculation.productName}</td>
+                      <td className="px-4 py-3">{formatNumber(calculation.quantity, 4)}</td>
+                      <td className="px-4 py-3">{formatCurrency(calculation.totalCost, 'AZN')}</td>
+                      <td className="px-4 py-3">{formatCurrency(calculation.finalPrice, 'AZN')}</td>
+                      <td className="px-4 py-3">
+                        {formatCurrency(calculation.profit, 'AZN')} · {formatNumber(calculation.totalCost > 0 ? (calculation.profit / calculation.totalCost) * 100 : 0, 2)}%
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={calculation.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="secondary" className="h-9 px-3" onClick={() => openView(calculation)}>
+                            <span className="inline-flex items-center gap-2">
+                              <Eye className="h-4 w-4" />
+                              Bax
+                            </span>
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="h-9 px-3"
+                            onClick={() => openEdit(calculation)}
+                            disabled={calculation.status !== 'draft'}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <PencilLine className="h-4 w-4" />
+                              Redaktə
+                            </span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="h-9 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            onClick={() => void removeCalculation(calculation)}
+                            disabled={calculation.status === 'converted'}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <Trash2 className="h-4 w-4" />
+                              Sil
+                            </span>
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="h-9 px-3"
+                            onClick={() => void approveCalculation(calculation)}
+                            disabled={calculation.status !== 'draft'}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4" />
+                              Təsdiqlə
+                            </span>
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="h-9 px-3"
+                            onClick={() => void cancelCalculation(calculation)}
+                            disabled={calculation.status === 'cancelled' || calculation.status === 'converted'}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <XCircle className="h-4 w-4" />
+                              Ləğv et
+                            </span>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      <ConfirmDialog
-        open={confirmConvertOpen}
-        title="Sifarişə çevir"
-        description="Bu hesablama əsasında order yaradılacaq. Sonradan hesablama dəyişsə, order avtomatik yenilənməyəcək."
-        confirmLabel="Davam et"
-        cancelLabel="Bağla"
-        loading={converting}
-        onCancel={() => setConfirmConvertOpen(false)}
-        onConfirm={() => {
-          setConfirmConvertOpen(false);
-          void convertCalculation();
-        }}
-      />
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <div className="text-sm text-slate-500">Cəmi {totalItems} hesablama</div>
+        </div>
+      )}
+
+      {modalOpen ? (
+        <ModalShell
+          title={mode === 'create' ? 'Yeni hesablama' : mode === 'edit' ? 'Hesablamanı redaktə et' : 'Hesablama məlumatı'}
+          description="Müştəri, məhsul, materiallar və xidmətləri burada daxil edin."
+          onClose={closeModal}
+          footer={footer}
+        >
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-5">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Müştəri adı</span>
+                <Input
+                  value={formState.customerName}
+                  onChange={(event) => setFormState((current) => ({ ...current, customerName: event.target.value }))}
+                  disabled={modalReadOnly}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Məhsul adı</span>
+                <Input
+                  value={formState.productName}
+                  onChange={(event) => setFormState((current) => ({ ...current, productName: event.target.value }))}
+                  disabled={modalReadOnly}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Say</span>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  value={formState.quantity}
+                  onChange={(event) => setFormState((current) => ({ ...current, quantity: event.target.value }))}
+                  disabled={modalReadOnly}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Qazanc faizi</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={formState.profitPercent}
+                  onChange={(event) => setFormState((current) => ({ ...current, profitPercent: event.target.value }))}
+                  disabled={modalReadOnly}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Status</span>
+                <select
+                  value={formState.status}
+                  onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CalculationStatus }))}
+                  disabled={modalReadOnly}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                >
+                  <option value="draft">Qaralama</option>
+                  <option value="approved">Təsdiqləndi</option>
+                  <option value="converted">Çevrildi</option>
+                  <option value="cancelled">Ləğv edildi</option>
+                </select>
+              </label>
+
+              <label className="block space-y-2 md:col-span-5">
+                <span className="text-sm font-medium text-slate-700">Qeyd</span>
+                <textarea
+                  rows={3}
+                  value={formState.note}
+                  onChange={(event) => setFormState((current) => ({ ...current, note: event.target.value }))}
+                  disabled={modalReadOnly}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                />
+              </label>
+
+              <label className="block space-y-2 md:col-span-5">
+                <span className="text-sm font-medium text-slate-700">Final qiymət</span>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={finalPriceMode === 'manual' ? formState.finalPrice : String(salePrice)}
+                    onChange={(event) => {
+                      setFinalPriceMode('manual');
+                      setFormState((current) => ({ ...current, finalPrice: event.target.value }));
+                    }}
+                    disabled={modalReadOnly}
+                  />
+                  {!modalReadOnly ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setFinalPriceMode('auto');
+                        setFormState((current) => ({ ...current, finalPrice: String(salePrice) }));
+                      }}
+                    >
+                      Avto
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="text-xs text-slate-500">Avto rejimdə satış qiyməti ilə sinxron qalır.</div>
+              </label>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Material seçimi</span>
+                  <select
+                    value={materialDraft.materialId}
+                    onChange={(event) => {
+                      const material = materials.find((item) => item.id === event.target.value) ?? null;
+                      const nextUnit = material ? materialBaseUnit(material) : '';
+                      const stock = material ? stockMap.get(material.id) : undefined;
+                      const nextUnitCost = stock?.unitCost ?? 0;
+
+                      setMaterialDraft((current) => ({
+                        ...current,
+                        materialId: event.target.value,
+                        unit: nextUnit,
+                        unitCost: material ? String(nextUnitCost) : current.unitCost
+                      }));
+                    }}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    <option value="">Material seçin</option>
+                    {materials.map((material) => (
+                      <option key={material.id} value={material.id}>
+                        {materialDisplayName(material)}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedMaterial ? (
+                    <div className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600">
+                      <div>Qalıq: {formatQuantity(draftMaterialAvailable)} {materialBaseUnit(selectedMaterial)}</div>
+                      <div>Maya: {formatCurrency(draftUnitCost, 'AZN')} / {materialBaseUnit(selectedMaterial)}</div>
+                    </div>
+                  ) : null}
+                </label>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Miqdar</span>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={materialDraft.quantity}
+                      onChange={(event) => setMaterialDraft((current) => ({ ...current, quantity: event.target.value }))}
+                      disabled={modalReadOnly}
+                    />
+                  </label>
+
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Vahid</span>
+                    <Input
+                      value={materialDraft.unit}
+                      onChange={(event) => setMaterialDraft((current) => ({ ...current, unit: event.target.value }))}
+                      disabled={modalReadOnly}
+                    />
+                  </label>
+
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Vahid maya</span>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={materialDraft.unitCost}
+                      onChange={(event) => setMaterialDraft((current) => ({ ...current, unitCost: event.target.value }))}
+                      disabled={modalReadOnly}
+                    />
+                  </label>
+
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Cəmi</span>
+                    <Input value={formatCurrency(toNumber(materialDraft.quantity) * toNumber(materialDraft.unitCost), 'AZN')} disabled />
+                  </label>
+                </div>
+              </div>
+
+              {!modalReadOnly ? (
+                <div className="mt-4 flex justify-end">
+                  <Button className="h-11 px-4" onClick={addOrUpdateMaterialLine}>
+                    {editingMaterialIndex != null ? 'Yenilə' : 'Əlavə et'}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      {['Material', 'Miqdar', 'Vahid', 'Vahid maya', 'Cəmi', 'Sil'].map((header) => (
+                        <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formState.materialLines.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
+                          Hələ material əlavə edilməyib
+                        </td>
+                      </tr>
+                    ) : (
+                      formState.materialLines.map((line, index) => {
+                        const material = materials.find((item) => item.id === line.materialId) ?? null;
+                        const lineTotal = toNumber(line.quantity) * toNumber(line.unitCost);
+
+                        return (
+                          <tr key={`${line.materialId}-${index}`} className="border-b border-slate-100 last:border-b-0">
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                className="text-left font-medium text-slate-950 hover:underline"
+                                onClick={() => {
+                                  setEditingMaterialIndex(index);
+                                  setMaterialDraft(line);
+                                }}
+                              >
+                                {materialDisplayName(material)}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">{formatQuantity(toNumber(line.quantity))}</td>
+                            <td className="px-4 py-3">{line.unit}</td>
+                            <td className="px-4 py-3">{formatCurrency(toNumber(line.unitCost), 'AZN')}</td>
+                            <td className="px-4 py-3">{formatCurrency(lineTotal, 'AZN')}</td>
+                            <td className="px-4 py-3">
+                              <Button
+                                variant="ghost"
+                                className="h-9 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                onClick={() =>
+                                  setFormState((current) => ({
+                                    ...current,
+                                    materialLines: current.materialLines.filter((_, currentIndex) => currentIndex !== index)
+                                  }))
+                                }
+                                disabled={modalReadOnly}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Trash2 className="h-4 w-4" />
+                                  Sil
+                                </span>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <label className="block space-y-2 md:col-span-2">
+                  <span className="text-sm font-medium text-slate-700">Xidmət adı</span>
+                  <select
+                    value={serviceDraft.serviceName}
+                    onChange={(event) => setServiceDraft((current) => ({ ...current, serviceName: event.target.value }))}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    <option value="">Xidmət seçin</option>
+                    {['Çap', 'Kəsim', 'Laminasiya', 'Büküm', 'Dizayn', 'Çatdırılma', 'Digər'].map((service) => (
+                      <option key={service} value={service}>
+                        {service}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Miqdar</span>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    value={serviceDraft.quantity}
+                    onChange={(event) => setServiceDraft((current) => ({ ...current, quantity: event.target.value }))}
+                    disabled={modalReadOnly}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Vahid</span>
+                  <Input
+                    value={serviceDraft.unit}
+                    onChange={(event) => setServiceDraft((current) => ({ ...current, unit: event.target.value }))}
+                    disabled={modalReadOnly}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Vahid qiymət</span>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    value={serviceDraft.unitPrice}
+                    onChange={(event) => setServiceDraft((current) => ({ ...current, unitPrice: event.target.value }))}
+                    disabled={modalReadOnly}
+                  />
+                </label>
+              </div>
+
+              {!modalReadOnly ? (
+                <div className="mt-4 flex justify-end">
+                  <Button className="h-11 px-4" onClick={addOrUpdateServiceLine}>
+                    {editingServiceIndex != null ? 'Yenilə' : 'Əlavə et'}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      {['Xidmət', 'Miqdar', 'Vahid', 'Vahid qiymət', 'Cəmi', 'Sil'].map((header) => (
+                        <th key={header} className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.15em]">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formState.serviceLines.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
+                          Hələ xidmət əlavə edilməyib
+                        </td>
+                      </tr>
+                    ) : (
+                      formState.serviceLines.map((line, index) => {
+                        const lineTotal = toNumber(line.quantity) * toNumber(line.unitPrice);
+
+                        return (
+                          <tr key={`${line.serviceName}-${index}`} className="border-b border-slate-100 last:border-b-0">
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                className="text-left font-medium text-slate-950 hover:underline"
+                                onClick={() => {
+                                  setEditingServiceIndex(index);
+                                  setServiceDraft(line);
+                                }}
+                              >
+                                {line.serviceName}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">{formatQuantity(toNumber(line.quantity))}</td>
+                            <td className="px-4 py-3">{line.unit}</td>
+                            <td className="px-4 py-3">{formatCurrency(toNumber(line.unitPrice), 'AZN')}</td>
+                            <td className="px-4 py-3">{formatCurrency(lineTotal, 'AZN')}</td>
+                            <td className="px-4 py-3">
+                              <Button
+                                variant="ghost"
+                                className="h-9 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                onClick={() =>
+                                  setFormState((current) => ({
+                                    ...current,
+                                    serviceLines: current.serviceLines.filter((_, currentIndex) => currentIndex !== index)
+                                  }))
+                                }
+                                disabled={modalReadOnly}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Trash2 className="h-4 w-4" />
+                                  Sil
+                                </span>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+              <div>
+                <div className="text-sm text-slate-500">Material maya</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(materialCost, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Xidmət maya</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(serviceCost, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Cəmi maya</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(totalCost, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Qazanc faizi</div>
+                <div className="text-lg font-semibold text-slate-950">{formatNumber(profitPercent, 2)}%</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Qazanc məbləği</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(profitAmount, 'AZN')}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Tövsiyə satış qiyməti</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(salePrice, 'AZN')}</div>
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-500">Final qiymət</div>
+                <div className="text-lg font-semibold text-slate-950">{formatCurrency(finalPrice, 'AZN')}</div>
+                <div className="mt-2 text-sm text-slate-600">
+                  Real qazanc: {formatCurrency(realProfit, 'AZN')} · {formatNumber(realProfitPercent, 2)}%
+                </div>
+              </div>
+            </div>
+          </div>
+        </ModalShell>
+      ) : null}
     </div>
   );
 }

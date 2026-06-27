@@ -21,6 +21,7 @@ enum CalculationStatus {
   draft
   approved
   converted
+  cancelled
 }
 
 enum OrderItemColorMode {
@@ -845,15 +846,23 @@ model Calculation {
   id           String             @id @default(uuid())
   number       String             @unique
   customerId   String
+  customerName String?
   productName  String
   quantity     Decimal            @db.Decimal(18, 4)
   note         String?
   status       CalculationStatus  @default(draft)
+  materialCost Decimal            @default(0) @db.Decimal(18, 2)
+  serviceCost  Decimal            @default(0) @db.Decimal(18, 2)
+  totalCost    Decimal            @default(0) @db.Decimal(18, 2)
+  profitPercent Decimal           @default(0) @db.Decimal(8, 2)
+  profitAmount Decimal            @default(0) @db.Decimal(18, 2)
   salePrice    Decimal            @default(0) @db.Decimal(18, 2)
+  finalPrice   Decimal             @default(0) @db.Decimal(18, 2)
   costPrice    Decimal            @default(0) @db.Decimal(18, 2)
   profit       Decimal            @default(0) @db.Decimal(18, 2)
   sections     Json
   orderId      String?            @unique
+  cancelledAt  DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   deletedAt    DateTime?
