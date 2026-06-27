@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 import { Button, Card } from '@bestapp/ui';
+import { cardClass } from '../styles';
 
 type ErrorStateProps = {
   title?: string;
@@ -13,9 +14,9 @@ export function ErrorState({
   onRetry
 }: ErrorStateProps) {
   return (
-    <Card className="border-rose-200 bg-rose-50 p-6 shadow-sm">
+    <Card className={`${cardClass} border-rose-500/15 bg-rose-500/8 p-6`}>
       <div className="flex items-start gap-4">
-        <div className="rounded-2xl bg-white p-3 text-rose-600 shadow-sm">
+        <div className="rounded-3xl border border-rose-500/15 bg-rose-500/10 p-3 text-rose-600 shadow-sm">
           <AlertTriangle className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">

@@ -1,4 +1,5 @@
 import { Button } from '@bestapp/ui';
+import { cardClass } from '../styles';
 
 type PaginationProps = {
   page: number;
@@ -12,23 +13,22 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className={`${cardClass} flex flex-col gap-3 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between`}>
       <div>
-        Страница {page} из {totalPages}
+        Səhifə {page} / {totalPages}
       </div>
       <div className="flex items-center gap-2">
         <Button variant="secondary" onClick={() => onPageChange(Math.max(page - 1, 1))} disabled={page <= 1}>
-          Назад
+          Geri
         </Button>
         <Button
           variant="secondary"
           onClick={() => onPageChange(Math.min(page + 1, totalPages))}
           disabled={page >= totalPages}
         >
-          Вперед
+          İrəli
         </Button>
       </div>
     </div>
   );
 }
-

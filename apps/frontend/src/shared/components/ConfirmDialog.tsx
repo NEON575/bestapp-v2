@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Button, Card } from '@bestapp/ui';
+import { cardClass } from '../styles';
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -18,8 +19,8 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = 'Подтвердить',
-  cancelLabel = 'Отмена',
+  confirmLabel = 'Təsdiqlə',
+  cancelLabel = 'Ləğv et',
   onConfirm,
   onCancel,
   children,
@@ -30,14 +31,18 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-      <Card className="w-full max-w-lg border-slate-200 bg-white p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4 backdrop-blur-xl">
+      <Card className={`${cardClass} w-full max-w-lg p-5`}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-950">{title}</h3>
-            {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+            {description ? <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p> : null}
           </div>
-          <button type="button" onClick={onCancel} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-white/20 bg-white/70 p-2 text-slate-500 transition hover:bg-white hover:text-slate-900"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -47,7 +52,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button type="button" onClick={onConfirm} disabled={loading}>
-            {loading ? 'Выполняется...' : confirmLabel}
+            {loading ? 'İcra olunur...' : confirmLabel}
           </Button>
         </div>
       </Card>

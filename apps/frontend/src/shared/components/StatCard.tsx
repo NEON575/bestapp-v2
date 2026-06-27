@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Card } from '@bestapp/ui';
 import { ArrowUpRight } from 'lucide-react';
+import { cardClass } from '../styles';
 
 type StatCardProps = {
   label: string;
@@ -12,11 +13,11 @@ type StatCardProps = {
 };
 
 const accentClasses: Record<NonNullable<StatCardProps['accent']>, string> = {
-  slate: 'bg-slate-900 text-white',
-  emerald: 'bg-emerald-600 text-white',
-  amber: 'bg-amber-500 text-white',
-  rose: 'bg-rose-500 text-white',
-  sky: 'bg-sky-600 text-white'
+  slate: 'bg-gradient-to-br from-slate-900 to-slate-700 text-white shadow-slate-950/20',
+  emerald: 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-emerald-500/20',
+  amber: 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-orange-500/20',
+  rose: 'bg-gradient-to-br from-rose-500 to-fuchsia-600 text-white shadow-rose-500/20',
+  sky: 'bg-gradient-to-br from-cyan-500 to-sky-600 text-white shadow-cyan-500/20'
 };
 
 export function StatCard({
@@ -28,12 +29,12 @@ export function StatCard({
   accent = 'slate'
 }: StatCardProps) {
   return (
-    <Card className="border-slate-200 bg-white p-5 shadow-sm">
+    <Card className={`${cardClass} p-5`}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-500">{label}</p>
           <p className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-          {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+          {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
           {trend ? <p className="mt-2 text-xs font-medium text-emerald-600">{trend}</p> : null}
         </div>
         <div className={`rounded-2xl p-3 ${accentClasses[accent]}`}>
@@ -43,4 +44,3 @@ export function StatCard({
     </Card>
   );
 }
-

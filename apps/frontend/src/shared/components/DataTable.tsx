@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Card } from '@bestapp/ui';
+import { cardClass, tableBodyRowClass, tableHeaderClass, tableHeadCellClass, tableWrapperClass } from '../styles';
 
 export type TableColumn<T> = {
   key: string;
@@ -28,28 +29,26 @@ export function DataTable<T>({
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
+    <Card className={`${cardClass} ${tableWrapperClass} overflow-hidden p-0`}>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
+        <table className="min-w-full divide-y divide-white/10">
+          <thead className={tableHeaderClass}>
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 ${
-                    column.className ?? ''
-                  }`}
+                  className={`${tableHeadCellClass} ${column.className ?? ''}`}
                 >
                   {column.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
+          <tbody className="divide-y divide-slate-100/80 bg-white/95">
             {data.map((row) => (
               <tr
                 key={rowKey(row)}
-                className={onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''}
+                className={`${tableBodyRowClass} ${onRowClick ? 'cursor-pointer' : ''}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((column) => (
@@ -65,4 +64,3 @@ export function DataTable<T>({
     </Card>
   );
 }
-
