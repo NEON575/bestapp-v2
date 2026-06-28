@@ -9,6 +9,7 @@ import { MaterialsModule } from './modules/materials/materials.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { CalculationParametersModule } from './modules/calculation-parameters/calculation-parameters.module';
+import { CalculationSettingsModule } from './modules/calculation-settings/calculation-settings.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { CalculationsModule } from './modules/calculations/calculations.module';
 
@@ -31,6 +32,7 @@ import { CalculationsModule } from './modules/calculations/calculations.module';
     PurchasesModule,
     SuppliersModule,
     CalculationParametersModule,
+    CalculationSettingsModule,
     WarehouseModule,
     CalculationsModule
   ]
