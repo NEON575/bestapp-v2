@@ -6,6 +6,7 @@ import {
   CalculationListQueryDto,
   CreateCalculationDto,
   UpdateCalculationDto,
+  type CalculationBlockTypeValue,
   type CalculationStatusValue
 } from './dto/calculation.dto';
 
@@ -27,9 +28,38 @@ type CalculationServiceLineRecord = {
   totalCost: number;
 };
 
+type CalculationBlockRecord = {
+  id: string;
+  type: CalculationBlockTypeValue | string;
+  title: string;
+  linkedBlockId?: string | null;
+  values?: Record<string, unknown> | null;
+  computed?: Record<string, unknown> | null;
+};
+
+type CalculationSummaryRecord = {
+  paperAmount: number;
+  printAmount: number;
+  formAmount: number;
+  laminationAmount: number;
+  otherCostAmount: number;
+  totalCost: number;
+  profitPercent: number;
+  profitAmount: number;
+  recommendedSalePrice: number;
+  finalPrice: number;
+  realProfit: number;
+  realProfitPercent: number;
+  materialCost: number;
+  serviceCost: number;
+  salePrice: number;
+};
+
 type CalculationResponse = {
   id: string;
   number: string;
+  date?: string | null;
+  customerId: string;
   customerName: string;
   productName: string;
   quantity: number;
@@ -45,6 +75,8 @@ type CalculationResponse = {
   costPrice: number;
   profit: number;
   sections: {
+    blocks: CalculationBlockRecord[];
+    summary: CalculationSummaryRecord;
     materialLines: CalculationMaterialLineRecord[];
     serviceLines: CalculationServiceLineRecord[];
   };
@@ -93,6 +125,148 @@ function mapMaterial(material: Material) {
   };
 }
 
+function roundBlockNumber(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function readNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function extractTotal(block: CalculationBlockRecord) {
+  const computedTotal = block.computed?.total;
+  if (computedTotal != null) {
+    return readNumber(computedTotal);
+  }
+
+  const valuesTotal = block.values?.total;
+  if (valuesTotal != null) {
+    return readNumber(valuesTotal);
+  }
+
+  return 0;
+}
+
+function normalizeBlocks(blocks: unknown): CalculationBlockRecord[] {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  return blocks
+    .map((block) => {
+      if (!block || typeof block !== 'object') {
+        return null;
+      }
+
+      const candidate = block as CalculationBlockRecord;
+      if (typeof candidate.id !== 'string' || typeof candidate.type !== 'string' || typeof candidate.title !== 'string') {
+        return null;
+      }
+
+      return {
+        id: candidate.id,
+        type: candidate.type,
+        title: candidate.title,
+        linkedBlockId: typeof candidate.linkedBlockId === 'string' ? candidate.linkedBlockId : null,
+        values: candidate.values && typeof candidate.values === 'object' ? candidate.values : {},
+        computed: candidate.computed && typeof candidate.computed === 'object' ? candidate.computed : {}
+      } satisfies CalculationBlockRecord;
+    })
+    .filter(Boolean) as CalculationBlockRecord[];
+}
+
+function buildSummaryFromBlocks(
+  blocks: CalculationBlockRecord[],
+  profitPercentInput?: number | null,
+  finalPriceInput?: number | null
+): CalculationSummaryRecord {
+  const paperAmount = roundBlockNumber(
+    blocks.filter((block) => block.type === 'paper').reduce((sum, block) => sum + extractTotal(block), 0)
+  );
+  const printAmount = roundBlockNumber(
+    blocks.filter((block) => block.type === 'printing').reduce((sum, block) => sum + extractTotal(block), 0)
+  );
+  const formAmount = roundBlockNumber(
+    blocks.filter((block) => block.type === 'form').reduce((sum, block) => sum + extractTotal(block), 0)
+  );
+  const laminationAmount = roundBlockNumber(
+    blocks.filter((block) => block.type === 'lamination').reduce((sum, block) => sum + extractTotal(block), 0)
+  );
+  const otherCostAmount = roundBlockNumber(
+    blocks.filter((block) => block.type === 'service').reduce((sum, block) => sum + extractTotal(block), 0)
+  );
+  const totalCost = roundBlockNumber(paperAmount + printAmount + formAmount + laminationAmount + otherCostAmount);
+  const profitPercent = roundBlockNumber(readNumber(profitPercentInput));
+  const profitAmount = roundBlockNumber((totalCost * profitPercent) / 100);
+  const recommendedSalePrice = roundBlockNumber(totalCost + profitAmount);
+  const finalPrice = roundBlockNumber(finalPriceInput != null ? readNumber(finalPriceInput) : recommendedSalePrice);
+  const realProfit = roundBlockNumber(finalPrice - totalCost);
+  const realProfitPercent = totalCost > 0 ? roundBlockNumber((realProfit / totalCost) * 100) : 0;
+  const serviceCost = roundBlockNumber(printAmount + formAmount + laminationAmount + otherCostAmount);
+
+  return {
+    paperAmount,
+    printAmount,
+    formAmount,
+    laminationAmount,
+    otherCostAmount,
+    totalCost,
+    profitPercent,
+    profitAmount,
+    recommendedSalePrice,
+    finalPrice,
+    realProfit,
+    realProfitPercent,
+    materialCost: paperAmount,
+    serviceCost,
+    salePrice: recommendedSalePrice
+  };
+}
+
+function buildSummaryFromLegacyLines(
+  materialLines: CalculationMaterialLineRecord[],
+  serviceLines: CalculationServiceLineRecord[],
+  profitPercentInput?: number | null,
+  finalPriceInput?: number | null
+): CalculationSummaryRecord {
+  const paperAmount = roundBlockNumber(materialLines.reduce((sum, line) => sum + line.totalCost, 0));
+  const otherCostAmount = roundBlockNumber(serviceLines.reduce((sum, line) => sum + line.totalCost, 0));
+  const totalCost = roundBlockNumber(paperAmount + otherCostAmount);
+  const profitPercent = roundBlockNumber(readNumber(profitPercentInput));
+  const profitAmount = roundBlockNumber((totalCost * profitPercent) / 100);
+  const recommendedSalePrice = roundBlockNumber(totalCost + profitAmount);
+  const finalPrice = roundBlockNumber(finalPriceInput != null ? readNumber(finalPriceInput) : recommendedSalePrice);
+  const realProfit = roundBlockNumber(finalPrice - totalCost);
+  const realProfitPercent = totalCost > 0 ? roundBlockNumber((realProfit / totalCost) * 100) : 0;
+
+  return {
+    paperAmount,
+    printAmount: 0,
+    formAmount: 0,
+    laminationAmount: 0,
+    otherCostAmount,
+    totalCost,
+    profitPercent,
+    profitAmount,
+    recommendedSalePrice,
+    finalPrice,
+    realProfit,
+    realProfitPercent,
+    materialCost: paperAmount,
+    serviceCost: otherCostAmount,
+    salePrice: recommendedSalePrice
+  };
+}
+
 @Injectable()
 export class CalculationsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -121,7 +295,20 @@ export class CalculationsService {
     return `HS-${String(nextValue).padStart(6, '0')}`;
   }
 
-  private async ensureDefaultCustomer(tx: Prisma.TransactionClient) {
+  private async resolveCustomer(tx: Prisma.TransactionClient, customerId?: string) {
+    if (customerId) {
+      const customer = await tx.customer.findFirst({
+        where: {
+          id: customerId,
+          deletedAt: null
+        }
+      });
+
+      if (customer) {
+        return customer;
+      }
+    }
+
     const name = 'Müştəri';
     const customer = await tx.customer.findFirst({
       where: {
@@ -143,7 +330,7 @@ export class CalculationsService {
     });
   }
 
-  private async loadMaterialRecords(tx: Prisma.TransactionClient, materialLines: CreateCalculationDto['materialLines']) {
+  private async loadMaterialRecords(tx: Prisma.TransactionClient, materialLines: NonNullable<CreateCalculationDto['materialLines']>) {
     const ids = [...new Set(materialLines.map((line) => line.materialId))];
     const materials = await tx.material.findMany({
       where: {
@@ -162,7 +349,7 @@ export class CalculationsService {
     return new Map(materials.map((material) => [material.id, material]));
   }
 
-  private normalizeMaterialLines(materialLines: CreateCalculationDto['materialLines'], materialMap: Map<string, Material & { stockLevels: Array<{ available: Prisma.Decimal | number | string }> }>) {
+  private normalizeMaterialLines(materialLines: NonNullable<CreateCalculationDto['materialLines']>, materialMap: Map<string, Material & { stockLevels: Array<{ available: Prisma.Decimal | number | string }> }>) {
     return materialLines.map((line) => {
       const material = materialMap.get(line.materialId);
       if (!material) {
@@ -190,7 +377,7 @@ export class CalculationsService {
     });
   }
 
-  private normalizeServiceLines(serviceLines: CreateCalculationDto['serviceLines']) {
+  private normalizeServiceLines(serviceLines: NonNullable<CreateCalculationDto['serviceLines']>) {
     return serviceLines.map((line) => {
       const quantity = Number(line.quantity);
       if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -215,42 +402,50 @@ export class CalculationsService {
     dto: CreateCalculationDto,
     existing?: PrismaCalculation & { sections: Prisma.JsonValue }
   ) {
-    const customer = await this.ensureDefaultCustomer(tx);
-    const materialLines = await this.loadMaterialRecords(tx, dto.materialLines);
-    const normalizedMaterialLines = this.normalizeMaterialLines(dto.materialLines, materialLines);
-    const normalizedServiceLines = this.normalizeServiceLines(dto.serviceLines);
-
-    const materialCost = roundMoney(normalizedMaterialLines.reduce((sum, line) => sum + line.totalCost, 0));
-    const serviceCost = roundMoney(normalizedServiceLines.reduce((sum, line) => sum + line.totalCost, 0));
-    const totalCost = roundMoney(materialCost + serviceCost);
-    const profitPercent = Number(dto.profitPercent ?? 0);
-    const profitAmount = roundMoney((totalCost * profitPercent) / 100);
-    const salePrice = roundMoney(totalCost + profitAmount);
-    const finalPrice = roundMoney(dto.finalPrice != null ? Number(dto.finalPrice) : salePrice);
-    const realizedProfit = roundMoney(finalPrice - totalCost);
+    const customer = await this.resolveCustomer(tx, dto.customerId);
+    const hasBlocks = Array.isArray(dto.sections?.blocks) && dto.sections!.blocks!.length > 0;
+    const materialLinesInput = dto.materialLines ?? [];
+    const serviceLinesInput = dto.serviceLines ?? [];
+    const materialLines =
+      materialLinesInput.length > 0
+        ? await this.loadMaterialRecords(tx, materialLinesInput)
+        : new Map<string, Material & { stockLevels: Array<{ available: Prisma.Decimal | number | string }> }>();
+    const normalizedMaterialLines = materialLinesInput.length > 0 ? this.normalizeMaterialLines(materialLinesInput, materialLines) : [];
+    const normalizedServiceLines = serviceLinesInput.length > 0 ? this.normalizeServiceLines(serviceLinesInput) : [];
+    const normalizedBlocks = hasBlocks ? normalizeBlocks(dto.sections?.blocks) : [];
+    const summary = hasBlocks
+      ? buildSummaryFromBlocks(normalizedBlocks, dto.profitPercent ?? undefined, dto.finalPrice ?? undefined)
+      : buildSummaryFromLegacyLines(normalizedMaterialLines, normalizedServiceLines, dto.profitPercent ?? undefined, dto.finalPrice ?? undefined);
 
     return {
       customer,
       data: {
         customerId: customer.id,
         customerName: dto.customerName?.trim() || existing?.customerName || customer.name,
+        date: dto.date ? new Date(dto.date) : existing?.date ?? new Date(),
         productName: dto.productName.trim(),
         quantity: toDecimal(dto.quantity),
         note: sanitizeText(dto.note),
         status: dto.status ?? (existing ? mapStatus(existing.status) : 'draft'),
-        materialCost: toDecimal(materialCost),
-        serviceCost: toDecimal(serviceCost),
-        totalCost: toDecimal(totalCost),
-        profitPercent: toDecimal(profitPercent),
-        profitAmount: toDecimal(profitAmount),
-        salePrice: toDecimal(salePrice),
-        finalPrice: toDecimal(finalPrice),
-        costPrice: toDecimal(totalCost),
-        profit: toDecimal(realizedProfit),
-        sections: {
-          materialLines: normalizedMaterialLines,
-          serviceLines: normalizedServiceLines
-        },
+        materialCost: toDecimal(summary.materialCost),
+        serviceCost: toDecimal(summary.serviceCost),
+        totalCost: toDecimal(summary.totalCost),
+        profitPercent: toDecimal(summary.profitPercent),
+        profitAmount: toDecimal(summary.profitAmount),
+        salePrice: toDecimal(summary.salePrice),
+        finalPrice: toDecimal(summary.finalPrice),
+        costPrice: toDecimal(summary.totalCost),
+        profit: toDecimal(summary.realProfit),
+        sections: hasBlocks
+          ? {
+              blocks: normalizedBlocks,
+              summary
+            }
+          : {
+              materialLines: normalizedMaterialLines,
+              serviceLines: normalizedServiceLines,
+              summary
+            },
         cancelledAt: dto.status === 'cancelled' ? new Date() : existing?.cancelledAt ?? null
       }
     };
@@ -258,13 +453,17 @@ export class CalculationsService {
 
   private serialize(calculation: any): CalculationResponse {
     const sections = (typeof calculation.sections === 'object' && calculation.sections != null ? calculation.sections : {}) as {
+      blocks?: CalculationBlockRecord[];
       materialLines?: CalculationMaterialLineRecord[];
       serviceLines?: CalculationServiceLineRecord[];
+      summary?: CalculationSummaryRecord;
     };
 
     return {
       id: calculation.id,
       number: calculation.number,
+      date: calculation.date ? calculation.date.toISOString().slice(0, 10) : null,
+      customerId: calculation.customerId,
       customerName: calculation.customerName ?? calculation.customer?.name ?? 'Müştəri',
       productName: calculation.productName,
       quantity: toNumber(calculation.quantity),
@@ -280,8 +479,30 @@ export class CalculationsService {
       costPrice: toNumber(calculation.costPrice ?? calculation.totalCost),
       profit: toNumber(calculation.profit ?? calculation.profitAmount),
       sections: {
+        blocks: sections.blocks ?? [],
         materialLines: sections.materialLines ?? [],
-        serviceLines: sections.serviceLines ?? []
+        serviceLines: sections.serviceLines ?? [],
+        summary:
+          sections.summary ?? {
+            paperAmount: toNumber(calculation.materialCost ?? 0),
+            printAmount: 0,
+            formAmount: 0,
+            laminationAmount: 0,
+            otherCostAmount: toNumber(calculation.serviceCost ?? 0),
+            totalCost: toNumber(calculation.totalCost ?? 0),
+            profitPercent: toNumber(calculation.profitPercent ?? 0),
+            profitAmount: toNumber(calculation.profitAmount ?? 0),
+            recommendedSalePrice: toNumber(calculation.salePrice ?? 0),
+            finalPrice: toNumber(calculation.finalPrice ?? calculation.salePrice ?? 0),
+            realProfit: toNumber(calculation.profit ?? calculation.profitAmount ?? 0),
+            realProfitPercent:
+              toNumber(calculation.totalCost ?? 0) > 0
+                ? roundBlockNumber((toNumber(calculation.profit ?? calculation.profitAmount ?? 0) / toNumber(calculation.totalCost ?? 0)) * 100)
+                : 0,
+            materialCost: toNumber(calculation.materialCost ?? 0),
+            serviceCost: toNumber(calculation.serviceCost ?? 0),
+            salePrice: toNumber(calculation.salePrice ?? 0)
+          }
       },
       createdAt: calculation.createdAt.toISOString(),
       updatedAt: calculation.updatedAt.toISOString(),
@@ -342,20 +563,22 @@ export class CalculationsService {
   }
 
   async create(dto: CreateCalculationDto) {
-    if (!dto.materialLines?.length && !dto.serviceLines?.length) {
+    if (!dto.sections?.blocks?.length && !dto.materialLines?.length && !dto.serviceLines?.length) {
       throw new BadRequestException('Ən azı 1 material və ya xidmət sətri olmalıdır');
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const number = await this.nextNumber(tx);
       const payload = await this.buildCalculationRecord(tx, dto);
+      const createData: Prisma.CalculationUncheckedCreateInput = {
+        number,
+        ...payload.data,
+        sections: payload.data.sections as Prisma.InputJsonValue,
+        status: dto.status ?? 'draft'
+      };
 
       const created = await tx.calculation.create({
-        data: {
-          number,
-          ...payload.data,
-          status: dto.status ?? 'draft'
-        }
+        data: createData
       });
 
       return tx.calculation.findUnique({
@@ -389,6 +612,8 @@ export class CalculationsService {
       }
 
       const nextDto: CreateCalculationDto = {
+        customerId: dto.customerId ?? current.customerId,
+        date: dto.date ?? current.date?.toISOString().slice(0, 10) ?? undefined,
         customerName: dto.customerName ?? current.customerName ?? current.customer?.name ?? 'Müştəri',
         productName: dto.productName ?? current.productName,
         quantity: dto.quantity ?? toNumber(current.quantity),
@@ -397,32 +622,35 @@ export class CalculationsService {
         finalPrice: dto.finalPrice ?? toNumber(current.finalPrice),
         status: dto.status ?? mapStatus(current.status),
         materialLines: (dto.materialLines ?? (current.sections as any)?.materialLines ?? []) as CreateCalculationDto['materialLines'],
-        serviceLines: (dto.serviceLines ?? (current.sections as any)?.serviceLines ?? []) as CreateCalculationDto['serviceLines']
+        serviceLines: (dto.serviceLines ?? (current.sections as any)?.serviceLines ?? []) as CreateCalculationDto['serviceLines'],
+        sections: (dto.sections ?? (current.sections as any)) as CreateCalculationDto['sections']
       };
 
       const payload = await this.buildCalculationRecord(tx, nextDto, current);
+      const updateData: Prisma.CalculationUncheckedUpdateInput = {
+        customerId: payload.customer.id,
+        customerName: payload.data.customerName,
+        date: payload.data.date,
+        productName: payload.data.productName,
+        quantity: payload.data.quantity,
+        note: payload.data.note,
+        status: payload.data.status,
+        materialCost: payload.data.materialCost,
+        serviceCost: payload.data.serviceCost,
+        totalCost: payload.data.totalCost,
+        profitPercent: payload.data.profitPercent,
+        profitAmount: payload.data.profitAmount,
+        salePrice: payload.data.salePrice,
+        finalPrice: payload.data.finalPrice,
+        costPrice: payload.data.costPrice,
+        profit: payload.data.profit,
+        sections: payload.data.sections as Prisma.InputJsonValue,
+        cancelledAt: payload.data.cancelledAt
+      };
 
       await tx.calculation.update({
         where: { id },
-        data: {
-          customerId: payload.customer.id,
-          customerName: payload.data.customerName,
-          productName: payload.data.productName,
-          quantity: payload.data.quantity,
-          note: payload.data.note,
-          status: payload.data.status,
-          materialCost: payload.data.materialCost,
-          serviceCost: payload.data.serviceCost,
-          totalCost: payload.data.totalCost,
-          profitPercent: payload.data.profitPercent,
-          profitAmount: payload.data.profitAmount,
-          salePrice: payload.data.salePrice,
-          finalPrice: payload.data.finalPrice,
-          costPrice: payload.data.costPrice,
-          profit: payload.data.profit,
-          sections: payload.data.sections,
-          cancelledAt: payload.data.cancelledAt
-        }
+        data: updateData
       });
 
       return tx.calculation.findUnique({

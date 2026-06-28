@@ -1,0 +1,2 @@
+ALTER TABLE "calculations"
+ADD COLUMN IF NOT EXISTS "date" TIMESTAMP(3);

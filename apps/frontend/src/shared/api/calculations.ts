@@ -2,6 +2,36 @@ import { api } from './http';
 import { buildQueryParams } from './query';
 
 export type CalculationStatus = 'draft' | 'approved' | 'converted' | 'cancelled';
+export type CalculationBlockType = 'paper' | 'printing' | 'form' | 'lamination' | 'service';
+
+export type CalculationBlockValue = Record<string, string | number | boolean | null | undefined>;
+
+export type CalculationBlockPayload = {
+  id: string;
+  type: CalculationBlockType;
+  title: string;
+  linkedBlockId?: string | null;
+  values: CalculationBlockValue;
+  computed?: Record<string, string | number | boolean | null | undefined>;
+};
+
+export type CalculationSummary = {
+  paperAmount: number;
+  printAmount: number;
+  formAmount: number;
+  laminationAmount: number;
+  otherCostAmount: number;
+  totalCost: number;
+  profitPercent: number;
+  profitAmount: number;
+  recommendedSalePrice: number;
+  finalPrice: number;
+  realProfit: number;
+  realProfitPercent: number;
+  materialCost: number;
+  serviceCost: number;
+  salePrice: number;
+};
 
 export type CalculationMaterialLinePayload = {
   materialId: string;
@@ -18,6 +48,8 @@ export type CalculationServiceLinePayload = {
 };
 
 export type CalculationPayload = {
+  customerId?: string;
+  date?: string;
   customerName?: string;
   productName: string;
   quantity: number;
@@ -25,11 +57,16 @@ export type CalculationPayload = {
   profitPercent?: number;
   finalPrice?: number;
   status?: CalculationStatus;
-  materialLines: CalculationMaterialLinePayload[];
-  serviceLines: CalculationServiceLinePayload[];
+  materialLines?: CalculationMaterialLinePayload[];
+  serviceLines?: CalculationServiceLinePayload[];
+  sections?: {
+    blocks: CalculationBlockPayload[];
+    summary?: CalculationSummary;
+  };
 };
 
 export type CalculationSections = {
+  blocks: CalculationBlockPayload[];
   materialLines: Array<{
     materialId: string;
     materialName: string;
@@ -46,11 +83,14 @@ export type CalculationSections = {
     unitPrice: number;
     totalCost: number;
   }>;
+  summary: CalculationSummary;
 };
 
 export type CalculationRecord = {
   id: string;
   number: string;
+  date?: string | null;
+  customerId: string;
   customerName: string;
   productName: string;
   quantity: number;

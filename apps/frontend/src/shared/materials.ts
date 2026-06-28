@@ -66,6 +66,7 @@ export interface MaterialListItem {
   palletUnit?: string | null;
   packagesPerPallet?: number | null;
   defaultUnitsPerPallet?: number | null;
+  averageCost?: number | null;
   unit: MaterialUnitValue;
   currencyCode: string;
   purchasePrice: number;

@@ -847,6 +847,7 @@ model Calculation {
   number       String             @unique
   customerId   String
   customerName String?
+  date         DateTime?
   productName  String
   quantity     Decimal            @db.Decimal(18, 4)
   note         String?
