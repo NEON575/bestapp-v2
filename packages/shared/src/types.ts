@@ -54,16 +54,7 @@ export interface CustomerSummary {
   totalAmount?: number;
 }
 
-export interface UserSummary {
-  id: string;
-  email: string;
-  fullName: string;
-  phone?: string | null;
-  isActive?: boolean;
-  roles?: string[];
-}
-
-export interface CustomerListItem {
+export interface Customer {
   id: string;
   name: string;
   companyName?: string | null;
@@ -73,10 +64,24 @@ export interface CustomerListItem {
   address?: string | null;
   notes?: string | null;
   inquiryNote?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  fullName: string;
+  phone?: string | null;
   isActive?: boolean;
+  roles?: string[];
+}
+
+export interface CustomerListItem extends Customer {
   totalOrders?: number;
   totalAmount?: number;
-  createdAt?: string;
 }
 
 export interface OrderListItem {
@@ -93,7 +98,7 @@ export interface OrderListItem {
   manager?: UserSummary | null;
 }
 
-export interface SupplierItem {
+export interface Supplier {
   id: string;
   code?: string | null;
   name: string;
@@ -103,6 +108,12 @@ export interface SupplierItem {
   address?: string | null;
   notes?: string | null;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface SupplierItem extends Supplier {
 }
 
 export interface EmployeeItem {

@@ -1,8 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { PaginationQueryDto } from '../../common/query/pagination.dto';
-import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
+import { CustomerListQueryDto, CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { CustomersService } from './customers.service';
 
 @ApiTags('customers')
@@ -12,7 +11,7 @@ export class CustomersController {
 
   @Get()
   @Roles('super_admin', 'owner', 'manager')
-  findAll(@Query() query: PaginationQueryDto) {
+  findAll(@Query() query: CustomerListQueryDto) {
     return this.customersService.findAll(query);
   }
 

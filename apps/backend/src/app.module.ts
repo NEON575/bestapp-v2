@@ -3,9 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'path';
 import { AppController } from './app.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { CustomersModule } from './modules/customers/customers.module';
 import { MaterialCategoriesModule } from './modules/material-categories/material-categories.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { CalculationsModule } from './modules/calculations/calculations.module';
 
@@ -22,9 +24,11 @@ import { CalculationsModule } from './modules/calculations/calculations.module';
       ]
     }),
     PrismaModule,
+    CustomersModule,
     MaterialCategoriesModule,
     MaterialsModule,
     PurchasesModule,
+    SuppliersModule,
     WarehouseModule,
     CalculationsModule
   ]

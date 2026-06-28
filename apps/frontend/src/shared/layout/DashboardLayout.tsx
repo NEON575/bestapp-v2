@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Calculator, Layers3, Menu, Package2, SquareStack, Warehouse, X } from 'lucide-react';
+import { Calculator, Layers3, Menu, Package2, SquareStack, Truck, Users, Warehouse, X } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { mobileNavOverlayClass, pageShellClass } from '../styles';
 
 const navItems = [
   { to: '/materials', label: 'Materiallar', icon: SquareStack },
+  { to: '/customers', label: 'Müştərilər', icon: Users },
+  { to: '/suppliers', label: 'Təchizatçılar', icon: Truck },
   { to: '/material-category-parameters', label: 'Kateqoriya parametrləri', icon: Layers3 },
   { to: '/calculations', label: 'Hesablama', icon: Calculator },
   { to: '/purchases', label: 'Alış', icon: Package2 },

@@ -1,64 +1,58 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input } from '@bestapp/ui';
-import { Eye, PencilLine, Plus, Trash2, Users } from 'lucide-react';
-import type { CustomerListItem } from '@bestapp/shared';
-import { customersClient } from '../shared/api/customers';
+import { Eye, PencilLine, Plus, Trash2, Truck } from 'lucide-react';
+import type { SupplierItem } from '@bestapp/shared';
+import { suppliersClient } from '../shared/api/suppliers';
 import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Modal, PageHeader, Pagination, SearchInput, StatusBadge } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 
-type CustomerStatus = 'all' | 'active' | 'inactive';
+type SupplierStatus = 'all' | 'active' | 'inactive';
+type Mode = 'create' | 'edit' | 'view';
 
-type CustomerFormState = {
+type SupplierFormState = {
+  code: string;
   name: string;
-  companyName: string;
   phone: string;
   email: string;
   taxId: string;
   address: string;
   notes: string;
-  inquiryNote: string;
   isActive: boolean;
 };
 
-type Mode = 'create' | 'edit' | 'view';
-
-const emptyForm: CustomerFormState = {
+const emptyForm: SupplierFormState = {
+  code: '',
   name: '',
-  companyName: '',
   phone: '',
   email: '',
   taxId: '',
   address: '',
   notes: '',
-  inquiryNote: '',
   isActive: true
 };
 
-const statusOptions: Array<{ value: CustomerStatus; label: string }> = [
+const statusOptions: Array<{ value: SupplierStatus; label: string }> = [
   { value: 'all', label: 'Hamısı' },
   { value: 'active', label: 'Aktiv' },
   { value: 'inactive', label: 'Passiv' }
 ];
 
-function toFormState(item?: CustomerListItem | null): CustomerFormState {
-  if (!item) {
-    return emptyForm;
-  }
+function toFormState(item?: SupplierItem | null): SupplierFormState {
+  if (!item) return emptyForm;
 
   return {
+    code: item.code ?? '',
     name: item.name ?? '',
-    companyName: item.companyName ?? '',
     phone: item.phone ?? '',
     email: item.email ?? '',
     taxId: item.taxId ?? '',
     address: item.address ?? '',
     notes: item.notes ?? '',
-    inquiryNote: item.inquiryNote ?? '',
     isActive: item.isActive
   };
 }
 
-function CustomerForm({
+function SupplierForm({
   title,
   description,
   form,
@@ -70,8 +64,8 @@ function CustomerForm({
 }: {
   title: string;
   description?: string;
-  form: CustomerFormState;
-  onChange: (patch: Partial<CustomerFormState>) => void;
+  form: SupplierFormState;
+  onChange: (patch: Partial<SupplierFormState>) => void;
   onSubmit: () => void;
   onClose: () => void;
   saving: boolean;
@@ -81,11 +75,11 @@ function CustomerForm({
     <Modal open title={title} description={description} onClose={onClose} widthClassName="max-w-4xl">
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Müştəri adı">
-            <Input value={form.name} onChange={(event) => onChange({ name: event.target.value })} disabled={readOnly} required />
+          <Field label="Kod">
+            <Input value={form.code} onChange={(event) => onChange({ code: event.target.value })} disabled={readOnly} placeholder="Boş saxlayın, avtomatik yaransın" />
           </Field>
-          <Field label="Şirkət adı">
-            <Input value={form.companyName} onChange={(event) => onChange({ companyName: event.target.value })} disabled={readOnly} />
+          <Field label="Təchizatçı adı">
+            <Input value={form.name} onChange={(event) => onChange({ name: event.target.value })} disabled={readOnly} required />
           </Field>
           <Field label="Telefon">
             <Input value={form.phone} onChange={(event) => onChange({ phone: event.target.value })} disabled={readOnly} />
@@ -98,9 +92,6 @@ function CustomerForm({
           </Field>
           <Field label="Ünvan">
             <Input value={form.address} onChange={(event) => onChange({ address: event.target.value })} disabled={readOnly} />
-          </Field>
-          <Field label="Sorğu qeydi" className="md:col-span-2">
-            <Input value={form.inquiryNote} onChange={(event) => onChange({ inquiryNote: event.target.value })} disabled={readOnly} />
           </Field>
           <Field label="Qeyd" className="md:col-span-2">
             <textarea
@@ -140,30 +131,30 @@ function CustomerForm({
   );
 }
 
-export function CustomersPage() {
+export function SuppliersPage() {
   const toast = useToast();
-  const [rows, setRows] = useState<CustomerListItem[]>([]);
+  const [rows, setRows] = useState<SupplierItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState({ page: 1, limit: 20, search: '', status: 'all' as CustomerStatus });
+  const [query, setQuery] = useState({ page: 1, limit: 20, search: '', status: 'all' as SupplierStatus });
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [mode, setMode] = useState<Mode>('create');
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<CustomerListItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SupplierItem | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<CustomerFormState>(emptyForm);
+  const [form, setForm] = useState<SupplierFormState>(emptyForm);
 
   const load = async (nextQuery = query) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await customersClient.list(nextQuery);
+      const response = await suppliersClient.list(nextQuery);
       setRows(response.data);
       setMeta(response.meta);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Müştərilər yüklənmədi');
+      setError(loadError instanceof Error ? loadError.message : 'Təchizatçılar yüklənmədi');
     } finally {
       setLoading(false);
     }
@@ -184,14 +175,14 @@ export function CustomersPage() {
     setModalOpen(true);
   };
 
-  const openView = (row: CustomerListItem) => {
+  const openView = (row: SupplierItem) => {
     setMode('view');
     setEditingId(row.id);
     setForm(toFormState(row));
     setModalOpen(true);
   };
 
-  const openEdit = (row: CustomerListItem) => {
+  const openEdit = (row: SupplierItem) => {
     setMode('edit');
     setEditingId(row.id);
     setForm(toFormState(row));
@@ -206,78 +197,77 @@ export function CustomersPage() {
 
   const save = async () => {
     if (!form.name.trim()) {
-      toast.warning('Müştəri adı boş ola bilməz');
+      toast.warning('Təchizatçı adı boş ola bilməz');
       return;
     }
 
     setSaving(true);
     try {
       const payload = {
+        code: form.code.trim() || undefined,
         name: form.name.trim(),
-        companyName: form.companyName.trim() || undefined,
         phone: form.phone.trim() || undefined,
         email: form.email.trim() || undefined,
         taxId: form.taxId.trim() || undefined,
         address: form.address.trim() || undefined,
         notes: form.notes.trim() || undefined,
-        inquiryNote: form.inquiryNote.trim() || undefined,
         isActive: form.isActive
       };
 
       if (mode === 'edit' && editingId) {
-        await customersClient.update(editingId, payload);
-        toast.success('Müştəri yeniləndi');
+        await suppliersClient.update(editingId, payload);
+        toast.success('Təchizatçı yeniləndi');
       } else {
-        await customersClient.create(payload);
-        toast.success('Müştəri yaradıldı');
+        await suppliersClient.create(payload);
+        toast.success('Təchizatçı yaradıldı');
       }
 
       closeModal();
       await load(query);
     } catch (saveError) {
-      toast.error(mode === 'edit' ? 'Müştəri yenilənmədi' : 'Müştəri yaradılmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+      toast.error(mode === 'edit' ? 'Təchizatçı yenilənmədi' : 'Təchizatçı yaradılmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
     } finally {
       setSaving(false);
     }
   };
 
-  const remove = async (row: CustomerListItem) => {
-    if (!window.confirm('Bu müştəri silinsin?')) {
+  const remove = async (row: SupplierItem) => {
+    if (!window.confirm('Bu təchizatçı silinsin?')) {
       return;
     }
 
     try {
-      await customersClient.remove(row.id);
-      toast.success('Müştəri silindi');
+      await suppliersClient.remove(row.id);
+      toast.success('Təchizatçı silindi');
       await load(query);
     } catch (removeError) {
-      toast.error('Müştəri silinmədi', removeError instanceof Error ? removeError.message : 'Xəta baş verdi');
+      toast.error('Təchizatçı silinmədi', removeError instanceof Error ? removeError.message : 'Xəta baş verdi');
     }
   };
 
   if (loading && !rows.length) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Müştərilər" description="Müştəri bazasını idarə edin" actions={<Button onClick={openCreate}>Yeni müştəri</Button>} />
+        <PageHeader title="Təchizatçılar" description="Material aldığınız təchizatçıları idarə edin" actions={<Button onClick={openCreate}>Yeni təchizatçı</Button>} />
         <LoadingState rows={4} />
       </div>
     );
   }
 
   if (error) {
-    return <ErrorState title="Müştərilər yüklənmədi" description={error} onRetry={() => void load(query)} />;
+    return <ErrorState title="Təchizatçılar yüklənmədi" description={error} onRetry={() => void load(query)} />;
   }
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Müştərilər"
-        description="Müştəri bazasını idarə edin"
+        title="Təchizatçılar"
+        description="Material aldığınız təchizatçıları idarə edin"
         actions={
           <Button onClick={openCreate}>
             <span className="inline-flex items-center gap-2">
               <Plus className="h-4 w-4" />
-              Yeni müştəri
+              Yeni təchizatçı
             </span>
           </Button>
         }
@@ -285,14 +275,14 @@ export function CustomersPage() {
 
       <FilterBar>
         <div className="w-full lg:max-w-md">
-          <SearchInput value={query.search} onChange={(value) => setQuery((current) => ({ ...current, page: 1, search: value }))} placeholder="Müştəri axtar" />
+          <SearchInput value={query.search} onChange={(value) => setQuery((current) => ({ ...current, page: 1, search: value }))} placeholder="Təchizatçı axtar" />
         </div>
         <div className="w-full lg:w-56">
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">Status</span>
             <select
               value={query.status}
-              onChange={(event) => setQuery((current) => ({ ...current, page: 1, status: event.target.value as CustomerStatus }))}
+              onChange={(event) => setQuery((current) => ({ ...current, page: 1, status: event.target.value as SupplierStatus }))}
               className="h-11 w-full rounded-2xl border border-white/20 bg-white/85 px-4 text-sm text-slate-900 outline-none transition-all duration-200 focus:border-cyan-400/70 focus:bg-white focus:ring-4 focus:ring-cyan-500/10"
             >
               {statusOptions.map((item) => (
@@ -309,8 +299,8 @@ export function CustomersPage() {
         rowKey={(row) => row.id}
         data={rows}
         columns={[
+          { key: 'code', header: 'Kod', render: (row) => row.code ?? '—' },
           { key: 'name', header: 'Ad', render: (row) => row.name },
-          { key: 'company', header: 'Şirkət', render: (row) => row.companyName ?? '—' },
           { key: 'phone', header: 'Telefon', render: (row) => row.phone ?? '—' },
           { key: 'email', header: 'Email', render: (row) => row.email ?? '—' },
           { key: 'taxId', header: 'VÖEN', render: (row) => row.taxId ?? '—' },
@@ -348,10 +338,10 @@ export function CustomersPage() {
         ]}
         emptyState={
           <EmptyState
-            title="Müştəri tapılmadı"
-            description="Yeni müştəri əlavə etməklə siyahını doldurun."
-            icon={Users}
-            actionLabel="Yeni müştəri"
+            title="Təchizatçı tapılmadı"
+            description="Yeni təchizatçı əlavə etməklə siyahını doldurun."
+            icon={Truck}
+            actionLabel="Yeni təchizatçı"
             onAction={openCreate}
           />
         }
@@ -360,8 +350,8 @@ export function CustomersPage() {
       <Pagination page={meta.page} totalPages={meta.totalPages} onPageChange={(page) => setQuery((current) => ({ ...current, page }))} />
 
       {modalOpen ? (
-        <CustomerForm
-          title={mode === 'create' ? 'Yeni müştəri' : mode === 'edit' ? 'Müştərini redaktə et' : 'Müştəri məlumatı'}
+        <SupplierForm
+          title={mode === 'create' ? 'Yeni təchizatçı' : mode === 'edit' ? 'Təchizatçını redaktə et' : 'Təchizatçı məlumatı'}
           description={mode === 'view' ? 'Məlumatlar yalnız oxunur.' : 'Formu doldurun və yadda saxlayın.'}
           form={form}
           onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
@@ -374,8 +364,8 @@ export function CustomersPage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Bu müştəri silinsin?"
-        description={deleteTarget ? deleteTarget.name : undefined}
+        title="Bu təchizatçı silinsin?"
+        description={deleteTarget ? `${deleteTarget.code ?? ''} ${deleteTarget.name}`.trim() : undefined}
         confirmLabel="Sil"
         cancelLabel="Ləğv et"
         onCancel={() => {

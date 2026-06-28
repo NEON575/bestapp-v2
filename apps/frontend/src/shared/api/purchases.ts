@@ -70,22 +70,22 @@ export const purchasesClient = {
   },
 
   async listSuppliers() {
-    const { data } = await api.get<SupplierItem[]>('/purchases/suppliers');
+    const { data } = await api.get<SupplierItem[]>('/suppliers');
     return data;
   },
 
   async createSupplier(dto: CreateSupplierDto) {
-    const { data } = await api.post<SupplierItem>('/purchases/suppliers', dto);
+    const { data } = await api.post<SupplierItem>('/suppliers', dto);
     return data;
   },
 
   async updateSupplier(id: string, dto: UpdateSupplierDto) {
-    const { data } = await api.patch<SupplierItem>(`/purchases/suppliers/${id}`, dto);
+    const { data } = await api.patch<SupplierItem>(`/suppliers/${id}`, dto);
     return data;
   },
 
   async removeSupplier(id: string) {
-    const { data } = await api.delete<SupplierItem>(`/purchases/suppliers/${id}`);
+    const { data } = await api.delete<SupplierItem>(`/suppliers/${id}`);
     return data;
   },
 
@@ -106,4 +106,3 @@ export const purchasesClient = {
     return data;
   }
 };
-

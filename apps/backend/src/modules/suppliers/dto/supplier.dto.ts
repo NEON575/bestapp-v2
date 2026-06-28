@@ -1,6 +1,6 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsOptional, IsString, Length } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, Length, Matches } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/query/pagination.dto';
 
 function emptyToUndefined({ value }: { value: unknown }) {
@@ -11,25 +11,26 @@ function emptyToUndefined({ value }: { value: unknown }) {
   return value;
 }
 
-export class CustomerListQueryDto extends PaginationQueryDto {
+export class SupplierListQueryDto extends PaginationQueryDto {
   @ApiProperty({ enum: ['all', 'active', 'inactive'], default: 'all', required: false })
   @IsOptional()
   @IsString()
   status?: 'all' | 'active' | 'inactive' = 'all';
 }
 
-export class CreateCustomerDto {
-  @ApiProperty()
-  @IsString()
-  @Length(1, 255)
-  name!: string;
-
+export class CreateSupplierDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsString()
-  @Length(0, 255)
-  companyName?: string;
+  @Length(0, 32)
+  @Matches(/^SUP-\d{6}$/, { message: 'Təchizatçı kodu SUP-000001 formatında olmalıdır' })
+  code?: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(1, 255)
+  name!: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -41,15 +42,15 @@ export class CreateCustomerDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @Transform(emptyToUndefined)
-  @IsEmail()
-  email?: string;
+  @IsString()
+  @Length(0, 50)
+  taxId?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @Transform(emptyToUndefined)
-  @IsString()
-  @Length(0, 50)
-  taxId?: string;
+  @IsEmail()
+  email?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -67,15 +68,8 @@ export class CreateCustomerDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @Transform(emptyToUndefined)
-  @IsString()
-  @Length(0, 1000)
-  inquiryNote?: string;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
 
-export class UpdateCustomerDto extends PartialType(CreateCustomerDto) {}
+export class UpdateSupplierDto extends PartialType(CreateSupplierDto) {}

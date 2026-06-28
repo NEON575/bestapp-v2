@@ -12,6 +12,10 @@ export interface CreateCustomerDto {
 
 export interface UpdateCustomerDto extends Partial<CreateCustomerDto> {}
 
+export interface CustomerListQueryDto extends PaginationQueryDto {
+  status?: 'all' | 'active' | 'inactive';
+}
+
 export interface PaginationQueryDto {
   page?: number;
   limit?: number;
@@ -334,6 +338,10 @@ export interface CreateSupplierDto {
 }
 
 export interface UpdateSupplierDto extends Partial<CreateSupplierDto> {}
+
+export interface SupplierListQueryDto extends PaginationQueryDto {
+  status?: 'all' | 'active' | 'inactive';
+}
 
 export interface CreatePaperDto {
   supplierId?: string;

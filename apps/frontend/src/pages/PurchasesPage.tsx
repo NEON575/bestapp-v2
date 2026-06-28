@@ -12,10 +12,12 @@ import type {
 } from '@bestapp/shared';
 import { materialsClient } from '../shared/api/materials';
 import { purchasesClient } from '../shared/api/purchases';
+import { suppliersClient } from '../shared/api/suppliers';
 import { warehousesClient } from '../shared/api/warehouses';
 import { ErrorState, EmptyState, LoadingState, PageHeader, Pagination } from '../shared/components';
 import { useToast } from '../shared/toast/toast-context';
 import type { MaterialListItem } from '../shared/materials';
+import type { SupplierItem } from '@bestapp/shared';
 
 type LineDraft = {
   materialId: string;
@@ -274,6 +276,7 @@ export function PurchasesPage() {
   const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [materials, setMaterials] = useState<MaterialListItem[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -290,6 +293,9 @@ export function PurchasesPage() {
   const [formState, setFormState] = useState<FormState>(emptyFormState());
   const [lineDraft, setLineDraft] = useState<LineDraft>(emptyLine());
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [supplierSaving, setSupplierSaving] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', email: '', taxId: '' });
 
   const selectedMaterials = useMemo(() => materials, [materials]);
   const defaultWarehouseId = useMemo(() => warehouses[0]?.id ?? '', [warehouses]);
@@ -298,6 +304,10 @@ export function PurchasesPage() {
     () => selectedMaterials.find((material) => material.id === lineDraft.materialId) ?? null,
     [lineDraft.materialId, selectedMaterials]
   );
+  const selectedSupplierId = useMemo(
+    () => suppliers.find((supplier) => supplier.name === formState.supplierName)?.id ?? '',
+    [formState.supplierName, suppliers]
+  );
   const linePreview = useMemo(() => calculateLine(selectedMaterial, lineDraft), [selectedMaterial, lineDraft]);
 
   const loadData = async (nextPage = page, nextLimit = limit, nextSearch = search, nextStatus = status) => {
@@ -305,7 +315,7 @@ export function PurchasesPage() {
     setError(null);
 
     try {
-      const [purchaseResponse, materialResponse, warehouseResponse] = await Promise.all([
+      const [purchaseResponse, materialResponse, supplierResponse, warehouseResponse] = await Promise.all([
         purchasesClient.list({
           page: nextPage,
           limit: nextLimit,
@@ -317,6 +327,7 @@ export function PurchasesPage() {
           limit: 200,
           status: 'active'
         }),
+        suppliersClient.list({ page: 1, limit: 200, status: 'active' }),
         warehousesClient.list()
       ]);
 
@@ -324,6 +335,7 @@ export function PurchasesPage() {
       setTotalPages(purchaseResponse.meta.totalPages);
       setTotalItems(purchaseResponse.meta.total);
       setMaterials(materialResponse.data);
+      setSuppliers(supplierResponse.data);
       setWarehouses(warehouseResponse);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Alış məlumatları yüklənmədi');
@@ -377,6 +389,42 @@ export function PurchasesPage() {
     setFormState(emptyFormState(defaultWarehouseId));
     setLineDraft(emptyLine());
     setEditingLineIndex(null);
+  };
+
+  const openSupplierModal = () => {
+    setSupplierForm({ name: '', phone: '', email: '', taxId: '' });
+    setSupplierModalOpen(true);
+  };
+
+  const closeSupplierModal = () => {
+    setSupplierModalOpen(false);
+    setSupplierForm({ name: '', phone: '', email: '', taxId: '' });
+  };
+
+  const saveSupplier = async () => {
+    if (!supplierForm.name.trim()) {
+      toast.warning('Təchizatçı adı daxil edin');
+      return;
+    }
+
+    setSupplierSaving(true);
+    try {
+      const created = await suppliersClient.create({
+        name: supplierForm.name.trim(),
+        phone: supplierForm.phone.trim() || undefined,
+        email: supplierForm.email.trim() || undefined,
+        taxId: supplierForm.taxId.trim() || undefined
+      });
+
+      setSuppliers((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setFormState((current) => ({ ...current, supplierName: created.name }));
+      toast.success('Təchizatçı yaradıldı');
+      closeSupplierModal();
+    } catch (saveError) {
+      toast.error('Təchizatçı yaradılmadı', saveError instanceof Error ? saveError.message : 'Xəta baş verdi');
+    } finally {
+      setSupplierSaving(false);
+    }
   };
 
   const savePurchase = async () => {
@@ -560,12 +608,20 @@ export function PurchasesPage() {
         title="Alış"
         description="Alış qaimələri burada yaradılır, təsdiqlənir və izlənir."
         actions={
-          <Button onClick={openCreate}>
-            <span className="inline-flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Yeni alış
-            </span>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={openSupplierModal}>
+              <span className="inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Yeni təchizatçı
+              </span>
+            </Button>
+            <Button onClick={openCreate}>
+              <span className="inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Yeni alış
+              </span>
+            </Button>
+          </div>
         }
       />
 
@@ -732,11 +788,30 @@ export function PurchasesPage() {
 
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Təchizatçı</span>
-                <Input
-                  value={formState.supplierName}
-                  onChange={(event) => setFormState((current) => ({ ...current, supplierName: event.target.value }))}
-                  disabled={modalReadOnly}
-                />
+                <div className="flex gap-2">
+                  <select
+                    value={selectedSupplierId}
+                    onChange={(event) => {
+                      const selected = suppliers.find((supplier) => supplier.id === event.target.value);
+                      setFormState((current) => ({ ...current, supplierName: selected?.name ?? '' }));
+                    }}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    <option value="">Təchizatçı seçin</option>
+                    {suppliers.map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.code ? `${supplier.code} · ${supplier.name}` : supplier.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!modalReadOnly ? (
+                    <Button type="button" variant="secondary" className="shrink-0" onClick={openSupplierModal}>
+                      + Yeni
+                    </Button>
+                  ) : null}
+                </div>
+                {formState.supplierName ? <div className="text-xs text-slate-500">Seçilən: {formState.supplierName}</div> : null}
               </label>
 
               <label className="block space-y-2">
@@ -991,6 +1066,43 @@ export function PurchasesPage() {
               <div>Alış №: avtomatik</div>
               <div>Faktura №: avtomatik</div>
             </div>
+          </div>
+        </ModalShell>
+      ) : null}
+
+      {supplierModalOpen ? (
+        <ModalShell
+          title="Yeni təchizatçı"
+          description="Sürətli əlavə etmə üçün sadə kart."
+          onClose={closeSupplierModal}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={closeSupplierModal} disabled={supplierSaving}>
+                Bağla
+              </Button>
+              <Button onClick={() => void saveSupplier()} disabled={supplierSaving}>
+                {supplierSaving ? 'Yadda saxlanılır...' : 'Yadda saxla'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block space-y-2 md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Ad</span>
+              <Input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Telefon</span>
+              <Input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Email</span>
+              <Input value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} />
+            </label>
+            <label className="block space-y-2 md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">VÖEN</span>
+              <Input value={supplierForm.taxId} onChange={(event) => setSupplierForm((current) => ({ ...current, taxId: event.target.value }))} />
+            </label>
           </div>
         </ModalShell>
       ) : null}

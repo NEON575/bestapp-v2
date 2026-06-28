@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Input } from '@bestapp/ui';
 import { CheckCircle2, Eye, Plus, PencilLine, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { customersClient } from '../shared/api/customers';
 import type { MaterialListItem } from '../shared/materials';
 import { calculationsClient, type CalculationRecord, type CalculationStatus } from '../shared/api/calculations';
 import { materialsClient } from '../shared/api/materials';
@@ -8,7 +9,7 @@ import { warehousesClient } from '../shared/api/warehouses';
 import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from '../shared/components';
 import { formatCurrency, formatDateOnly, formatNumber } from '../shared/lib/format';
 import { useToast } from '../shared/toast/toast-context';
-import type { WarehouseStockLevelItem } from '@bestapp/shared';
+import type { CustomerListItem, WarehouseStockLevelItem } from '@bestapp/shared';
 
 type MaterialLineDraft = {
   materialId: string;
@@ -158,6 +159,7 @@ export function CalculationsPage() {
   const toast = useToast();
   const [calculations, setCalculations] = useState<CalculationRecord[]>([]);
   const [materials, setMaterials] = useState<MaterialListItem[]>([]);
+  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [stockLevels, setStockLevels] = useState<WarehouseStockLevelItem[]>([]);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -181,6 +183,13 @@ export function CalculationsPage() {
   const selectedMaterial = useMemo(
     () => materials.find((material) => material.id === materialDraft.materialId) ?? null,
     [materialDraft.materialId, materials]
+  );
+  const selectedCustomerId = useMemo(
+    () =>
+      customers.find((customer) =>
+        (customer.companyName ? `${customer.name} · ${customer.companyName}` : customer.name) === formState.customerName
+      )?.id ?? '',
+    [customers, formState.customerName]
   );
 
   const stockMap = useMemo(() => {
@@ -217,7 +226,7 @@ export function CalculationsPage() {
     setError(null);
 
     try {
-      const [calculationResponse, materialResponse, stockResponse] = await Promise.all([
+      const [calculationResponse, materialResponse, customerResponse, stockResponse] = await Promise.all([
         calculationsClient.list({
           page: nextPage,
           limit,
@@ -229,6 +238,7 @@ export function CalculationsPage() {
           limit: 200,
           status: 'active'
         }),
+        customersClient.list({ page: 1, limit: 200, status: 'active' }),
         warehousesClient.levels({ page: 1, limit: 200 })
       ]);
 
@@ -236,6 +246,7 @@ export function CalculationsPage() {
       setTotalPages(calculationResponse.meta.totalPages);
       setTotalItems(calculationResponse.meta.total);
       setMaterials(materialResponse.data);
+      setCustomers(customerResponse.data);
       setStockLevels(stockResponse.data);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Hesablamalar yüklənmədi');
@@ -748,10 +759,39 @@ export function CalculationsPage() {
             <div className="grid gap-4 md:grid-cols-5">
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Müştəri adı</span>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(event) => {
+                      const selected = customers.find((customer) => customer.id === event.target.value);
+                      const nextName = selected ? (selected.companyName ? `${selected.name} · ${selected.companyName}` : selected.name) : '';
+                      setFormState((current) => ({ ...current, customerName: nextName }));
+                    }}
+                    disabled={modalReadOnly}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 disabled:bg-slate-50"
+                  >
+                    <option value="">Müştəri seçin</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.companyName ? `${customer.name} · ${customer.companyName}` : customer.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => setFormState((current) => ({ ...current, customerName: '' }))}
+                    disabled={modalReadOnly}
+                  >
+                    Təmizlə
+                  </Button>
+                </div>
                 <Input
                   value={formState.customerName}
                   onChange={(event) => setFormState((current) => ({ ...current, customerName: event.target.value }))}
                   disabled={modalReadOnly}
+                  placeholder="Manual daxil etmək istəsəniz"
                 />
               </label>
 
