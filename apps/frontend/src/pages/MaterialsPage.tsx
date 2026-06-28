@@ -273,9 +273,9 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/70 px-4 py-6 backdrop-blur-xl sm:py-8">
+      <div className="mt-0 flex max-h-[calc(100dvh-48px)] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:mt-auto sm:mb-auto">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-white/90 px-6 py-5 backdrop-blur-xl">
           <div>
             <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
           </div>
@@ -289,7 +289,7 @@ function Modal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
-        <div className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4">{footer}</div>
+        <div className="sticky bottom-0 shrink-0 border-t border-slate-200 bg-white/90 px-6 py-4 backdrop-blur-xl">{footer}</div>
       </div>
     </div>
   );
