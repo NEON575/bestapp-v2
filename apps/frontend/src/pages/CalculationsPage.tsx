@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button, Input } from '@bestapp/ui';
 import { CheckCircle2, Eye, Plus, PencilLine, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { customersClient } from '../shared/api/customers';
@@ -102,14 +103,44 @@ function ModalShell({
   description,
   children,
   footer,
-  onClose
+  onClose,
+  fullPage = false
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   footer: ReactNode;
   onClose: () => void;
+  fullPage?: boolean;
 }) {
+  if (fullPage) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-3xl border border-white/70 bg-white/90 px-6 py-5 shadow-xl shadow-slate-900/10 backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-950">{title}</h2>
+              {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+            </div>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
+              onClick={onClose}
+            >
+              Bağla
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-900/10 backdrop-blur">{children}</div>
+
+        <div className="sticky bottom-4 rounded-3xl border border-white/70 bg-white/90 px-6 py-4 shadow-xl shadow-slate-900/10 backdrop-blur">
+          {footer}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
       <div className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
@@ -157,6 +188,9 @@ function StatusBadge({ status }: { status: CalculationStatus }) {
 
 export function CalculationsPage() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams<{ id?: string }>();
   const [calculations, setCalculations] = useState<CalculationRecord[]>([]);
   const [materials, setMaterials] = useState<MaterialListItem[]>([]);
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
@@ -169,16 +203,19 @@ export function CalculationsPage() {
   const [status, setStatus] = useState<'all' | CalculationStatus>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('create');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editorCalculation, setEditorCalculation] = useState<CalculationRecord | null>(null);
   const [formState, setFormState] = useState<FormState>(emptyFormState());
   const [materialDraft, setMaterialDraft] = useState<MaterialLineDraft>(emptyMaterialLine());
   const [serviceDraft, setServiceDraft] = useState<ServiceLineDraft>(emptyServiceLine());
   const [editingMaterialIndex, setEditingMaterialIndex] = useState<number | null>(null);
   const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
   const [finalPriceMode, setFinalPriceMode] = useState<FinalPriceMode>('auto');
+  const editorId = params.id ?? null;
+  const isCreateRoute = location.pathname.endsWith('/new');
+  const isEditorRoute = isCreateRoute || Boolean(editorId);
 
   const selectedMaterial = useMemo(
     () => materials.find((material) => material.id === materialDraft.materialId) ?? null,
@@ -256,27 +293,84 @@ export function CalculationsPage() {
   };
 
   useEffect(() => {
+    if (location.pathname === '/calculations/new' || location.pathname.includes('/calculations/') ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       void loadData(page, search, status);
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [page, search, status]);
+  }, [page, search, status, location.pathname]);
+
+  useEffect(() => {
+    if (!isEditorRoute) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        await loadData(1, '', 'all');
+
+        if (cancelled) {
+          return;
+        }
+
+        if (editorId) {
+          const calculation = await calculationsClient.get(editorId);
+          if (cancelled) {
+            return;
+          }
+
+          setEditorCalculation(calculation);
+          setMode(location.pathname.endsWith('/edit') ? 'edit' : 'view');
+          setEditingId(calculation.id);
+          setFormState({
+            customerName: calculation.customerName ?? '',
+            productName: calculation.productName,
+            quantity: String(calculation.quantity),
+            note: calculation.note ?? '',
+            profitPercent: String(calculation.profitPercent),
+            finalPrice: String(calculation.finalPrice),
+            status: calculation.status,
+            materialLines: calculation.sections.materialLines.map(toMaterialDraft),
+            serviceLines: calculation.sections.serviceLines.map(toServiceDraft)
+          });
+          setFinalPriceMode('manual');
+        } else {
+          setEditorCalculation(null);
+          setMode('create');
+          setEditingId(null);
+          setFormState(emptyFormState());
+          setFinalPriceMode('auto');
+        }
+
+        setMaterialDraft(emptyMaterialLine());
+        setServiceDraft(emptyServiceLine());
+        setEditingMaterialIndex(null);
+        setEditingServiceIndex(null);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Hesablama yüklənmədi');
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editorId, isEditorRoute, location.pathname]);
 
   const refresh = async () => {
     await loadData(page, search, status);
   };
 
   const openCreate = () => {
-    setMode('create');
-    setEditingId(null);
-    setFormState(emptyFormState());
-    setMaterialDraft(emptyMaterialLine());
-    setServiceDraft(emptyServiceLine());
-    setEditingMaterialIndex(null);
-    setEditingServiceIndex(null);
-    setFinalPriceMode('auto');
-    setModalOpen(true);
+    navigate('/calculations/new');
   };
 
   const toMaterialDraft = (line: CalculationRecord['sections']['materialLines'][number]): MaterialLineDraft => ({
@@ -294,58 +388,15 @@ export function CalculationsPage() {
   });
 
   const openView = (calculation: CalculationRecord) => {
-    setMode('view');
-    setEditingId(calculation.id);
-    setFormState({
-      customerName: calculation.customerName ?? '',
-      productName: calculation.productName,
-      quantity: String(calculation.quantity),
-      note: calculation.note ?? '',
-      profitPercent: String(calculation.profitPercent),
-      finalPrice: String(calculation.finalPrice),
-      status: calculation.status,
-      materialLines: calculation.sections.materialLines.map(toMaterialDraft),
-      serviceLines: calculation.sections.serviceLines.map(toServiceDraft)
-    });
-    setMaterialDraft(emptyMaterialLine());
-    setServiceDraft(emptyServiceLine());
-    setEditingMaterialIndex(null);
-    setEditingServiceIndex(null);
-    setFinalPriceMode('manual');
-    setModalOpen(true);
+    navigate(`/calculations/${calculation.id}`);
   };
 
   const openEdit = (calculation: CalculationRecord) => {
-    setMode('edit');
-    setEditingId(calculation.id);
-    setFormState({
-      customerName: calculation.customerName ?? '',
-      productName: calculation.productName,
-      quantity: String(calculation.quantity),
-      note: calculation.note ?? '',
-      profitPercent: String(calculation.profitPercent),
-      finalPrice: String(calculation.finalPrice),
-      status: calculation.status,
-      materialLines: calculation.sections.materialLines.map(toMaterialDraft),
-      serviceLines: calculation.sections.serviceLines.map(toServiceDraft)
-    });
-    setMaterialDraft(emptyMaterialLine());
-    setServiceDraft(emptyServiceLine());
-    setEditingMaterialIndex(null);
-    setEditingServiceIndex(null);
-    setFinalPriceMode('manual');
-    setModalOpen(true);
+    navigate(`/calculations/${calculation.id}/edit`);
   };
 
   const closeModal = () => {
-    setModalOpen(false);
-    setEditingId(null);
-    setFormState(emptyFormState());
-    setMaterialDraft(emptyMaterialLine());
-    setServiceDraft(emptyServiceLine());
-    setEditingMaterialIndex(null);
-    setEditingServiceIndex(null);
-    setFinalPriceMode('auto');
+    navigate('/calculations');
   };
 
   const materialCost = useMemo(
@@ -554,7 +605,9 @@ export function CalculationsPage() {
     }
   };
 
-  const activeCalculation = calculations.find((calculation) => calculation.id === editingId) ?? null;
+  const activeCalculation = isEditorRoute
+    ? editorCalculation
+    : calculations.find((calculation) => calculation.id === editingId) ?? null;
   const modalReadOnly = mode === 'view' || (mode === 'edit' && activeCalculation?.status !== 'draft');
 
   const footer = (
@@ -579,13 +632,19 @@ export function CalculationsPage() {
     </div>
   );
 
+  const modalOpen = isEditorRoute;
+
   return (
-    <div className="space-y-6">
+    <>
+      <div className={isEditorRoute ? 'hidden' : 'space-y-6'}>
       <PageHeader
         title="Hesablama"
         description="Maya, satış və qazancı sifarişdən əvvəl burada hesablayın."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => navigate('/calculation-settings')}>
+              Hesablama ayarları
+            </Button>
             <Button variant="secondary" onClick={() => void refresh()}>
               <span className="inline-flex items-center gap-2">
                 <RefreshCw className="h-4 w-4" />
@@ -748,8 +807,10 @@ export function CalculationsPage() {
         </div>
       )}
 
+      </div>
+
       {modalOpen ? (
-        <ModalShell
+        <ModalShell fullPage={isEditorRoute}
           title={mode === 'create' ? 'Yeni hesablama' : mode === 'edit' ? 'Hesablamanı redaktə et' : 'Hesablama məlumatı'}
           description="Müştəri, məhsul, materiallar və xidmətləri burada daxil edin."
           onClose={closeModal}
@@ -1199,6 +1260,6 @@ export function CalculationsPage() {
           </div>
         </ModalShell>
       ) : null}
-    </div>
+    </>
   );
 }

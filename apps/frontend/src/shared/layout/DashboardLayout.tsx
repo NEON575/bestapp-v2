@@ -9,6 +9,7 @@ const navItems = [
   { to: '/suppliers', label: 'Təchizatçılar', icon: Truck },
   { to: '/material-category-parameters', label: 'Kateqoriya parametrləri', icon: Layers3 },
   { to: '/calculations', label: 'Hesablama', icon: Calculator },
+  { to: '/calculation-settings', label: 'Hesablama ayarları', icon: Layers3 },
   { to: '/purchases', label: 'Alış', icon: Package2 },
   { to: '/warehouse', label: 'Anbar', icon: Warehouse }
 ];

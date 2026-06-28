@@ -1,25 +1,79 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Input } from '@bestapp/ui';
-import {
-  calculationParameterCategoryLabel,
-  calculationParameterCategoryOptions,
-  createCalculationParameterDefaults,
-  type CalculationParameterCreateDto,
-  type CalculationParameterItem,
-  type CalculationParameterListQuery
-} from '@bestapp/shared';
 import { calculationParametersClient } from '../shared/api/calculation-parameters';
 import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Modal, PageHeader, Pagination, SearchInput } from '../shared/components';
 import { formatCurrency } from '../shared/lib/format';
 import { useToast } from '../shared/toast/toast-context';
 import type { ReactNode } from 'react';
 
+type CalculationParameterCategory = 'paper' | 'printing' | 'form' | 'lamination' | 'cutting' | 'creasing' | 'folding' | 'thermal_glue' | 'stapling' | 'punching' | 'manual_work' | 'packaging' | 'other_cost';
+
+type CalculationParameterCreateDto = {
+  category: CalculationParameterCategory;
+  name: string;
+  variants: string[];
+  unit: string;
+  price: number;
+  isActive?: boolean;
+  note?: string;
+};
+
+type CalculationParameterListQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  category?: CalculationParameterCategory | '';
+  isActive?: boolean | '';
+};
+
+type CalculationParameterItem = {
+  id: string;
+  category: CalculationParameterCategory;
+  name: string;
+  variants: Array<{ label: string; value: string }>;
+  unit: string;
+  price: number;
+  isActive: boolean;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type ParameterFormState = CalculationParameterCreateDto;
+
+const CALCULATION_PARAMETER_CATEGORIES: Array<{ value: CalculationParameterCategory; label: string }> = [
+  { value: 'paper', label: 'Kağız' },
+  { value: 'printing', label: 'Çap' },
+  { value: 'form', label: 'Forma' },
+  { value: 'lamination', label: 'Laminasiya' },
+  { value: 'cutting', label: 'Kəsim' },
+  { value: 'creasing', label: 'Beqovka' },
+  { value: 'folding', label: 'Qatlama' },
+  { value: 'thermal_glue', label: 'Termokley' },
+  { value: 'stapling', label: 'Tikiş / Stepler' },
+  { value: 'punching', label: 'Deşmə' },
+  { value: 'manual_work', label: 'Əl işi' },
+  { value: 'packaging', label: 'Qablaşdırma' },
+  { value: 'other_cost', label: 'Digər xərc' }
+];
+
+function calculationParameterCategoryLabel(category: CalculationParameterCategory) {
+  return CALCULATION_PARAMETER_CATEGORIES.find((item) => item.value === category)?.label ?? category;
+}
+
+function calculationParameterCategoryOptions() {
+  return CALCULATION_PARAMETER_CATEGORIES;
+}
 
 function createParameterForm(category = 'paper' as CalculationParameterCreateDto['category']): ParameterFormState {
   return {
-    ...createCalculationParameterDefaults(category),
-    variants: []
+    category,
+    name: '',
+    variants: [],
+    unit: '',
+    price: 0,
+    isActive: true,
+    note: ''
   };
 }
 

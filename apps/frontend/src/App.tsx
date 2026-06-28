@@ -7,6 +7,7 @@ import { CategoryParametersPage } from './pages/CategoryParametersPage';
 import { PurchasesPage } from './pages/PurchasesPage';
 import { WarehousePage } from './pages/WarehousePage';
 import { CalculationsPage } from './pages/CalculationsPage';
+import { CalculationParametersPage } from './pages/CalculationParametersPage';
 
 export function App() {
   return (
@@ -19,6 +20,10 @@ export function App() {
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="warehouse" element={<WarehousePage />} />
         <Route path="calculations" element={<CalculationsPage />} />
+        <Route path="calculations/new" element={<CalculationsPage />} />
+        <Route path="calculations/:id" element={<CalculationsPage />} />
+        <Route path="calculations/:id/edit" element={<CalculationsPage />} />
+        <Route path="calculation-settings" element={<CalculationParametersPage />} />
         <Route path="material-category-parameters" element={<CategoryParametersPage />} />
         <Route path="materials/category-parameters" element={<Navigate to="/material-category-parameters" replace />} />
       </Route>
